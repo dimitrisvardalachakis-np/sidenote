@@ -13,8 +13,16 @@
 import { z } from "zod";
 import { IsoDate } from "./primitives";
 
-/** ICH E2B sex codes, spelled out. */
-export const PatientSex = z.enum(["male", "female", "unknown"]);
+/**
+ * Sex as the reporter gave it.
+ *
+ * Wider than the ICH E2B code list, which has only male, female and unknown.
+ * That is deliberate: capture faithfully, map at the boundary. If someone
+ * tells us "another way to describe it", writing "unknown" into the record
+ * discards what they actually said, and the E2B export can collapse it to
+ * unknown at the moment it builds the message instead.
+ */
+export const PatientSex = z.enum(["male", "female", "other", "unknown"]);
 export type PatientSex = z.output<typeof PatientSex>;
 
 /**

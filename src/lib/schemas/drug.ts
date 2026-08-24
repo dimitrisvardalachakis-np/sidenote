@@ -6,7 +6,8 @@
  * investigational one against its Investigator's Brochure.
  */
 import { z } from "zod";
-import { DrugId, IsoDate, NarrativeSpan, Provenance } from "./primitives";
+import { DrugId, NarrativeSpan, Provenance } from "./primitives";
+import { PartialDate } from "./partial-date";
 
 /**
  * Only `suspect` drugs drive listedness. Concomitant medicines are recorded
@@ -80,8 +81,9 @@ export const SuspectDrug = z.object({
   route: RouteOfAdministration.nullable(),
   /** Why it was being taken — relevant to whether the event is the disease. */
   indication: z.string().min(1).max(200).nullable(),
-  therapyStart: IsoDate.nullable(),
-  therapyEnd: IsoDate.nullable(),
+  // Partial for the same reason as Reaction.onset: people remember months.
+  therapyStart: PartialDate.nullable(),
+  therapyEnd: PartialDate.nullable(),
   dechallenge: ChallengeAssessment.nullable(),
   rechallenge: ChallengeAssessment.nullable(),
 });

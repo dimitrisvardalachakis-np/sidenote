@@ -6,7 +6,8 @@
  * where a wrong shape has a regulatory consequence rather than a cosmetic one.
  */
 import { z } from "zod";
-import { NarrativeSpan, ReactionId, IsoDate } from "./primitives";
+import { NarrativeSpan, ReactionId } from "./primitives";
+import { PartialDate } from "./partial-date";
 
 // ---------------------------------------------------------------------------
 // The six seriousness criteria
@@ -195,7 +196,16 @@ export const Reaction = z.object({
    * then, and mapping is a human act — the model may propose, as everywhere.
    */
   meddraPreferredTerm: z.string().min(1).max(200).nullable(),
-  onset: IsoDate.nullable(),
+  /**
+   * When it started, to whatever precision the reporter actually knew.
+   *
+   * A PartialDate rather than a full one because "March 2026" is a real
+   * answer and the alternative is inventing the 1st of March. That invented
+   * day would then be compared against the therapy start date to work out
+   * whether the reaction began before or after the medicine, which is a
+   * question it would answer wrongly.
+   */
+  onset: PartialDate.nullable(),
   outcome: ReactionOutcome,
   seriousness: SeriousnessFlags,
 });

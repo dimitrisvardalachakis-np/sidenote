@@ -24,9 +24,22 @@ export interface SavedProgress {
   readonly draft: ReportDraft;
   /** Which step the reporter had reached, so a refresh returns them to it. */
   readonly stepIndex: number;
+  /**
+   * Set once the report has been sent.
+   *
+   * Kept here rather than in component state so that refreshing the
+   * confirmation screen still shows the reference number. Losing someone's
+   * reference because they pressed reload would be a poor way to end a form
+   * that has just asked them about the worst week of their year.
+   */
+  readonly submitted: { readonly reference: string; readonly caseId: string } | null;
 }
 
-const BLANK: SavedProgress = { draft: EMPTY_DRAFT, stepIndex: 0 };
+const BLANK: SavedProgress = {
+  draft: EMPTY_DRAFT,
+  stepIndex: 0,
+  submitted: null,
+};
 
 let cachedRaw: string | null = null;
 let cachedValue: SavedProgress = BLANK;
@@ -53,11 +66,24 @@ function read(): SavedProgress {
     const parsed: unknown = JSON.parse(raw);
     const shape =
       typeof parsed === "object" && parsed !== null
-        ? (parsed as { draft?: unknown; stepIndex?: unknown })
+        ? (parsed as {
+            draft?: unknown;
+            stepIndex?: unknown;
+            submitted?: unknown;
+          })
         : {};
     // Validated, not cast. A draft saved by an older version of this form is
     // discarded rather than rendered into a shape the UI no longer expects.
     const draft = ReportDraft.safeParse(shape.draft);
+    const submitted = shape.submitted;
+    const validSubmitted =
+      typeof submitted === "object" &&
+      submitted !== null &&
+      typeof (submitted as { reference?: unknown }).reference === "string" &&
+      typeof (submitted as { caseId?: unknown }).caseId === "string"
+        ? (submitted as { reference: string; caseId: string })
+        : null;
+
     cachedValue = draft.success
       ? {
           draft: draft.data,
@@ -65,6 +91,7 @@ function read(): SavedProgress {
             typeof shape.stepIndex === "number" && shape.stepIndex >= 0
               ? shape.stepIndex
               : 0,
+          submitted: validSubmitted,
         }
       : BLANK;
   } catch {

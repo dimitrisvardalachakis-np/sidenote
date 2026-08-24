@@ -51,7 +51,7 @@ export type ChunkId = z.output<typeof ChunkId>;
 
 /**
  * The human-facing handle, e.g. "SN-2026-000412". This is what a public
- * reporter is shown on /report/thanks — they will never see a uuid.
+ * reporter is shown when the form is sent. They never see a uuid.
  */
 export const CaseReference = z
   .string()

@@ -13,13 +13,23 @@ import { z } from "zod";
 
 export type AnswerStatus = "unanswered" | "unknown" | "answered";
 
-/** Wrap any schema so the field can also be blank or explicitly unknown. */
+/**
+ * Wrap any schema so the field can also be blank or explicitly unknown.
+ *
+ * Defaults to unanswered when the key is absent entirely, which is the honest
+ * reading: a field nobody sent is a field nobody answered. Without this, a
+ * caller posting only the two things they know would be told that twenty-six
+ * keys are missing, which buries the two answers that actually matter under
+ * noise about the shape of the envelope.
+ */
 export function answer<T extends z.ZodType>(value: T) {
-  return z.discriminatedUnion("status", [
-    z.object({ status: z.literal("unanswered") }),
-    z.object({ status: z.literal("unknown") }),
-    z.object({ status: z.literal("answered"), value }),
-  ]);
+  return z
+    .discriminatedUnion("status", [
+      z.object({ status: z.literal("unanswered") }),
+      z.object({ status: z.literal("unknown") }),
+      z.object({ status: z.literal("answered"), value }),
+    ])
+    .default({ status: "unanswered" });
 }
 
 export type Answer<T> =

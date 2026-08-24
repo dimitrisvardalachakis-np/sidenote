@@ -116,7 +116,10 @@ export const ReportDraft = z.object({
   yourName: answer(shortText),
   yourEmail: answer(z.email()),
   yourPhone: answer(z.string().trim().min(3).max(40)),
-  country: answer(z.string().trim().regex(/^[A-Za-z]{2}$/)),
+  // A country NAME, not a two-letter code. Asking someone who is frightened
+  // to know that GB means the United Kingdom is exactly the kind of small
+  // cruelty this surface is supposed to avoid. A reviewer maps it later.
+  country: answer(shortText),
   mayContactYou: answer(YesNo),
 });
 export type ReportDraft = z.output<typeof ReportDraft>;

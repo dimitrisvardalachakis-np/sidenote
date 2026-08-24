@@ -84,7 +84,7 @@ export function parsePartialDate(text: string): PartialDate | null {
   return { value: trimmed, precision };
 }
 
-const MONTH_NAMES: readonly string[] = [
+export const MONTH_NAMES: readonly string[] = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];

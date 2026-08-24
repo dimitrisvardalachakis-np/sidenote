@@ -41,7 +41,7 @@ const seriousReaction: Reaction = {
   id: ReactionId.parse(uuid(1)),
   verbatimTerm: "yellow skin and eyes",
   meddraPreferredTerm: "Jaundice",
-  onset: "2026-08-10",
+  onset: { value: "2026-08-10", precision: "day" },
   outcome: "recovering",
   seriousness: {
     ...NO_SERIOUSNESS_FLAGS,
@@ -69,7 +69,7 @@ const suspectDrug: SuspectDrug = {
   dose: "20mg once daily",
   route: "oral",
   indication: "hypertension",
-  therapyStart: "2026-08-08",
+  therapyStart: { value: "2026-08-08", precision: "day" },
   therapyEnd: null,
   dechallenge: null,
   rechallenge: null,
