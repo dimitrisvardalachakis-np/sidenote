@@ -5,6 +5,29 @@ import nextTs from "eslint-config-next/typescript";
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
+
+  // SideNote house rules. These come after the Next presets so they win.
+  {
+    linterOptions: {
+      // A stale `eslint-disable` is a lie about the code. Fail on it.
+      reportUnusedDisableDirectives: "error",
+    },
+    rules: {
+      // CLAUDE.md non-negotiable #1: `any` is a bug, not a warning.
+      "@typescript-eslint/no-explicit-any": "error",
+      // `any` also arrives disguised: a bare `{}`, `Function`, or `Object`
+      // annotation is an unsound type in the same family.
+      "@typescript-eslint/no-unsafe-function-type": "error",
+      "@typescript-eslint/no-wrapper-object-types": "error",
+      // Unused code is caught, not tolerated, but `_`-prefixed args are
+      // a deliberate signal and stay legal.
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
