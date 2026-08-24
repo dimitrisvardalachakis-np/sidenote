@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local data store (Cluster A only; Cluster D replaces this with D1/R2)
+/.data

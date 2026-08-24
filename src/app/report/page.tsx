@@ -1,11 +1,11 @@
+import { ReportForm } from "./report-form";
+
 /**
- * The public report form. No authentication.
+ * The public report form. No authentication, by design.
  *
- * Step 4 puts the route in place; step 5 builds the Server Action, the shared
- * zod validation and the inline field errors. The shell is here so the route
- * tree is complete and navigable, and so the layout decisions — measure,
- * heading rhythm, the "what happens next" note — are settled before the form
- * controls land on top of them.
+ * Cluster C puts Turnstile and a rate-limit binding in front of this, which is
+ * what protects an endpoint that cannot ask who you are. Until then the only
+ * defence is that the Server Action validates everything it is handed.
  */
 export default function ReportPage() {
   return (
@@ -23,15 +23,9 @@ export default function ReportPage() {
         will use the contact details you give us — and only for that.
       </p>
 
-      <div className="mt-6 border border-rule p-3 rounded-soft">
-        <p className="text-micro uppercase tracking-label text-slate">
-          Not yet built
-        </p>
-        <p className="mt-1 text-base">
-          The form itself arrives in step 5, validated by the same zod schema on
-          both the client and the server.
-        </p>
-      </div>
+      <hr className="my-6" />
+
+      <ReportForm />
     </main>
   );
 }
