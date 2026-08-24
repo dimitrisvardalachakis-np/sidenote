@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import {
   NOT_KNOWN,
   UNANSWERED,
@@ -305,12 +305,30 @@ export function DateQuestion({
   const hintId = `${id}-hint`;
   const unknown = value.status === "unknown";
   const current = value.status === "answered" ? value.value : null;
-  const parts = current === null ? [] : current.value.split("-");
-  const year = parts[0] ?? "";
-  const month = parts[1] ?? "";
-  const day = parts[2] ?? "";
+
+  /**
+   * The three boxes keep their own text, rather than being derived from the
+   * parsed answer.
+   *
+   * They have to. Deriving them means a half-typed year is not yet a valid
+   * date, so the answer is "unanswered", so the box re-renders empty and eats
+   * the character that was just typed. Someone typing 2026 would watch each
+   * digit vanish. The parsed value is the OUTPUT of these boxes, not their
+   * state, and conflating the two is what caused it.
+   *
+   * Seeded from the answer on first render so a restored draft shows what was
+   * saved.
+   */
+  const seed = current === null ? [] : current.value.split("-");
+  const [year, setYear] = useState(seed[0] ?? "");
+  const [month, setMonth] = useState(seed[1] ?? "");
+  const [day, setDay] = useState(seed[2] ?? "");
 
   const rebuild = (nextYear: string, nextMonth: string, nextDay: string) => {
+    setYear(nextYear);
+    setMonth(nextMonth);
+    setDay(nextDay);
+
     if (nextYear.trim() === "") {
       onChange(UNANSWERED);
       return;
@@ -319,6 +337,8 @@ export function DateQuestion({
     if (nextMonth !== "") pieces.push(nextMonth);
     if (nextMonth !== "" && nextDay !== "") pieces.push(nextDay);
     const parsed = parsePartialDate(pieces.join("-"));
+    // A year still being typed is simply not an answer yet. The boxes keep
+    // the text either way.
     onChange(parsed === null ? UNANSWERED : answered(parsed));
   };
 

@@ -8,6 +8,7 @@ import {
   missingElements,
   type MissingElement,
 } from "@/lib/schemas/report";
+import { guardPublicSubmission } from "@/lib/protection/guard";
 import { reportToCase } from "./to-case";
 
 /**
@@ -36,10 +37,31 @@ export type SubmitOutcome =
       readonly status: "malformed";
       readonly messages: readonly string[];
     }
+  | {
+      /** Turned away by the rate limit or the bot check. */
+      readonly status: "blocked";
+      readonly retryAfterSeconds: number;
+      readonly message: string;
+    }
   | { readonly status: "failed"; readonly message: string };
 
-export async function submitReport(input: unknown): Promise<SubmitOutcome> {
-  // Parse the shape first. This runs on the server no matter what the client
+export async function submitReport(
+  input: unknown,
+  options: { readonly botToken?: string | null } = {},
+): Promise<SubmitOutcome> {
+  // Protection first, before any work is done on the input. An endpoint that
+  // parses and stores before checking whether it should have is an endpoint
+  // that can be made to do work for free.
+  const guard = await guardPublicSubmission(options.botToken ?? null);
+  if (!guard.allowed) {
+    return {
+      status: "blocked",
+      retryAfterSeconds: guard.retryAfterSeconds,
+      message: guard.message,
+    };
+  }
+
+  // Parse the shape. This runs on the server no matter what the client
   // did or did not check, which is the only reason any of it is trustworthy.
   const shape = ReportDraft.safeParse(input);
   if (!shape.success) {

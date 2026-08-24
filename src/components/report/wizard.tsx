@@ -207,10 +207,10 @@ export function ReportWizard() {
             <div role="alert" className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2">
               <p className="text-base font-medium">We could not send it yet.</p>
               <ul className="mt-2">
-                {(outcome.status === "failed"
+                {(outcome.status === "failed" || outcome.status === "blocked"
                   ? [outcome.message]
                   : outcome.messages
-                ).map((message) => (
+                ).map((message: string) => (
                   <li key={message} className="mt-1 text-base">
                     {message}
                   </li>

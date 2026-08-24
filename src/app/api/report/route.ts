@@ -25,7 +25,9 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const outcome = await submitReport(body);
+  // A partner system proves itself with a credential, not a browser widget,
+  // so there is no Turnstile token on this path. The rate limit still applies.
+  const outcome = await submitReport(body, { botToken: null });
 
   switch (outcome.status) {
     case "created":
@@ -36,6 +38,11 @@ export async function POST(request: Request): Promise<Response> {
     case "incomplete":
     case "malformed":
       return Response.json(outcome, { status: 400 });
+    case "blocked":
+      return Response.json(outcome, {
+        status: 429,
+        headers: { "Retry-After": String(outcome.retryAfterSeconds) },
+      });
     case "failed":
       return Response.json(outcome, { status: 500 });
   }

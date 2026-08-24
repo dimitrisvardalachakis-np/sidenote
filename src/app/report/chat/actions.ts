@@ -5,6 +5,7 @@ import { advance, type IntakeState } from "@/lib/intake/conversation";
 import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
+import { guardPublicConversation } from "@/lib/protection/guard";
 import type { ChatState } from "./chat-state";
 
 /**
@@ -29,6 +30,14 @@ export async function sendChatMessage(
   const reply = typeof raw === "string" ? raw.trim() : "";
   if (reply.length === 0) return previous;
   if (previous.submitted !== null) return previous;
+
+  // The chat is anonymous and takes many turns, so it gets its own looser
+  // ceiling. Checked before any retrieval runs: search is the expensive part
+  // and doing it for an unthrottled caller is doing their work for them.
+  const guard = await guardPublicConversation();
+  if (!guard.allowed) {
+    return { ...previous, error: guard.message };
+  }
 
   const { chunks, products } = await loadCorpus();
 
