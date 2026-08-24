@@ -2,39 +2,98 @@
    SideNote design tokens
    An instrument panel someone reads for eight hours. Dense, calm, legible.
    Everything a component needs is here; nothing here is decorative.
+
+   Structure: the raw palette lives in plain custom properties so a theme can
+   swap it, and @theme inline maps Tailwind's colour utilities onto those
+   references rather than copying their values. That indirection is the whole
+   trick — `bg-paper` compiles to `background-color: var(--paper)`, so it
+   re-resolves when the theme changes instead of being frozen at build time.
    ========================================================================== */
 
-/* `static` matters: a plain @theme block tree-shakes out any variable no
-   utility happens to reference, so half this scale would not exist at runtime
-   and a raw `var(--color-row-hover)` would resolve to nothing. A token file
-   that only sometimes defines its tokens is not a contract. */
+/* --- Light: the six from CLAUDE.md, unchanged --------------------------- */
+
+:root {
+  color-scheme: light;
+
+  --paper: #fafaf8; /* page */
+  --ink: #14171a; /* primary text */
+  --slate: #5b6570; /* secondary text, labels */
+  --rule: #e4e6e4; /* hairlines — the only divider, 1px */
+  --steady: #2f6b72; /* assessed, listed, resolved */
+  --signal: #b02a37; /* expedited or overdue. Nothing else. Ever. */
+
+  /* Derived, so no component invents a hue. These reference --ink and --paper
+     rather than hard-coding a result, which means the dark theme gets correct
+     mixes for free by overriding only the six above. */
+  --row-hover: color-mix(in srgb, var(--ink) 3%, var(--paper));
+  --row-active: color-mix(in srgb, var(--ink) 6%, var(--paper));
+  --steady-wash: color-mix(in srgb, var(--steady) 10%, var(--paper));
+  --signal-wash: color-mix(in srgb, var(--signal) 10%, var(--paper));
+  --ink-muted: color-mix(in srgb, var(--ink) 55%, var(--paper));
+}
+
+/* --- Dark ---------------------------------------------------------------
+   Not specified in CLAUDE.md, so this is derived rather than given, and every
+   pair is checked against the background: ink 14.7:1, slate 6.8:1,
+   steady 7.0:1, signal 5.2:1 — all past the 4.5:1 body-text bar.
+
+   The teal and the red are lifted, not just inverted. #2F6B72 on a dark
+   ground reads as a smudge; #B02A37 reads as brown. A palette that is
+   literally inverted is a palette that was never checked.               */
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #15181a;
+    --ink: #e8eae7;
+    --slate: #98a1a9;
+    --rule: #2b3033;
+    --steady: #63aeb5;
+    --signal: #e0616d;
+  }
+}
+
+/* An explicit choice beats the system preference in both directions. The
+   :not() guard above is what stops a system-dark machine from overriding a
+   reviewer who deliberately picked light. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #15181a;
+  --ink: #e8eae7;
+  --slate: #98a1a9;
+  --rule: #2b3033;
+  --steady: #63aeb5;
+  --signal: #e0616d;
+}
+
+/* --- Tailwind mapping ---------------------------------------------------
+   `inline` so utilities emit var(--paper) rather than a baked hex.        */
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-slate: var(--slate);
+  --color-rule: var(--rule);
+  --color-steady: var(--steady);
+  --color-signal: var(--signal);
+  --color-row-hover: var(--row-hover);
+  --color-row-active: var(--row-active);
+  --color-steady-wash: var(--steady-wash);
+  --color-signal-wash: var(--signal-wash);
+  --color-ink-muted: var(--ink-muted);
+}
+
+/* --- Type, spacing, line work ------------------------------------------
+   These do not change with the theme, so they are declared directly.
+   `static` because a plain @theme block tree-shakes out any variable no
+   utility happens to reference, and a token file that only sometimes defines
+   its tokens is not a contract.
+
+   Base is 14px, not 16px. A queue row set at 16px is roughly 15% taller,
+   which costs two or three cases per screen — and the reviewer's job is
+   scanning a list, so the density belongs where the data is.             */
+
 @theme static {
-  /* --- Colour -------------------------------------------------------------
-     The six from CLAUDE.md, unchanged. Note there is no "surface" or "card"
-     colour: separation is done with a 1px --rule hairline, never with a fill
-     and never with a shadow. That is the whole visual language.              */
-
-  --color-paper: #fafaf8; /* page */
-  --color-ink: #14171a; /* primary text */
-  --color-slate: #5b6570; /* secondary text, labels */
-  --color-rule: #e4e6e4; /* hairlines — the only divider, 1px */
-  --color-steady: #2f6b72; /* assessed, listed, resolved */
-  --color-signal: #b02a37; /* expedited or overdue. Nothing else. Ever. */
-
-  /* Derived, so no component invents a hue. Mixed from the six above rather
-     than picked, which keeps them in the same family under any adjustment.  */
-  --color-row-hover: color-mix(in srgb, var(--color-ink) 3%, var(--color-paper));
-  --color-row-active: color-mix(in srgb, var(--color-ink) 6%, var(--color-paper));
-  --color-steady-wash: color-mix(in srgb, var(--color-steady) 8%, var(--color-paper));
-  --color-signal-wash: color-mix(in srgb, var(--color-signal) 8%, var(--color-paper));
-  --color-ink-muted: color-mix(in srgb, var(--color-ink) 55%, var(--color-paper));
-
-  /* --- Type ---------------------------------------------------------------
-     Base is 14px, not 16px. A queue row at 16px is ~15% taller, which costs
-     two or three cases per screen — and the reviewer's job is scanning a
-     list. Six sizes, tight at reading sizes and looser at display sizes,
-     because the density belongs where the data is.                          */
-
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 
@@ -53,39 +112,30 @@
 
   --tracking-label: 0.06em; /* only for --text-micro uppercase labels */
 
-  /* --- Spacing ------------------------------------------------------------
-     4px base. Tailwind's numeric utilities read straight off this, so p-2 is
-     8px and gap-3 is 12px. The sanctioned steps are 1, 2, 3, 4, 6, 8 and 12
-     (4→48px); anything else is drift and should be questioned in review.
-     Dense UI lives almost entirely in 1–4.                                   */
-
+  /* 4px base. Tailwind's numeric utilities read straight off this, so p-2 is
+     8px. Sanctioned steps are 1, 2, 3, 4, 6, 8 and 12 (to 48px); anything
+     else is drift. Dense UI lives almost entirely in 1–4. */
   --spacing: 0.25rem;
 
-  /* --- Line work ----------------------------------------------------------
-     One divider weight, one radius, no elevation. There are deliberately no
+  /* One divider weight, one radius, no elevation. There are deliberately no
      shadow tokens: a shadow is a gradient with extra steps, and CLAUDE.md
-     rules both out.                                                          */
-
+     rules both out. */
   --radius-sharp: 0px; /* rows, cells, rails */
   --radius-soft: 2px; /* inputs, buttons, badges — the most we ever round */
 }
 
-/* --- Base ------------------------------------------------------------------
+/* --- Base ---------------------------------------------------------------
    Element defaults, so a component that writes no classes still looks right. */
 
-:root {
-  color-scheme: light;
-}
-
 body {
-  background-color: var(--color-paper);
-  color: var(--color-ink);
+  background-color: var(--paper);
+  color: var(--ink);
   font-family: var(--font-sans);
   font-size: var(--text-base);
   line-height: 1.45;
-  /* Dates, day counts and reference numbers sit in columns and must not
-     shift width as digits change. This is why the countdown rail reads as a
-     rail rather than a jitter. */
+  /* Dates, day counts and reference numbers sit in columns and must not shift
+     width as digits change. This is why the countdown rail reads as a rail
+     rather than a jitter. */
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
@@ -93,12 +143,23 @@ body {
 /* Focus is never removed, only restyled. --steady is the focus colour;
    --signal is reserved and must not be borrowed for it. */
 :focus-visible {
-  outline: 2px solid var(--color-steady);
+  outline: 2px solid var(--steady);
   outline-offset: 1px;
 }
 
-/* The reviewer navigates this by keyboard all day; hairlines are the grid. */
 hr {
   border: 0;
-  border-top: 1px solid var(--color-rule);
+  border-top: 1px solid var(--rule);
+}
+
+/* A reviewer who has asked the OS to stop moving things gets no transitions.
+   Nothing here animates by default anyway; this is a guard for later. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
