@@ -1,0 +1,104 @@
+/* ==========================================================================
+   SideNote design tokens
+   An instrument panel someone reads for eight hours. Dense, calm, legible.
+   Everything a component needs is here; nothing here is decorative.
+   ========================================================================== */
+
+/* `static` matters: a plain @theme block tree-shakes out any variable no
+   utility happens to reference, so half this scale would not exist at runtime
+   and a raw `var(--color-row-hover)` would resolve to nothing. A token file
+   that only sometimes defines its tokens is not a contract. */
+@theme static {
+  /* --- Colour -------------------------------------------------------------
+     The six from CLAUDE.md, unchanged. Note there is no "surface" or "card"
+     colour: separation is done with a 1px --rule hairline, never with a fill
+     and never with a shadow. That is the whole visual language.              */
+
+  --color-paper: #fafaf8; /* page */
+  --color-ink: #14171a; /* primary text */
+  --color-slate: #5b6570; /* secondary text, labels */
+  --color-rule: #e4e6e4; /* hairlines — the only divider, 1px */
+  --color-steady: #2f6b72; /* assessed, listed, resolved */
+  --color-signal: #b02a37; /* expedited or overdue. Nothing else. Ever. */
+
+  /* Derived, so no component invents a hue. Mixed from the six above rather
+     than picked, which keeps them in the same family under any adjustment.  */
+  --color-row-hover: color-mix(in srgb, var(--color-ink) 3%, var(--color-paper));
+  --color-row-active: color-mix(in srgb, var(--color-ink) 6%, var(--color-paper));
+  --color-steady-wash: color-mix(in srgb, var(--color-steady) 8%, var(--color-paper));
+  --color-signal-wash: color-mix(in srgb, var(--color-signal) 8%, var(--color-paper));
+  --color-ink-muted: color-mix(in srgb, var(--color-ink) 55%, var(--color-paper));
+
+  /* --- Type ---------------------------------------------------------------
+     Base is 14px, not 16px. A queue row at 16px is ~15% taller, which costs
+     two or three cases per screen — and the reviewer's job is scanning a
+     list. Six sizes, tight at reading sizes and looser at display sizes,
+     because the density belongs where the data is.                          */
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+
+  --text-micro: 0.6875rem; /* 11px — column labels, uppercase, tracked */
+  --text-micro--line-height: 1.3;
+  --text-meta: 0.75rem; /*  12px — timestamps, ids, secondary detail */
+  --text-meta--line-height: 1.4;
+  --text-base: 0.875rem; /*  14px — the workhorse: rows, fields, labels */
+  --text-base--line-height: 1.45;
+  --text-prose: 0.9375rem; /* 15px — narrative only, where you read sentences */
+  --text-prose--line-height: 1.6;
+  --text-title: 1.125rem; /* 18px — panel and screen headings */
+  --text-title--line-height: 1.3;
+  --text-figure: 1.75rem; /*  28px — one number per screen, e.g. days remaining */
+  --text-figure--line-height: 1.1;
+
+  --tracking-label: 0.06em; /* only for --text-micro uppercase labels */
+
+  /* --- Spacing ------------------------------------------------------------
+     4px base. Tailwind's numeric utilities read straight off this, so p-2 is
+     8px and gap-3 is 12px. The sanctioned steps are 1, 2, 3, 4, 6, 8 and 12
+     (4→48px); anything else is drift and should be questioned in review.
+     Dense UI lives almost entirely in 1–4.                                   */
+
+  --spacing: 0.25rem;
+
+  /* --- Line work ----------------------------------------------------------
+     One divider weight, one radius, no elevation. There are deliberately no
+     shadow tokens: a shadow is a gradient with extra steps, and CLAUDE.md
+     rules both out.                                                          */
+
+  --radius-sharp: 0px; /* rows, cells, rails */
+  --radius-soft: 2px; /* inputs, buttons, badges — the most we ever round */
+}
+
+/* --- Base ------------------------------------------------------------------
+   Element defaults, so a component that writes no classes still looks right. */
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.45;
+  /* Dates, day counts and reference numbers sit in columns and must not
+     shift width as digits change. This is why the countdown rail reads as a
+     rail rather than a jitter. */
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Focus is never removed, only restyled. --steady is the focus colour;
+   --signal is reserved and must not be borrowed for it. */
+:focus-visible {
+  outline: 2px solid var(--color-steady);
+  outline-offset: 1px;
+}
+
+/* The reviewer navigates this by keyboard all day; hairlines are the grid. */
+hr {
+  border: 0;
+  border-top: 1px solid var(--color-rule);
+}
