@@ -47,12 +47,13 @@ const seriousReaction: Reaction = {
     ...NO_SERIOUSNESS_FLAGS,
     hospitalisation: {
       kind: "initial",
+      basis: "narrative",
       trigger: {
         quote: TRIGGER,
         start: TRIGGER_AT,
         end: TRIGGER_AT + TRIGGER.length,
       },
-      suggestedBy: "model",
+      assertedBy: "model",
       confirmedByReviewer: false,
       rejectedByReviewer: false,
     },
@@ -221,7 +222,9 @@ describe("seriousness", () => {
 
   it("carries a trigger span that really is the text at those offsets", () => {
     const flag = seriousReaction.seriousness.hospitalisation;
-    if (flag === null) throw new Error("expected a hospitalisation flag");
+    if (flag === null || flag.trigger === null) {
+      throw new Error("expected a narrative-derived hospitalisation flag");
+    }
     expect(spanMatchesNarrative(NARRATIVE, flag.trigger)).toBe(true);
   });
 
@@ -235,11 +238,13 @@ describe("seriousness", () => {
     ).toBe(false);
   });
 
-  it("cannot represent a flag with no triggering phrase", () => {
+  it("cannot represent a narrative flag with no triggering phrase", () => {
     const result = SeriousnessFlags.safeParse({
       ...NO_SERIOUSNESS_FLAGS,
       death: {
-        suggestedBy: "model",
+        basis: "narrative",
+        trigger: null,
+        assertedBy: "model",
         confirmedByReviewer: false,
         rejectedByReviewer: false,
       },
@@ -248,13 +253,44 @@ describe("seriousness", () => {
     expect(result.error?.issues[0]?.path).toEqual(["death", "trigger"]);
   });
 
+  it("accepts a flag a reporter simply declared, with no phrase", () => {
+    // A ticked box on the public form. There are no character offsets in a
+    // checkbox, and pretending otherwise would be inventing evidence.
+    const result = SeriousnessFlags.safeParse({
+      ...NO_SERIOUSNESS_FLAGS,
+      death: {
+        basis: "declared",
+        trigger: null,
+        assertedBy: "reporter",
+        confirmedByReviewer: false,
+        rejectedByReviewer: false,
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("refuses a declared flag that claims a phrase it cannot have", () => {
+    const result = SeriousnessFlags.safeParse({
+      ...NO_SERIOUSNESS_FLAGS,
+      death: {
+        basis: "declared",
+        trigger: { quote: "died", start: 0, end: 4 },
+        assertedBy: "reporter",
+        confirmedByReviewer: false,
+        rejectedByReviewer: false,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it("cannot represent a flag whose span is backwards", () => {
     expect(
       SeriousnessFlags.safeParse({
         ...NO_SERIOUSNESS_FLAGS,
         death: {
+          basis: "narrative",
           trigger: { quote: "died", start: 40, end: 10 },
-          suggestedBy: "model",
+          assertedBy: "model",
           confirmedByReviewer: false,
           rejectedByReviewer: false,
         },

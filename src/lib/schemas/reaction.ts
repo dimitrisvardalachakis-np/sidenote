@@ -6,7 +6,7 @@
  * where a wrong shape has a regulatory consequence rather than a cosmetic one.
  */
 import { z } from "zod";
-import { NarrativeSpan, Provenance, ReactionId, IsoDate } from "./primitives";
+import { NarrativeSpan, ReactionId, IsoDate } from "./primitives";
 
 // ---------------------------------------------------------------------------
 // The six seriousness criteria
@@ -43,19 +43,60 @@ export const SERIOUSNESS_LABELS: Readonly<
 };
 
 /**
- * A single raised flag.
+ * How a flag came to be raised.
  *
- * `trigger` is required, not nullable. CLAUDE.md says the app highlights the
- * exact phrase that triggered each flag, so a flag with no phrase behind it is
- * not a thing this system can represent. That is deliberate: it makes an
- * unevidenced seriousness flag unconstructible rather than merely discouraged.
+ * `narrative` — read out of the case narrative, and therefore carrying the
+ * exact phrase. CLAUDE.md says the app highlights the phrase that triggered
+ * each flag, and this is the case that promise is about.
+ *
+ * `declared` — asserted outright, with no phrase to point at. A public
+ * reporter ticking "they went into hospital" is a declaration, not an
+ * extraction: there are no character offsets in a checkbox. Step 5 deferred
+ * this and the seeded fixtures force the answer, because a case that arrived
+ * through the public form genuinely has flags of this kind.
+ *
+ * Keeping both in one shape rather than a discriminated union is a trade: the
+ * compiler no longer narrows `trigger` for free, but hospitalisation can still
+ * extend the shape, and the refinement below makes a narrative flag without
+ * its phrase unconstructible at runtime — which was the guarantee worth
+ * having.
  */
-export const SeriousnessAssertion = z.object({
-  trigger: NarrativeSpan,
-  suggestedBy: Provenance,
+export const SeriousnessBasis = z.enum(["narrative", "declared"]);
+export type SeriousnessBasis = z.output<typeof SeriousnessBasis>;
+
+/** Who put the flag there. A reporter can only ever declare. */
+export const AssertedBy = z.enum(["model", "reporter", "reviewer"]);
+export type AssertedBy = z.output<typeof AssertedBy>;
+
+const assertionShape = {
+  basis: SeriousnessBasis,
+  /** The exact words. Required when basis is `narrative`, null when declared. */
+  trigger: NarrativeSpan.nullable(),
+  assertedBy: AssertedBy,
   confirmedByReviewer: z.boolean(),
   rejectedByReviewer: z.boolean(),
-});
+};
+
+/**
+ * A narrative flag must carry its phrase; a declared one must not pretend to.
+ * Both halves matter — a declared flag with a span would be inventing evidence.
+ */
+function evidenceMatchesBasis(assertion: {
+  readonly basis: SeriousnessBasis;
+  readonly trigger: NarrativeSpan | null;
+}): boolean {
+  return (assertion.basis === "narrative") === (assertion.trigger !== null);
+}
+
+const EVIDENCE_RULE = {
+  message:
+    "A narrative-derived flag must carry the phrase it was read from, and a declared one must not claim a phrase it does not have",
+  path: ["trigger"],
+};
+
+export const SeriousnessAssertion = z
+  .object(assertionShape)
+  .refine(evidenceMatchesBasis, EVIDENCE_RULE);
 export type SeriousnessAssertion = z.output<typeof SeriousnessAssertion>;
 
 /**
@@ -64,9 +105,9 @@ export type SeriousnessAssertion = z.output<typeof SeriousnessAssertion>;
  * genuinely different events. Keeping the distinction here rather than
  * flattening it means the reviewer sees which one was reported.
  */
-export const HospitalisationAssertion = SeriousnessAssertion.extend({
-  kind: z.enum(["initial", "prolonged"]),
-});
+export const HospitalisationAssertion = z
+  .object({ ...assertionShape, kind: z.enum(["initial", "prolonged"]) })
+  .refine(evidenceMatchesBasis, EVIDENCE_RULE);
 export type HospitalisationAssertion = z.output<
   typeof HospitalisationAssertion
 >;
