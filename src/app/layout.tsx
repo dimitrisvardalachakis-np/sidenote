@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { DemoBanner } from "@/components/demo-banner";
+import { AppShell } from "@/components/app-shell";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -28,9 +28,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             to dark. See src/lib/theme.ts for why this is not an effect. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="flex min-h-full flex-col bg-paper text-ink">
-        <DemoBanner />
-        <div className="flex flex-1 flex-col">{children}</div>
+      <body className="min-h-full bg-paper text-ink">
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -1,17 +1,16 @@
 import Link from "next/link";
 
 /**
- * The landing page, written as documentation rather than marketing.
+ * The front door: choose an area.
  *
- * CLAUDE.md rules out hero sections, gradients and marketing copy, which
- * leaves the honest version: say what the tool does, name the two ways in,
- * and get out of the way. The one concession to it being a front door is a
- * slightly wider measure than the app screens use, because this is the only
- * page anyone reads in paragraphs.
+ * Written as documentation, not marketing — no hero, no gradient, no
+ * illustration. The two cards are the two jobs this tool does, and the copy
+ * says plainly which one applies to you, because a patient landing here after
+ * a bad reaction should not have to work out whether they are a "reviewer".
  */
 export default function LandingPage() {
   return (
-    <main className="mx-auto w-full max-w-[68ch] px-4 py-10">
+    <main className="mx-auto w-full max-w-[70ch] px-4 py-10">
       <h1 className="text-title font-medium">SideNote</h1>
       <p className="mt-1 text-meta uppercase tracking-label text-slate">
         Drug safety case triage
@@ -26,56 +25,59 @@ export default function LandingPage() {
         notified within 15 days.
       </p>
       <p className="mt-4 text-prose">
-        Today that means a human opening PDFs and reading. SideNote does the
-        reading. It finds the relevant passage in the company&rsquo;s own safety
-        documents and in the public FDA label, shows both side by side with
-        citations, and the reviewer decides.
-      </p>
-
-      <h2 className="mt-8 text-base font-medium">What the model does and does not do</h2>
-      <p className="mt-2 text-prose">
-        It extracts, retrieves, drafts and cites. It does not decide. Every
-        claim on screen carries a chunk id and the quoted span it came from; a
-        claim without one is not rendered at all. The reviewer accepts or
-        rejects, and every decision is logged.
-      </p>
-
-      <h2 className="mt-8 text-base font-medium">Two sources, which may disagree</h2>
-      <p className="mt-2 text-prose">
-        <span className="font-medium">Listedness</span> asks whether the
-        reaction appears in the company&rsquo;s core safety document.{" "}
-        <span className="font-medium">Expectedness</span> asks whether it
-        appears in the public FDA label. The company document is usually
-        updated first, so the two can disagree. When they do, that is the
-        headline of the case, not an error.
+        SideNote does the reading. It finds the relevant passage in the
+        company&rsquo;s own safety documents and in the public FDA label, shows
+        both side by side with citations, and the reviewer decides.
       </p>
 
       <hr className="my-8" />
 
-      <nav aria-label="Entry points" className="flex flex-col gap-3">
-        <Link
-          href="/report"
-          className="group border border-rule p-3 hover:bg-row-hover rounded-soft"
-        >
-          <span className="text-base font-medium group-hover:text-steady">
-            Report a side effect
-          </span>
-          <span className="mt-1 block text-meta text-slate">
-            For patients and carers. No account needed.
-          </span>
-        </Link>
-        <Link
+      <h2 className="text-micro uppercase tracking-label text-slate">
+        Which are you?
+      </h2>
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Choice
+          href="/report/chat"
+          title="I want to report a side effect"
+          body="For patients, carers and clinicians. No account needed. Describe what happened in your own words and we will ask for the rest."
+          action="Start a report"
+        />
+        <Choice
           href="/queue"
-          className="group border border-rule p-3 hover:bg-row-hover rounded-soft"
-        >
-          <span className="text-base font-medium group-hover:text-steady">
-            Reviewer queue
-          </span>
-          <span className="mt-1 block text-meta text-slate">
-            Triage incoming cases against the safety documents.
-          </span>
-        </Link>
-      </nav>
+          title="I am a safety reviewer"
+          body="Triage incoming cases against the company safety documents and the public label, with the 15-day clock enforced."
+          action="Open the queue"
+        />
+      </div>
+
+      <p className="mt-6 text-meta text-slate">
+        Both areas stay in the menu on the left, so you can move between them at
+        any time.
+      </p>
     </main>
+  );
+}
+
+function Choice({
+  href,
+  title,
+  body,
+  action,
+}: {
+  href: string;
+  title: string;
+  body: string;
+  action: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group block border border-rule p-4 rounded-soft hover:bg-row-hover"
+    >
+      <h3 className="text-base font-medium group-hover:text-steady">{title}</h3>
+      <p className="mt-1 text-meta text-slate">{body}</p>
+      <p className="mt-3 text-meta text-steady">{action} →</p>
+    </Link>
   );
 }

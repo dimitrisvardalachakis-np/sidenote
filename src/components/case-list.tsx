@@ -4,12 +4,14 @@ import {
   caseValidity,
   expeditedClock,
   flaggedCriteria,
+  isSerious,
   sourcesDisagree,
   standingListedness,
+  type Case,
   type ExpeditedClock,
   type IsoDate,
 } from "@/lib/schemas";
-import type { SeededCase } from "@/lib/fixtures/seed";
+import type { QueueEntry } from "@/lib/queue/entries";
 
 /**
  * How a clock reads on screen.
@@ -46,7 +48,24 @@ export function clockLabel(clock: ExpeditedClock): {
   }
 }
 
-function CountdownRail({ clock }: { clock: ExpeditedClock }) {
+/**
+ * What an unassessed case shows instead of a countdown.
+ *
+ * Deliberately NOT --signal. A serious case that nobody has assessed may well
+ * turn out to be expedited — and if it does, the clock has been running since
+ * Day 0 — but "might be urgent" and "is overdue" are different claims, and
+ * spending the red on the first devalues it for the second. It gets emphasis
+ * in --ink instead, and sorts directly below the real deadlines.
+ */
+function unassessedLabel(record: Case): { text: string; urgent: boolean } {
+  const serious = record.reactions.some((r) => isSerious(r.seriousness));
+  return {
+    text: serious ? "assess now" : "not assessed",
+    urgent: false,
+  };
+}
+
+function CountdownRail({ clock }: { clock: ExpeditedClock | null }) {
   /**
    * The rail is the left edge of the row, not a badge.
    *
@@ -54,7 +73,7 @@ function CountdownRail({ clock }: { clock: ExpeditedClock }) {
    * there means it is legible without reading a single word, and it costs no
    * horizontal space in a table that is already dense.
    */
-  const urgent = clock.state !== "not_applicable";
+  const urgent = clock !== null && clock.state !== "not_applicable";
   return (
     <span
       aria-hidden="true"
@@ -72,18 +91,23 @@ export function CaseRow({
   compact,
   current,
 }: {
-  seeded: SeededCase;
+  seeded: QueueEntry;
   today: IsoDate;
   compact: boolean;
   current: boolean;
 }) {
   const { record, assessment } = seeded;
-  const listed = standingListedness(assessment);
-  const clock = expeditedClock(record, listed === "unlisted", today);
-  const label = clockLabel(clock);
+  // Not assessed yet: nobody has looked, so nothing can be concluded about
+  // listedness and no clock can be computed. See QueueEntry.
+  const listed = assessment === null ? null : standingListedness(assessment);
+  const clock =
+    assessment === null
+      ? null
+      : expeditedClock(record, listed === "unlisted", today);
+  const label = clock === null ? unassessedLabel(record) : clockLabel(clock);
   const validity = caseValidity(record);
   const flags = record.reactions.flatMap((r) => flaggedCriteria(r.seriousness));
-  const disagrees = sourcesDisagree(assessment);
+  const disagrees = assessment !== null && sourcesDisagree(assessment);
 
   return (
     <li className="border-b border-rule">
@@ -154,7 +178,7 @@ export function CaseList({
   compact = false,
   currentId = null,
 }: {
-  cases: readonly SeededCase[];
+  cases: readonly QueueEntry[];
   today: IsoDate;
   compact?: boolean;
   currentId?: string | null;
