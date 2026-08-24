@@ -15,29 +15,13 @@
  */
 import { z } from "zod";
 import { SERIOUSNESS_CRITERIA } from "./reaction";
+import {
+  blankToNull,
+  blankToNullNumber,
+  firstErrorPerField,
+  formText,
+} from "./form-helpers";
 
-/**
- * HTML form controls only ever produce strings, and an untouched field
- * produces "". Treating that as null rather than as the string "" is what
- * lets the rest of the schema say `.nullable()` and mean it.
- */
-function blankToNull<T extends z.ZodType>(schema: T) {
-  return z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
-    schema.nullable(),
-  );
-}
-
-/** As above, but for a number arriving as text. */
-function blankToNullNumber<T extends z.ZodType>(schema: T) {
-  return z.preprocess((v) => {
-    if (typeof v !== "string") return v;
-    const trimmed = v.trim();
-    if (trimmed === "") return null;
-    const parsed = Number(trimmed);
-    return Number.isNaN(parsed) ? v : parsed;
-  }, schema.nullable());
-}
 
 /**
  * How the reporter is connected to the person affected. Deliberately in plain
@@ -255,21 +239,7 @@ export type PublicReportFieldErrors = Partial<
 >;
 
 export function toFieldErrors(error: z.ZodError): PublicReportFieldErrors {
-  const errors: PublicReportFieldErrors = {};
-  for (const issue of error.issues) {
-    const first = issue.path[0];
-    const key = typeof first === "string" ? first : "form";
-    if (!(key in errors)) {
-      Object.assign(errors, { [key]: issue.message });
-    }
-  }
-  return errors;
-}
-
-/** FormData gives strings or nothing. Normalise once. */
-function text(formData: FormData, key: string): string {
-  const value = formData.get(key);
-  return typeof value === "string" ? value : "";
+  return firstErrorPerField<keyof PublicReport & string>(error);
 }
 
 /**
@@ -283,31 +253,31 @@ function text(formData: FormData, key: string): string {
  */
 export function readReportFormValues(formData: FormData): ReportFormValues {
   return {
-    patientInitials: text(formData, "patientInitials"),
-    patientAgeYears: text(formData, "patientAgeYears"),
-    patientSex: text(formData, "patientSex"),
-    reporterName: text(formData, "reporterName"),
-    reporterEmail: text(formData, "reporterEmail"),
-    reporterPhone: text(formData, "reporterPhone"),
-    reporterCountry: text(formData, "reporterCountry"),
-    relationship: text(formData, "relationship"),
+    patientInitials: formText(formData, "patientInitials"),
+    patientAgeYears: formText(formData, "patientAgeYears"),
+    patientSex: formText(formData, "patientSex"),
+    reporterName: formText(formData, "reporterName"),
+    reporterEmail: formText(formData, "reporterEmail"),
+    reporterPhone: formText(formData, "reporterPhone"),
+    reporterCountry: formText(formData, "reporterCountry"),
+    relationship: formText(formData, "relationship"),
     // An unchecked box sends nothing at all, which is why this is a presence
     // test and not a comparison against "true".
     contactPermitted: formData.get("contactPermitted") !== null,
-    medicineName: text(formData, "medicineName"),
-    medicineDose: text(formData, "medicineDose"),
-    medicineReason: text(formData, "medicineReason"),
-    startedOn: text(formData, "startedOn"),
-    stoppedOn: text(formData, "stoppedOn"),
-    reactionTerm: text(formData, "reactionTerm"),
-    narrative: text(formData, "narrative"),
-    onset: text(formData, "onset"),
-    outcome: text(formData, "outcome"),
+    medicineName: formText(formData, "medicineName"),
+    medicineDose: formText(formData, "medicineDose"),
+    medicineReason: formText(formData, "medicineReason"),
+    startedOn: formText(formData, "startedOn"),
+    stoppedOn: formText(formData, "stoppedOn"),
+    reactionTerm: formText(formData, "reactionTerm"),
+    narrative: formText(formData, "narrative"),
+    onset: formText(formData, "onset"),
+    outcome: formText(formData, "outcome"),
     seriousOutcomes: formData
       .getAll("seriousOutcomes")
       .filter((v): v is string => typeof v === "string"),
-    stoppedTaking: text(formData, "stoppedTaking"),
-    improvedAfterStopping: text(formData, "improvedAfterStopping"),
+    stoppedTaking: formText(formData, "stoppedTaking"),
+    improvedAfterStopping: formText(formData, "improvedAfterStopping"),
   };
 }
 
