@@ -137,3 +137,63 @@ Next 16 has breaking changes against older knowledge; its docs are vendored at
 `node_modules/next/dist/docs/`. Note that `next lint` is gone and `next build`
 no longer runs ESLint, which is why `npm run build` chains `eslint` in front of
 `next build` — that chain is what makes non-negotiable #1 fail the build.
+
+## Running on Cloudflare Workers (Cluster C)
+
+The app is built for Workers by `@opennextjs/cloudflare`, which translates the
+Node server `next build` produces into a Worker. Configuration is split in two
+on purpose: `open-next.config.ts` is how the app is *built*, `wrangler.jsonc`
+is what it is *bound to*.
+
+    npm run build          lint + next build          the Node build, unchanged
+    npm run build:worker   lint + opennext build      the Worker bundle
+    npm run preview        wrangler dev on the bundle boots it on workerd
+    npm run deploy         upload it
+    npm run cf-typegen     regenerate worker-configuration.d.ts
+
+Run `cf-typegen` after every change to `wrangler.jsonc`. It writes the binding
+types, it is typechecked, and it is excluded from lint only because its
+generator emits a blanket `eslint-disable`.
+
+**Secrets.** `TURNSTILE_SITE_KEY` is public and ships in the page's markup;
+`TURNSTILE_SECRET_KEY` never leaves the server. Locally both go in `.dev.vars`
+(gitignored); deployed, the secret goes in `wrangler secret put`. Neither is
+declared as a `var` in `wrangler.jsonc`, because `wrangler types` gives a
+declared var a *literal* type and every "is it configured?" check would then be
+a comparison the compiler had already decided.
+
+**What is deliberately still missing.** D1, R2, KV and Durable Objects are
+Cluster D, so on Workers the three stores fall back to per-isolate memory. That
+is announced rather than hidden: every write emits `[AUDIT] ephemeral_write`,
+and the banner on every page gains "storage is temporary here, saved work can
+be lost". See `src/lib/store/backing.ts`.
+
+### The three modules that will not run on the edge
+
+Two of them ship, and both build cleanly before failing — which is the whole
+danger.
+
+1. **`pdfjs-dist`** (standing in for `pdf-parse` and friends, as CLAUDE.md
+   says). pdf.js throws `DOMMatrix is not defined` on import outside a browser,
+   and `pdf-parse` imports `fs` outright. Handled by extracting text in the
+   browser: `src/lib/ingest/pdf-client.ts` is the one deliberately
+   non-portable module in `src/lib`, and it loads pdf.js by dynamic import so
+   the parser never reaches a server bundle.
+
+2. **`node:fs/promises` and `node:path`**, used by all three stores. Workers has
+   no filesystem — not a read-only one, none — but `nodejs_compat` resolves the
+   imports happily, so the bundle builds, the Worker boots, and the failure
+   arrives the first time somebody saves something. Handled by
+   `src/lib/store/backing.ts`: every `node:` import in `src/` is now behind
+   `nodeFs()`/`nodePath()`, which throw on Workers rather than letting a caller
+   discover the problem at a write.
+
+3. **`jsdom`**, and the `@testing-library` stack that pulls it in. It imports
+   `node:fs`, `node:net` and `node:vm`, and it must never reach the shipping
+   path at all. Kept out by vitest defaulting to the `node` environment, so a
+   component test opts in with a `// @vitest-environment jsdom` docblock rather
+   than every module getting a DOM it should not have.
+
+A fourth is worth knowing about even though it is a built-in and not a module:
+`Intl.Segmenter` is unevenly available on Workers, which is why `chunk.ts`
+detects sentences by hand instead of using the obvious tool.

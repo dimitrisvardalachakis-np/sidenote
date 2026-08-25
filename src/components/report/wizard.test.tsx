@@ -100,7 +100,7 @@ describe("the whole form by keyboard", () => {
 
   it("completes all five steps and sends, using only the keyboard", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard turnstileSiteKey={null} />);
 
     // ---- Step 1 -------------------------------------------------------
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
@@ -170,7 +170,7 @@ describe("the whole form by keyboard", () => {
 
   it("will not send while something is still needed, and says what", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard turnstileSiteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
 
@@ -204,11 +204,11 @@ describe("the whole form by keyboard", () => {
 
   it("keeps answers across a remount, the way a refresh would", async () => {
     const user = userEvent.setup();
-    const first = render(<ReportWizard />);
+    const first = render(<ReportWizard turnstileSiteKey={null} />);
     await chooseRadio(user, "It happened to someone else");
     first.unmount();
 
-    render(<ReportWizard />);
+    render(<ReportWizard turnstileSiteKey={null} />);
     expect(
       screen.getByLabelText("It happened to someone else"),
     ).toBeChecked();

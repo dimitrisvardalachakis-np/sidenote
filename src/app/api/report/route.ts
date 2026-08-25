@@ -26,8 +26,10 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   // A partner system proves itself with a credential, not a browser widget,
-  // so there is no Turnstile token on this path. The rate limit still applies.
-  const outcome = await submitReport(body, { botToken: null });
+  // so the bot check does not apply on this path and says so explicitly. Were
+  // this to pass a null token instead, configuring a Turnstile secret would
+  // silently close this endpoint. The rate limit still applies.
+  const outcome = await submitReport(body, { kind: "machine" });
 
   switch (outcome.status) {
     case "created":
@@ -39,10 +41,15 @@ export async function POST(request: Request): Promise<Response> {
     case "malformed":
       return Response.json(outcome, { status: 400 });
     case "blocked":
-      return Response.json(outcome, {
-        status: 429,
-        headers: { "Retry-After": String(outcome.retryAfterSeconds) },
-      });
+      // 429 means "come back later" and is only true of the rate limit. A bot
+      // rejection is 403: retrying changes nothing, and a client told 429 will
+      // retry forever.
+      return outcome.reason === "rate_limited"
+        ? Response.json(outcome, {
+            status: 429,
+            headers: { "Retry-After": String(outcome.retryAfterSeconds) },
+          })
+        : Response.json(outcome, { status: 403 });
     case "failed":
       return Response.json(outcome, { status: 500 });
   }

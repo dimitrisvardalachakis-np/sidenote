@@ -10,6 +10,13 @@ export default defineConfig({
     // against a module the app never loads.
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // See vitest.server-only-stub.ts for why this is aliased rather than
+      // resolved: the real module throws unless the "react-server" condition
+      // is on, and turning that on globally would change how every other
+      // package resolves.
+      "server-only": fileURLToPath(
+        new URL("./vitest.server-only-stub.ts", import.meta.url),
+      ),
     },
   },
   test: {

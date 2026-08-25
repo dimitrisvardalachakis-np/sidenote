@@ -1,4 +1,5 @@
 import { ChatPanel } from "./chat-panel";
+import { getTurnstileSiteKey } from "@/lib/protection/bot-gate";
 
 /**
  * Conversational intake.
@@ -8,7 +9,9 @@ import { ChatPanel } from "./chat-panel";
  * Telling a member of the public they are talking to an AI when they are not
  * would be the kind of small lie that makes everything else suspect.
  */
-export default function ChatIntakePage() {
+export default async function ChatIntakePage() {
+  const turnstileSiteKey = await getTurnstileSiteKey();
+
   return (
     <main className="mx-auto w-full max-w-[70ch] px-4 py-8">
       <h1 className="text-title font-medium">Report by chat</h1>
@@ -31,7 +34,7 @@ export default function ChatIntakePage() {
       </div>
 
       <div className="mt-6">
-        <ChatPanel />
+        <ChatPanel turnstileSiteKey={turnstileSiteKey} />
       </div>
     </main>
   );

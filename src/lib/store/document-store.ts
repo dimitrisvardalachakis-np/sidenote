@@ -1,18 +1,24 @@
 import "server-only";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import type { IsoDateTime } from "@/lib/schemas";
+import {
+  announceEphemeralWrite,
+  dataPath,
+  ephemeralSingleton,
+  nodeFs,
+  nodePath,
+  storageBacking,
+} from "./backing";
 
 /**
  * DocumentStore — where the original uploaded bytes live.
  *
  * Shaped deliberately like R2Bucket: put(key, bytes), get(key), list(prefix).
- * Cluster D replaces LocalFileDocumentStore with a class that forwards to an
- * R2 binding and changes one line in getDocumentStore(). No component, page
- * or action learns the difference, which is the whole point of the brief's
- * "so Cluster D can swap in R2 without touching the UI".
+ * Cluster D replaces both implementations below with one class that forwards
+ * to an R2 binding and changes one line in getDocumentStore(). No component,
+ * page or action learns the difference, which is the whole point of the
+ * brief's "so Cluster D can swap in R2 without touching the UI".
  *
- * Two things stay true across both implementations:
+ * Two things stay true across every implementation:
  *
  * 1. The application only ever holds the OBJECT KEY. The bytes are written
  *    once and read back only to serve a download. CLAUDE.md is explicit that
@@ -42,13 +48,16 @@ export interface DocumentStore {
   list(prefix?: string): Promise<readonly StoredObject[]>;
 }
 
-const OBJECTS_DIR = join(process.cwd(), ".data", "objects");
-
 /**
- * Object keys become path segments on this implementation, so a key is not
- * merely a name — it is untrusted input that gets concatenated onto a
+ * Object keys become path segments on the local implementation, so a key is
+ * not merely a name — it is untrusted input that gets concatenated onto a
  * filesystem path. Anything outside this shape is refused before it touches
  * the disk. R2 would not care; the local store very much does.
+ *
+ * Enforced on the ephemeral store too, even though a Map cannot be escaped
+ * from. A validation that only runs on one implementation is a validation that
+ * disappears the day the other one is the default, and the bug it was written
+ * to stop comes back on the runtime nobody tested it on.
  */
 const SAFE_KEY = /^[a-z]+\/[A-Za-z0-9._-]+$/;
 
@@ -81,10 +90,12 @@ class LocalFileDocumentStore implements DocumentStore {
   async put(
     key: string,
     bytes: Uint8Array,
-    meta: { contentType: string; filename: string },
+    meta: { readonly contentType: string; readonly filename: string },
   ): Promise<StoredObject> {
     assertSafeKey(key);
-    const path = join(OBJECTS_DIR, key);
+    const { mkdir, writeFile } = await nodeFs();
+    const { dirname, join } = await nodePath();
+    const path = join(await dataPath("objects"), key);
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, bytes);
 
@@ -102,28 +113,32 @@ class LocalFileDocumentStore implements DocumentStore {
 
   async get(key: string): Promise<Uint8Array | null> {
     assertSafeKey(key);
+    const { readFile } = await nodeFs();
+    const { join } = await nodePath();
     try {
-      return new Uint8Array(await readFile(join(OBJECTS_DIR, key)));
+      return new Uint8Array(await readFile(join(await dataPath("objects"), key)));
     } catch {
       return null;
     }
   }
 
   async list(prefix?: string): Promise<readonly StoredObject[]> {
-    const prefixes = await readdir(OBJECTS_DIR, { withFileTypes: true }).catch(
+    const { readFile, readdir } = await nodeFs();
+    const { join } = await nodePath();
+    const root = await dataPath("objects");
+    const prefixes = await readdir(root, { withFileTypes: true }).catch(
       () => [],
     );
     const objects: StoredObject[] = [];
     for (const entry of prefixes) {
       if (!entry.isDirectory()) continue;
       if (prefix !== undefined && !entry.name.startsWith(prefix)) continue;
-      const names = await readdir(join(OBJECTS_DIR, entry.name)).catch(() => []);
+      const names = await readdir(join(root, entry.name)).catch(() => []);
       for (const name of names) {
         if (!name.endsWith(".meta.json")) continue;
-        const raw = await readFile(
-          join(OBJECTS_DIR, entry.name, name),
-          "utf8",
-        ).catch(() => null);
+        const raw = await readFile(join(root, entry.name, name), "utf8").catch(
+          () => null,
+        );
         if (raw !== null) objects.push(JSON.parse(raw) as StoredObject);
       }
     }
@@ -131,9 +146,57 @@ class LocalFileDocumentStore implements DocumentStore {
   }
 }
 
-const store: DocumentStore = new LocalFileDocumentStore();
+/**
+ * Workers, until Cluster D binds R2.
+ *
+ * Holds the bytes in the isolate, which is the least defensible of the three
+ * ephemeral stores in memory terms — a 12MB CCDS is 12MB of isolate. It is
+ * bounded by the fact that Workers recycles isolates and by the same upload
+ * limit the local path has, and it is temporary by construction: R2 is one
+ * cluster away and this class is deleted when it lands.
+ */
+class EphemeralDocumentStore implements DocumentStore {
+  readonly #objects = new Map<string, { bytes: Uint8Array; meta: StoredObject }>();
+
+  async put(
+    key: string,
+    bytes: Uint8Array,
+    meta: { readonly contentType: string; readonly filename: string },
+  ): Promise<StoredObject> {
+    assertSafeKey(key);
+    const stored: StoredObject = {
+      key,
+      byteLength: bytes.byteLength,
+      contentType: meta.contentType,
+      filename: meta.filename,
+      storedAt: new Date().toISOString(),
+    };
+    // Copied, not referenced. The caller built this from a request body it is
+    // free to reuse, and a store that hands back a view of somebody else's
+    // buffer is a bug that shows up as corrupted downloads much later.
+    this.#objects.set(key, { bytes: new Uint8Array(bytes), meta: stored });
+    announceEphemeralWrite("document_store", key);
+    return stored;
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    assertSafeKey(key);
+    const found = this.#objects.get(key);
+    return found === undefined ? null : new Uint8Array(found.bytes);
+  }
+
+  async list(prefix?: string): Promise<readonly StoredObject[]> {
+    return [...this.#objects.values()]
+      .map((entry) => entry.meta)
+      .filter((meta) => prefix === undefined || meta.key.startsWith(prefix))
+      .sort((a, b) => a.storedAt.localeCompare(b.storedAt));
+  }
+}
+
+const localStore: DocumentStore = new LocalFileDocumentStore();
 
 /** The one line Cluster D changes. */
 export function getDocumentStore(): DocumentStore {
-  return store;
+  if (storageBacking() !== "ephemeral") return localStore;
+  return ephemeralSingleton("document_store", () => new EphemeralDocumentStore());
 }

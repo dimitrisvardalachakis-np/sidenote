@@ -1,4 +1,5 @@
 import { ReportWizard } from "@/components/report/wizard";
+import { getTurnstileSiteKey } from "@/lib/protection/bot-gate";
 
 /**
  * The public report form.
@@ -7,8 +8,15 @@ import { ReportWizard } from "@/components/report/wizard";
  * may be reading in their second language, so the whole surface avoids
  * regulatory wording. Nothing here asks anyone to classify anything; the
  * mapping onto the regulatory concepts happens on our side of the line.
+ *
+ * The site key is read on the server and handed down. The alternative —
+ * NEXT_PUBLIC_TURNSTILE_SITE_KEY inlined at build time — would bake one
+ * environment's key into the bundle, so a preview deployment and production
+ * could not have different ones without rebuilding.
  */
-export default function ReportPage() {
+export default async function ReportPage() {
+  const turnstileSiteKey = await getTurnstileSiteKey();
+
   return (
     <main className="mx-auto w-full max-w-[62ch] px-4 py-8">
       <h1 className="text-title font-medium">Report a side effect</h1>
@@ -22,7 +30,7 @@ export default function ReportPage() {
       </p>
 
       <div className="mt-6">
-        <ReportWizard />
+        <ReportWizard turnstileSiteKey={turnstileSiteKey} />
       </div>
     </main>
   );

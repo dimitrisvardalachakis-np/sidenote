@@ -8,7 +8,7 @@ import {
   missingElements,
   type MissingElement,
 } from "@/lib/schemas/report";
-import { guardPublicSubmission } from "@/lib/protection/guard";
+import { guardPublicSubmission, type Caller } from "@/lib/protection/guard";
 import { reportToCase } from "./to-case";
 
 /**
@@ -40,22 +40,46 @@ export type SubmitOutcome =
   | {
       /** Turned away by the rate limit or the bot check. */
       readonly status: "blocked";
+      /**
+       * Which one. The transports need to tell them apart: "too many requests"
+       * and "you do not look like a person" are different HTTP answers, and a
+       * caller told 429 for a bot rejection will retry forever.
+       */
+      readonly reason: "rate_limited" | "bot";
       readonly retryAfterSeconds: number;
       readonly message: string;
     }
   | { readonly status: "failed"; readonly message: string };
 
+/**
+ * Who is submitting, and therefore whether a bot check even applies.
+ *
+ * REQUIRED, and a discriminated union rather than an optional token, for the
+ * same reason `audience` is required on assessAgainstDocuments: a default here
+ * is a decision nobody makes and everybody inherits.
+ *
+ * Turnstile is a browser widget. A partner system posting JSON cannot produce
+ * a token, so if "no token" meant "rejected", the day somebody configured a
+ * Turnstile secret would be the day this endpoint quietly stopped accepting
+ * machine-submitted safety reports — with a 400-level answer that blames the
+ * caller. Machine callers are still rate limited, and in a real deployment
+ * would carry a credential; that is the seam, and it is named rather than
+ * implied.
+ */
+export type SubmitCaller = Caller;
+
 export async function submitReport(
   input: unknown,
-  options: { readonly botToken?: string | null } = {},
+  caller: SubmitCaller,
 ): Promise<SubmitOutcome> {
   // Protection first, before any work is done on the input. An endpoint that
   // parses and stores before checking whether it should have is an endpoint
   // that can be made to do work for free.
-  const guard = await guardPublicSubmission(options.botToken ?? null);
+  const guard = await guardPublicSubmission(caller);
   if (!guard.allowed) {
     return {
       status: "blocked",
+      reason: guard.reason,
       retryAfterSeconds: guard.retryAfterSeconds,
       message: guard.message,
     };

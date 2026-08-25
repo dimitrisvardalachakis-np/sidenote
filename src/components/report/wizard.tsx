@@ -8,6 +8,7 @@ import { StepHospital } from "./step-hospital";
 import { StepMedicine } from "./step-medicine";
 import { StepYou } from "./step-you";
 import { submitReportAction } from "@/app/report/submit-action";
+import { TurnstileWidget, useTurnstile } from "@/components/protection/turnstile";
 import type { SubmitOutcome } from "@/lib/report/submit";
 import {
   clearDraft,
@@ -38,8 +39,18 @@ import { isAnswered } from "@/lib/schemas/answer";
  * inside a wizard usually means "undo my last answer", but on a URL-driven
  * wizard it means "leave the form", and people lose their work to it. Back and
  * Next are on the page where they can be seen and reached by keyboard.
+ *
+ * `turnstileSiteKey` is null when no Turnstile is configured, in which case no
+ * widget renders and the server side is the UnprotectedBotGate. Required
+ * rather than defaulted: a page that renders this form has to say whether the
+ * bot check is on, and "I forgot" should not be spelled the same way as "it is
+ * deliberately off".
  */
-export function ReportWizard() {
+export function ReportWizard({
+  turnstileSiteKey,
+}: {
+  readonly turnstileSiteKey: string | null;
+}) {
   const saved = useSyncExternalStore(
     subscribeToDraft,
     readDraft,
@@ -50,6 +61,7 @@ export function ReportWizard() {
 
   const [outcome, setOutcome] = useState<SubmitOutcome | null>(null);
   const [sending, setSending] = useState(false);
+  const turnstile = useTurnstile(turnstileSiteKey);
 
   const update = (patch: Partial<ReportDraft>) => {
     writeDraft({ ...saved, draft: { ...draft, ...patch } });
@@ -71,7 +83,7 @@ export function ReportWizard() {
       // The client checks first so the reporter is not made to wait for a
       // round trip to be told something the page already knew. The server
       // checks again regardless; that is the check that counts.
-      const result = await submitReportAction(draft);
+      const result = await submitReportAction(draft, turnstile.token);
       setOutcome(result);
       if (result.status === "created") {
         writeDraft({
@@ -81,6 +93,10 @@ export function ReportWizard() {
       }
     } finally {
       setSending(false);
+      // A token is single use. Whether that send succeeded or not, the one we
+      // just spent is now worthless, so ask for another before the reporter
+      // can press the button again.
+      turnstile.reset();
     }
   }
 
@@ -133,6 +149,14 @@ export function ReportWizard() {
 
   const missing = missingElements(draft);
   const onLastStep = stepIndex === STEP_IDS.length - 1;
+  // Turnstile is on the page but has not produced a token yet. Sending now
+  // would be refused server-side for a missing token, which reads to the
+  // reporter as "you look like a robot" when in fact they were simply quick.
+  // On "error" the wait would never end, so the button is released and the
+  // server gets to give its own answer rather than the page hanging.
+  const awaitingChallenge =
+    turnstile.status === "loading" ||
+    (turnstile.status === "ready" && turnstile.token === null);
   const canLeaveFirstStep = isAnswered(draft.about);
   const progress = stepProgress(draft, stepId);
 
@@ -219,10 +243,15 @@ export function ReportWizard() {
             </div>
           )}
 
+          <TurnstileWidget
+            status={turnstile.status}
+            containerRef={turnstile.containerRef}
+          />
+
           <button
             type="button"
             onClick={() => void send()}
-            disabled={sending || missing.length > 0}
+            disabled={sending || missing.length > 0 || awaitingChallenge}
             className="mt-4 cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-not-allowed disabled:opacity-40"
           >
             {sending ? "Sending" : "Send my report"}

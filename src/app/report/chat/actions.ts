@@ -6,6 +6,7 @@ import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { guardPublicConversation } from "@/lib/protection/guard";
+import { TURNSTILE_TOKEN_FIELD } from "@/lib/protection/bot-gate";
 import type { ChatState } from "./chat-state";
 
 /**
@@ -34,7 +35,15 @@ export async function sendChatMessage(
   // The chat is anonymous and takes many turns, so it gets its own looser
   // ceiling. Checked before any retrieval runs: search is the expensive part
   // and doing it for an unthrottled caller is doing their work for them.
-  const guard = await guardPublicConversation();
+  //
+  // Turnstile's widget injects this hidden field into the form it sits in, so
+  // the token arrives with the message and no client code has to remember to
+  // attach it. Absent when Turnstile is not configured, which the gate reads
+  // as "no check ran" rather than as a failure.
+  const botToken = formData.get(TURNSTILE_TOKEN_FIELD);
+  const guard = await guardPublicConversation(
+    typeof botToken === "string" && botToken !== "" ? botToken : null,
+  );
   if (!guard.allowed) {
     return { ...previous, error: guard.message };
   }

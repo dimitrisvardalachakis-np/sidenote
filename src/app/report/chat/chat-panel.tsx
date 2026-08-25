@@ -6,6 +6,7 @@ import { sendChatMessage } from "./actions";
 import { initialChatState } from "./chat-state";
 import { remainingSlots, type IntakeMessage } from "@/lib/intake/conversation";
 import type { Citation } from "@/lib/schemas";
+import { TurnstileWidget, useTurnstile } from "@/components/protection/turnstile";
 
 const SLOT_LABELS: Readonly<Record<string, string>> = {
   drug: "the medicine",
@@ -67,7 +68,11 @@ function Message({ message }: { message: IntakeMessage }) {
   );
 }
 
-export function ChatPanel() {
+export function ChatPanel({
+  turnstileSiteKey,
+}: {
+  readonly turnstileSiteKey: string | null;
+}) {
   const [state, formAction, pending] = useActionState(
     sendChatMessage,
     initialChatState(),
@@ -75,6 +80,7 @@ export function ChatPanel() {
   const formRef = useRef<HTMLFormElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const count = state.intake.messages.length;
+  const turnstile = useTurnstile(turnstileSiteKey);
 
   // Clear the box and scroll to the newest turn once a message has landed.
   // Keyed on message count rather than `pending` so it does not fire on a
@@ -82,10 +88,26 @@ export function ChatPanel() {
   useEffect(() => {
     formRef.current?.reset();
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [count]);
+    // The token that came with that turn has been spent. Turnstile tokens are
+    // single use, so every turn needs its own; without this the second message
+    // would come back as `timeout-or-duplicate`.
+    turnstile.reset();
+    // `turnstile.reset` and not `turnstile`: the hook returns a fresh object
+    // every render, so depending on the object would run this effect on every
+    // render — and since reset() sets state, that is an endless loop. reset is
+    // useCallback'd with no dependencies and is stable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count, turnstile.reset]);
 
   const outstanding = remainingSlots(state.intake.slots);
   const done = state.intake.phase === "complete";
+  // Same reasoning as the five-step form: sending before the challenge has
+  // produced a token is refused server-side for a missing token, and the
+  // reporter reads that as being called a robot. "error" releases the button
+  // so a broken widget does not silently end the conversation.
+  const awaitingChallenge =
+    turnstile.status === "loading" ||
+    (turnstile.status === "ready" && turnstile.token === null);
 
   return (
     <div>
@@ -139,10 +161,15 @@ export function ChatPanel() {
             placeholder="Type here…"
             className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1.5 text-prose focus:outline-2 focus:outline-offset-1 focus:outline-steady"
           />
+          <TurnstileWidget
+            status={turnstile.status}
+            containerRef={turnstile.containerRef}
+          />
+
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
             <button
               type="submit"
-              disabled={pending || done}
+              disabled={pending || done || awaitingChallenge}
               className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-wait disabled:opacity-60"
             >
               {pending ? "Sending…" : "Send"}
