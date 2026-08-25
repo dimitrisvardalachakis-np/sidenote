@@ -1,7 +1,23 @@
 import "server-only";
+import { z } from "zod";
 import { buildSeedCases } from "@/lib/fixtures/seed";
 import { getCaseStore } from "@/lib/store/case-store";
-import type { Assessment, Case, IsoDate } from "@/lib/schemas";
+import { CACHE_KEY, TRIAGE_QUEUE_TTL_SECONDS, getCache } from "@/lib/cache/kv";
+import { Case } from "@/lib/schemas";
+import type { Assessment, IsoDate } from "@/lib/schemas";
+
+/**
+ * Only the submitted half is cached, and it is cached WITHOUT `today` in the
+ * key.
+ *
+ * The seeded fixtures are rebuilt against `today` on every call so the demo
+ * queue always shows a believable spread of clock states. Caching them would
+ * freeze that spread at whatever date the cache was warmed, and the queue
+ * would quietly stop ageing. The submitted cases are real rows and do not
+ * depend on the date at all, which is also what makes them the expensive half
+ * — three D1 round trips — and therefore the half worth caching.
+ */
+const SubmittedCases = z.array(Case);
 
 /**
  * One row in the reviewer queue.
@@ -34,7 +50,14 @@ export async function loadQueue(today: IsoDate): Promise<readonly QueueEntry[]> 
     assessment: s.assessment,
   }));
 
-  const submitted = await getCaseStore().list();
+  const cache = await getCache();
+  const store = await getCaseStore();
+  const submitted = await cache.cached(
+    CACHE_KEY.triageQueue,
+    SubmittedCases,
+    TRIAGE_QUEUE_TTL_SECONDS,
+    () => store.list().then((cases) => [...cases]),
+  );
   const submittedEntries: QueueEntry[] = submitted.map((record) => ({
     record,
     assessment: null,

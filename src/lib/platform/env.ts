@@ -69,7 +69,20 @@ export async function getCloudflareEnv(): Promise<CloudflareEnv | null> {
 }
 
 /**
- * Read one string binding, treating empty string as absent.
+ * The keys of CloudflareEnv whose value is a string.
+ *
+ * Computed rather than listed, so adding a new setting to the interface makes
+ * it readable here automatically — and so passing `DB` or `CACHE` by mistake
+ * is a compile error rather than a runtime `undefined`.
+ */
+type StringSettingKey = {
+  [K in keyof CloudflareEnv]-?: NonNullable<CloudflareEnv[K]> extends string
+    ? K
+    : never;
+}[keyof CloudflareEnv];
+
+/**
+ * Read one string setting, treating empty string as absent.
  *
  * A var set to "" is what a half-filled dashboard field or a `.dev.vars` line
  * with nothing after the `=` produces, and it means "not configured" every
@@ -78,7 +91,7 @@ export async function getCloudflareEnv(): Promise<CloudflareEnv | null> {
  */
 export function readSetting(
   env: CloudflareEnv | null,
-  key: "TURNSTILE_SITE_KEY" | "TURNSTILE_SECRET_KEY",
+  key: StringSettingKey,
 ): string | null {
   const fromBinding = env?.[key];
   if (typeof fromBinding === "string" && fromBinding !== "") return fromBinding;
@@ -86,7 +99,7 @@ export function readSetting(
   // process.env is the `next dev` path: .dev.vars is not loaded without the
   // adapter, but a developer exporting the variable in their shell should
   // still get the real code path rather than the stub.
-  const fromProcess = process.env[key];
+  const fromProcess = process.env[key as string];
   if (typeof fromProcess === "string" && fromProcess !== "") return fromProcess;
 
   return null;

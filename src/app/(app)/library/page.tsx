@@ -13,7 +13,7 @@ import { DOCUMENT_KIND_LABELS } from "@/lib/schemas/document-upload";
  * with a badge.
  */
 export default async function LibraryPage() {
-  const documents = await getDocumentLibrary().list();
+  const documents = await (await getDocumentLibrary()).list();
   const company = documents.filter((d) => d.sourceType === "company");
   const publicDocs = documents.filter((d) => d.sourceType === "public");
 

@@ -85,7 +85,7 @@ describe("EphemeralCaseStore", () => {
   it("round-trips a case and announces that the write is temporary", async () => {
     pretendToBeWorkers();
     const lines = captureAudit();
-    const store = getCaseStore();
+    const store = await getCaseStore();
 
     const id = "11111111-1111-4111-8111-111111111111";
     const record = caseRecord(id, "SN-2026-500001", NOW);
@@ -109,7 +109,7 @@ describe("EphemeralCaseStore", () => {
   it("returns null for an id that is not a uuid, without looking", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const store = getCaseStore();
+    const store = await getCaseStore();
     // Same refusal as the disk implementation, where it stops a caller
     // building a filename out of "../../etc/passwd".
     expect(await store.get("../../etc/passwd")).toBeNull();
@@ -119,7 +119,7 @@ describe("EphemeralCaseStore", () => {
   it("lists newest first, like the disk store", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const store = getCaseStore();
+    const store = await getCaseStore();
 
     await store.put(
       caseRecord(
@@ -148,7 +148,7 @@ describe("EphemeralDocumentStore", () => {
   it("round-trips bytes under a namespaced key", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const store = getDocumentStore();
+    const store = await getDocumentStore();
 
     const key = objectKeyFor(
       "company",
@@ -170,7 +170,7 @@ describe("EphemeralDocumentStore", () => {
   it("copies the bytes rather than keeping the caller's buffer", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const store = getDocumentStore();
+    const store = await getDocumentStore();
 
     const key = "company/55555555-5555-4555-8555-555555555555.pdf";
     const bytes = new Uint8Array([9, 9, 9]);
@@ -189,7 +189,7 @@ describe("EphemeralDocumentStore", () => {
   it("refuses an unsafe key on this runtime too", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const store = getDocumentStore();
+    const store = await getDocumentStore();
 
     // A Map cannot be escaped from, so this check is not load-bearing here —
     // which is exactly why it would get dropped, and why it is tested. It has
@@ -208,7 +208,7 @@ describe("EphemeralDocumentStore", () => {
   it("filters list() by prefix, as R2 does", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const store = getDocumentStore();
+    const store = await getDocumentStore();
 
     await store.put(
       "company/66666666-6666-4666-8666-666666666666.pdf",
@@ -237,7 +237,7 @@ describe("EphemeralDocumentLibrary", () => {
   it("refuses a document id that is not a uuid", async () => {
     pretendToBeWorkers();
     captureAudit();
-    const library = getDocumentLibrary();
+    const library = await getDocumentLibrary();
 
     // Deliberately malformed. The disk implementation would turn this straight
     // into a filename, so the guard has to hold on both runtimes — and proving

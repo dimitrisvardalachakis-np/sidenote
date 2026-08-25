@@ -1,5 +1,6 @@
 import "server-only";
 import type { IsoDateTime } from "@/lib/schemas";
+import { getCloudflareEnv } from "@/lib/platform/env";
 import {
   announceEphemeralWrite,
   dataPath,
@@ -193,10 +194,83 @@ class EphemeralDocumentStore implements DocumentStore {
   }
 }
 
+/**
+ * R2. The real one.
+ *
+ * Thin on purpose — the DocumentStore interface was shaped like R2Bucket from
+ * the start (put/get/list with a prefix), so this class is mostly a change of
+ * spelling. That was the bet Cluster A made when it kept this separate from
+ * DocumentLibrary, and it paid: no component, page or action changed.
+ *
+ * `httpMetadata` and `customMetadata` are R2's own fields, so the sidecar
+ * `.meta.json` file the local implementation has to write disappears here. One
+ * fewer object per document, and no possibility of the two drifting apart.
+ */
+class R2DocumentStore implements DocumentStore {
+  readonly #bucket: R2Bucket;
+
+  constructor(bucket: R2Bucket) {
+    this.#bucket = bucket;
+  }
+
+  async put(
+    key: string,
+    bytes: Uint8Array,
+    meta: { readonly contentType: string; readonly filename: string },
+  ): Promise<StoredObject> {
+    // Kept even though R2 has no filesystem to escape from. The key format is
+    // also the confidentiality namespace — `company/` or `public/` — and a key
+    // that does not match the shape is a key whose namespace we cannot vouch
+    // for. That matters more here than it did on disk, not less.
+    assertSafeKey(key);
+
+    const object = await this.#bucket.put(key, bytes, {
+      httpMetadata: { contentType: meta.contentType },
+      customMetadata: { filename: meta.filename },
+    });
+
+    return {
+      key,
+      byteLength: bytes.byteLength,
+      contentType: meta.contentType,
+      filename: meta.filename,
+      storedAt: (object?.uploaded ?? new Date()).toISOString(),
+    };
+  }
+
+  async get(key: string): Promise<Uint8Array | null> {
+    assertSafeKey(key);
+    const object = await this.#bucket.get(key);
+    if (object === null) return null;
+    return new Uint8Array(await object.arrayBuffer());
+  }
+
+  async list(prefix?: string): Promise<readonly StoredObject[]> {
+    const listed = await this.#bucket.list(
+      prefix === undefined ? undefined : { prefix },
+    );
+
+    return listed.objects
+      .map((object) => ({
+        key: object.key,
+        byteLength: object.size,
+        contentType: object.httpMetadata?.contentType ?? "application/octet-stream",
+        filename: object.customMetadata?.["filename"] ?? object.key,
+        storedAt: object.uploaded.toISOString(),
+      }))
+      .sort((a, b) => a.storedAt.localeCompare(b.storedAt));
+  }
+}
+
 const localStore: DocumentStore = new LocalFileDocumentStore();
 
-/** The one line Cluster D changes. */
-export function getDocumentStore(): DocumentStore {
-  if (storageBacking() !== "ephemeral") return localStore;
+/** The one line Cluster D changed. */
+export async function getDocumentStore(): Promise<DocumentStore> {
+  const env = await getCloudflareEnv();
+  const bucket = env?.DOCUMENTS;
+  if (bucket !== undefined) return new R2DocumentStore(bucket);
+
+  if ((await storageBacking()) !== "ephemeral") return localStore;
+
   return ephemeralSingleton("document_store", () => new EphemeralDocumentStore());
 }

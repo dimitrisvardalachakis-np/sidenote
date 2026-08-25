@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState, type DragEvent } from "react";
-import { saveDocument } from "./actions";
+import { requestUploadUrl, saveDocument } from "./actions";
 import { INITIAL_UPLOAD_STATE } from "./upload-state";
 import { chunkDocument } from "@/lib/ingest/chunk";
 import { assessExtraction, isAcceptedFilename } from "@/lib/ingest/extract";
@@ -69,6 +69,18 @@ export function UploadPanel() {
    * and no reset button.
    */
   const [submittedFilename, setSubmittedFilename] = useState<string | null>(null);
+
+  /**
+   * Set once the browser has PUT the bytes straight to R2.
+   *
+   * Two hidden fields rather than one flag: the Server Action re-derives the
+   * key from the id and refuses the pair if they do not match, so sending both
+   * is what makes the claim checkable. See requestUploadUrl in ./actions.
+   */
+  const [presigned, setPresigned] = useState<
+    { readonly documentId: string; readonly objectKey: string } | null
+  >(null);
+  const [uploading, setUploading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   const errors: UploadFieldErrors =
@@ -153,13 +165,78 @@ export function UploadPanel() {
     const parsed = DocumentUpload.safeParse(
       readUploadFormValues(new FormData(form)),
     );
-    if (parsed.success) {
-      setClientErrors({});
+    if (!parsed.success) {
+      event.preventDefault();
+      setClientErrors(toUploadFieldErrors(parsed.error));
+      return;
+    }
+
+    setClientErrors({});
+
+    // Already sent the bytes straight to R2 — let the form go, carrying only
+    // metadata and the extracted text.
+    if (presigned !== null) {
       setSubmittedFilename(phase.filename);
       return;
     }
+
+    const file = fileInput.current?.files?.item(0) ?? null;
+    if (file === null) {
+      setSubmittedFilename(phase.filename);
+      return;
+    }
+
+    // Stop this submit, try the direct upload, then submit again. Awaiting
+    // inside the handler is not an option: a submit event cannot be held open,
+    // and React would have dispatched the action before the PUT finished.
     event.preventDefault();
-    setClientErrors(toUploadFieldErrors(parsed.error));
+    void uploadDirectThenSubmit(form, file, parsed.data.kind);
+  }
+
+  /**
+   * Browser to R2, no Worker in the middle.
+   *
+   * Falls back to the ordinary Server Action on ANY failure — credentials not
+   * configured, a network error, a non-2xx from R2. The fallback still works
+   * and is merely slower and size-capped, so there is no case where a reviewer
+   * is told to try again because of how we chose to move the bytes.
+   */
+  async function uploadDirectThenSubmit(
+    form: HTMLFormElement,
+    file: File,
+    kind: string,
+  ) {
+    setUploading(true);
+    try {
+      const grant = await requestUploadUrl({
+        kind,
+        filename: file.name,
+        contentType: file.type,
+      });
+
+      if (grant.mode === "presigned") {
+        const response = await fetch(grant.upload.url, {
+          method: "PUT",
+          // Must match what was signed, byte for byte. R2 checks it.
+          headers: { "content-type": grant.upload.contentType },
+          body: file,
+        });
+        if (response.ok) {
+          setPresigned({
+            documentId: grant.documentId,
+            objectKey: grant.upload.key,
+          });
+        }
+      }
+    } catch {
+      // Deliberately silent to the reviewer: the fallback path is about to run
+      // and succeed, and an error message about an optimisation they did not
+      // ask for is noise.
+    } finally {
+      setUploading(false);
+      setSubmittedFilename(phase.kind === "ready" ? phase.filename : null);
+      form.requestSubmit();
+    }
   }
 
   /** True once THIS file has been stored, so the save button retires. */
@@ -174,6 +251,20 @@ export function UploadPanel() {
 
   return (
     <form action={formAction} onSubmit={handleSubmit} noValidate>
+      {presigned !== null && (
+        <>
+          <input
+            type="hidden"
+            name="presignedDocumentId"
+            value={presigned.documentId}
+          />
+          <input
+            type="hidden"
+            name="presignedObjectKey"
+            value={presigned.objectKey}
+          />
+        </>
+      )}
       {/* ---------------------------------------------------------------- */}
       <div
         onDragOver={(e) => {
@@ -345,11 +436,20 @@ export function UploadPanel() {
 
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || uploading}
             className="mt-6 cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-wait disabled:opacity-60"
           >
-            {pending ? "Saving…" : `Save document and ${phase.chunks.length} chunks`}
+            {uploading
+              ? "Uploading the file…"
+              : pending
+                ? "Saving…"
+                : `Save document and ${phase.chunks.length} chunks`}
           </button>
+          {uploading && (
+            <p className="mt-1 text-meta text-slate">
+              The file is going straight to storage from your browser.
+            </p>
+          )}
         </>
       )}
 

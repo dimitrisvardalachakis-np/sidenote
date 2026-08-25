@@ -4,6 +4,9 @@ import { CaseDetail } from "@/components/case-detail";
 import { CaseList, clockLabel } from "@/components/case-list";
 import { CompanyEvidence, PublicEvidence } from "@/components/evidence";
 import { findQueueEntry, loadQueue } from "@/lib/queue/entries";
+import { RulingPanel } from "@/components/ruling-panel";
+import { getCaseCoordination } from "@/lib/coordinator";
+import { requireSession } from "@/lib/auth";
 import {
   expeditedClock,
   isSerious,
@@ -41,6 +44,13 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
   const disagrees = assessment !== null && sourcesDisagree(assessment);
   const serious = record.reactions.some((r) => isSerious(r.seriousness));
   const all = await loadQueue(today);
+
+  // Who holds this case, and what has been decided. Read from the coordinator
+  // rather than from the Case row: `assignedTo` is a mirror, and a mirror is
+  // the wrong thing to ask when the question is "may I write to this".
+  const session = await requireSession();
+  const coordination = await getCaseCoordination();
+  const coordinated = await coordination.state(record.id);
 
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-4">
@@ -179,22 +189,15 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
             <h2 className="text-micro uppercase tracking-label text-slate">
               Reviewer ruling
             </h2>
-            {assessment?.ruling == null ? (
-              <p className="mt-1 text-base">
-                No ruling yet. Nothing above counts as a decision until a
-                reviewer records one here.
-              </p>
-            ) : (
-              <p className="mt-1 text-base">
-                {assessment.ruling.listedness} /{" "}
-                {assessment.ruling.expectedness} —{" "}
-                {assessment.ruling.rationale}
-              </p>
-            )}
-            <p className="mt-2 text-meta text-slate">
-              Claiming and ruling arrive with the Durable Object in Cluster D,
-              which is what makes one case belong to one reviewer.
-            </p>
+            <div className="mt-2">
+              <RulingPanel
+                caseId={record.id}
+                reviewerId={session.reviewerId}
+                claim={coordinated.claim}
+                ruling={coordinated.ruling ?? assessment?.ruling ?? null}
+                arbitrates={coordination.arbitrates}
+              />
+            </div>
           </section>
         </div>
       </div>

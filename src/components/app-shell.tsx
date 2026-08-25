@@ -18,8 +18,8 @@ import { isStorageDurable } from "@/lib/store/backing";
  * was put there to tell. It is --slate like the rest: red means expedited or
  * overdue, nothing else, ever.
  */
-export function AppShell({ children }: { children: ReactNode }) {
-  const durable = isStorageDurable();
+export async function AppShell({ children }: { children: ReactNode }) {
+  const durable = await isStorageDurable();
 
   return (
     <div className="flex min-h-full">

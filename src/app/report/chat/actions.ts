@@ -67,7 +67,7 @@ export async function sendChatMessage(
   // regardless of what retrieval found: non-negotiable #4 — the model never
   // decides, and "already described" is not a reason to discard a report.
   const now = new Date();
-  const store = getCaseStore();
+  const store = await getCaseStore();
 
   try {
     const reference = await store.nextReference(now.getUTCFullYear());

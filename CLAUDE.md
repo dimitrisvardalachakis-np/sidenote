@@ -197,3 +197,56 @@ danger.
 A fourth is worth knowing about even though it is a built-in and not a module:
 `Intl.Segmenter` is unevenly available on Workers, which is why `chunk.ts`
 detects sentences by hand instead of using the obvious tool.
+
+## Storage (Cluster D)
+
+D1 holds the rows, R2 holds the bytes, KV holds only what can be rebuilt, and
+two Durable Objects hold the things that must never be observed in two versions
+at once.
+
+    npm run db:generate    drizzle-kit generate    write the next migration
+    npm run db:migrate     wrangler d1 apply       against the LOCAL database
+    npm run db:migrate:remote                      against the real one
+
+`drizzle.config.ts` never talks to a database — it only diffs `src/lib/db/schema.ts`
+against `drizzle/` and writes SQL. Applying is wrangler's job, because wrangler
+is what knows which database is meant. `out` in the drizzle config and
+`migrations_dir` in `wrangler.jsonc` must stay equal.
+
+**One migration is hand-written.** `drizzle/0001_chunks_fts5.sql` creates the
+FTS5 virtual table and the three triggers that keep it in step with `chunks`.
+Drizzle cannot express a virtual table, and pretending otherwise in schema.ts
+would mean a schema file that does not describe the database. FTS5 is the
+lexical half of the hybrid retrieval Cluster E fuses — Vectorize is dense-only.
+
+**What is a column and what is JSON.** A value gets a column when something
+sorts or filters by it, and stays JSON when it is a value object read back
+whole. So `received_at` is a column and `patient` is not. Seriousness flags stay
+JSON for a sharper reason: they carry character offsets into the narrative, and
+a schema that invited someone to join on a character offset would eventually get
+one. Everything read back is parsed through its zod schema, so a row written by
+an older deploy is rejected rather than rendered.
+
+**Two Durable Objects, addressed differently on purpose.**
+
+- `CaseCoordinator`, `idFromName(caseId)` — one instance per case. Holds the
+  claim, the ruling and the 15-day alarm. The claim expires after 30 minutes so
+  that "one case, one reviewer" does not become "one reviewer, forever".
+- `ReferenceMinter`, one instance for the whole app. Fixes the count-then-add
+  race in reference generation that has been written down in the code since
+  Cluster A step 5 and was never fixable without this.
+
+The alarm and Cluster F's nightly sweep overlap deliberately: the alarm is
+precise but only exists if something armed it, and the sweep is coarse but sees
+cases whose alarm never was.
+
+**Presigned uploads need credentials the binding cannot give.** `env.DOCUMENTS`
+works inside the Worker and cannot be handed to a browser. Presigning is SigV4
+against R2's S3 API and needs `R2_S3_ACCESS_KEY_ID`, `R2_S3_SECRET_ACCESS_KEY`,
+`R2_S3_ACCOUNT_ID` and `R2_S3_BUCKET`. Without all four the upload falls back to
+posting bytes through the Server Action — slower, capped by
+`next.config.ts`'s `bodySizeLimit`, and working.
+
+**KV has no `put`.** CLAUDE.md's "(rebuildable only)" is enforced by the API
+rather than by a comment: `cached()` takes the function that rebuilds the value,
+so there is no way to write a key without saying where it comes from.

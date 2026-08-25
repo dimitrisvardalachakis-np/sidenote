@@ -56,17 +56,17 @@ describe("isWorkersRuntime", () => {
 });
 
 describe("storageBacking", () => {
-  it("is local-disk on Node and durable", () => {
-    expect(storageBacking()).toBe("local-disk");
-    expect(isStorageDurable()).toBe(true);
+  it("is local-disk on Node and durable", async () => {
+    expect(await storageBacking()).toBe("local-disk");
+    expect(await isStorageDurable()).toBe(true);
   });
 
-  it("is ephemeral on Workers and says it is not durable", () => {
+  it("is ephemeral on Workers and says it is not durable", async () => {
     pretendToBeWorkers();
-    expect(storageBacking()).toBe("ephemeral");
+    expect(await storageBacking()).toBe("ephemeral");
     // The banner reads this. If it ever returns true on Workers, the app tells
     // a member of the public their report is filed when it may not be.
-    expect(isStorageDurable()).toBe(false);
+    expect(await isStorageDurable()).toBe(false);
   });
 });
 

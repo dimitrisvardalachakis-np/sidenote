@@ -1,5 +1,6 @@
 import "server-only";
 import { audit } from "@/lib/audit";
+import { getCloudflareEnv } from "@/lib/platform/env";
 import { isWorkersRuntime } from "@/lib/platform/runtime";
 
 /**
@@ -20,20 +21,19 @@ import { isWorkersRuntime } from "@/lib/platform/runtime";
  * a document, or a member of the public submits a report. So the check has to
  * be explicit and it has to happen before the call, not after it throws.
  *
- * WHAT CLUSTER C DOES NOT DO HERE.
+ * WHAT CLUSTER D CHANGED.
  *
- * The real answer is D1 for the rows and R2 for the bytes, and CLAUDE.md
- * assigns both to Cluster D. Implementing them here would mean this cluster
- * quietly building the storage layer the next one is supposed to build
- * deliberately, and doing it under time pressure at the end of a runtime port.
+ * D1 holds the rows and R2 holds the bytes, so when those bindings are present
+ * there is nothing ephemeral about any of this. The memory fallback did not go
+ * away, because the two runtimes that legitimately have no bindings still
+ * exist — `next dev` without the adapter proxy, and a Worker deployed before
+ * anyone ran `wrangler d1 create`. It simply stopped being the normal case.
  *
- * So on Workers the stores fall back to memory — and memory in a Worker is
- * per-isolate and can vanish between two requests. That is a real hazard in
- * THIS application: a member of the public submits an adverse-event report,
- * receives a reference number, and the record evaporates. A reference number
- * is a promise of durability.
+ * That distinction is the whole reason `storageBacking()` asks about BINDINGS
+ * and not about the runtime. A Worker with D1 bound is durable; a Worker
+ * without it is not; and "am I on Workers" answers neither question.
  *
- * Which is why the fallback is not silent. Every ephemeral write emits an
+ * The memory fallback is still not silent. Every ephemeral write emits an
  * audit line naming itself, `isStorageDurable()` is exported for the UI to
  * tell the user plainly, and the classes are called Ephemeral*, not Memory* or
  * Default* — the same reasoning as UnprotectedBotGate. A stub wearing the name
@@ -41,12 +41,25 @@ import { isWorkersRuntime } from "@/lib/platform/runtime";
  */
 
 export type StorageBacking =
-  /** A real disk. `next dev` and `next build` on a developer's machine. */
+  /** D1 and R2 are bound. The real thing, on Workers or in `next dev`. */
+  | "cloudflare"
+  /** A real disk, no bindings. `next dev` and `next build` on a laptop. */
   | "local-disk"
-  /** Per-isolate memory. Workers, until Cluster D brings D1 and R2. */
+  /** Per-isolate memory. A Worker with nothing bound to it. */
   | "ephemeral";
 
-export function storageBacking(): StorageBacking {
+/**
+ * Async because the answer depends on what is BOUND, not on where the code is
+ * running, and reaching the bindings is asynchronous under the adapter.
+ *
+ * Worth the ripple. The sync version could only ask "am I on Workers", which
+ * gets both interesting cases wrong: `next dev` with the adapter proxy has
+ * real bindings and would be told to use the disk, and a Worker deployed
+ * before `wrangler d1 create` has none and would be told it was durable.
+ */
+export async function storageBacking(): Promise<StorageBacking> {
+  const env = await getCloudflareEnv();
+  if (env?.DB !== undefined) return "cloudflare";
   return isWorkersRuntime() ? "ephemeral" : "local-disk";
 }
 
@@ -56,9 +69,13 @@ export function storageBacking(): StorageBacking {
  * Exported for the UI. A banner that says "not a validated system" and stays
  * quiet about the fact that this deployment forgets is only telling half of
  * the truth it was put there to tell.
+ *
+ * Local disk counts as durable. It is not durable the way D1 is — it is one
+ * laptop — but the claim being made to the user is "work you save will still
+ * be here", and on a developer machine that is true.
  */
-export function isStorageDurable(): boolean {
-  return storageBacking() === "local-disk";
+export async function isStorageDurable(): Promise<boolean> {
+  return (await storageBacking()) !== "ephemeral";
 }
 
 /**

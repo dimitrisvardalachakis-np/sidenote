@@ -14,7 +14,66 @@ import {
 import { DocumentId, REJECTION_MESSAGES, SafetyDocument } from "@/lib/schemas";
 import { getDocumentStore, objectKeyFor } from "@/lib/store/document-store";
 import { getDocumentLibrary } from "@/lib/store/library-store";
+import {
+  presignUpload,
+  presignedUploadsAvailable,
+  type PresignedUpload,
+} from "@/lib/store/presign";
+import { sourceTypeForKind as sourceTypeFor } from "@/lib/schemas/document-upload";
 import type { UploadState } from "./upload-state";
+
+/**
+ * Hand the browser a URL it may PUT one file to.
+ *
+ * The document id and the object key are minted HERE, server-side, and the
+ * client never chooses either. The key's prefix is the confidentiality
+ * namespace — `company/` or `public/` — so a client that could name its own
+ * key could presign a write into the company namespace and have the result
+ * treated as a confidential source document for the rest of its life.
+ *
+ * Returns null when R2's S3 credentials are not configured, which is the
+ * signal to the client to fall back to posting the bytes through the Server
+ * Action. See lib/store/presign.ts.
+ */
+export async function requestUploadUrl(input: {
+  readonly kind: string;
+  readonly filename: string;
+  readonly contentType: string;
+}): Promise<
+  | { readonly mode: "presigned"; readonly documentId: string; readonly upload: PresignedUpload }
+  | { readonly mode: "server_action" }
+> {
+  const session = await requireSession();
+
+  const kind = DocumentUpload.shape.kind.safeParse(input.kind);
+  if (!kind.success || !isAcceptedFilename(input.filename)) {
+    return { mode: "server_action" };
+  }
+  if (!(await presignedUploadsAvailable())) return { mode: "server_action" };
+
+  const documentId = DocumentId.parse(crypto.randomUUID());
+  const key = objectKeyFor(
+    sourceTypeFor(kind.data),
+    documentId,
+    input.filename,
+  );
+
+  const upload = await presignUpload(
+    key,
+    input.contentType === "" ? "application/octet-stream" : input.contentType,
+  );
+  if (upload === null) return { mode: "server_action" };
+
+  audit({
+    actor: session.reviewerId,
+    action: "presign_upload",
+    target: key,
+    outcome: "success",
+    detail: { expiresInSeconds: upload.expiresInSeconds },
+  });
+
+  return { mode: "presigned", documentId, upload };
+}
 
 const MAX_BYTES = 8 * 1024 * 1024;
 
@@ -87,20 +146,46 @@ export async function saveDocument(
     text: typeof extractedText === "string" ? extractedText : "",
   });
 
-  const documentId = DocumentId.parse(crypto.randomUUID());
   const sourceType = sourceTypeForKind(parsed.data.kind);
+
+  /**
+   * Did the browser already PUT the bytes to R2?
+   *
+   * The client sends back the id and key it was given by requestUploadUrl.
+   * Both are re-derived here rather than trusted: the id must be a uuid, and
+   * the key must be exactly the key this id and source type produce. That
+   * makes the field unforgeable without re-implementing the check — a client
+   * claiming `company/<another-document>.pdf` gets a mismatch and is treated
+   * as not having uploaded anything.
+   */
+  const claimedId = formData.get("presignedDocumentId");
+  const claimedKey = formData.get("presignedObjectKey");
+  const presignedId =
+    typeof claimedId === "string"
+      ? DocumentId.safeParse(claimedId)
+      : { success: false as const };
+
+  const documentId = presignedId.success
+    ? presignedId.data
+    : DocumentId.parse(crypto.randomUUID());
   const objectKey = objectKeyFor(sourceType, documentId, file.name);
-  const bytes = new Uint8Array(await file.arrayBuffer());
+  const alreadyUploaded =
+    presignedId.success &&
+    typeof claimedKey === "string" &&
+    claimedKey === objectKey;
 
   try {
     // The original is kept even when the text turns out unusable: a scanned
     // document is exactly the one someone will want to run OCR over later,
     // and discarding the bytes would mean asking the reviewer to find the
     // file again.
-    await getDocumentStore().put(objectKey, bytes, {
-      contentType: file.type === "" ? "application/octet-stream" : file.type,
-      filename: file.name,
-    });
+    if (!alreadyUploaded) {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await (await getDocumentStore()).put(objectKey, bytes, {
+        contentType: file.type === "" ? "application/octet-stream" : file.type,
+        filename: file.name,
+      });
+    }
   } catch {
     audit({
       actor: session.reviewerId,
@@ -131,7 +216,7 @@ export async function saveDocument(
       chunkCount: 0,
       uploadedAt: new Date().toISOString(),
     });
-    await getDocumentLibrary().save({ document: rejected, chunks: [] });
+    await (await getDocumentLibrary()).save({ document: rejected, chunks: [] });
 
     audit({
       actor: session.reviewerId,
@@ -168,7 +253,7 @@ export async function saveDocument(
     uploadedAt: new Date().toISOString(),
   });
 
-  await getDocumentLibrary().save({ document, chunks });
+  await (await getDocumentLibrary()).save({ document, chunks });
 
   audit({
     actor: session.reviewerId,

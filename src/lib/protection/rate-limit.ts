@@ -51,9 +51,10 @@ export const CONVERSE_POLICY: WindowPolicy = { limit: 60, windowSeconds: 600 };
  * which is what stops a form being hammered.
  *
  * The sustained ceiling needs a counter that outlives a 60-second window and
- * is shared across isolates. That is a Durable Object, which CLAUDE.md assigns
- * to Cluster D. Building one here would be Cluster C quietly creating the
- * storage layer the next cluster is supposed to build deliberately.
+ * is shared across isolates — a Durable Object. Cluster D has since bound two
+ * of those, so this is now a deliberate gap rather than a blocked one: the
+ * burst limit is what actually stops a script hammering the form, and a third
+ * DO to enforce a ten-minute ceiling is cost nobody has asked for.
  *
  * These numbers MUST match the `ratelimits` block in wrangler.jsonc.
  * rate-limit.test.ts reads that file and fails if they ever drift.
