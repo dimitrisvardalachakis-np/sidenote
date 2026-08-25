@@ -198,6 +198,39 @@ A fourth is worth knowing about even though it is a built-in and not a module:
 `Intl.Segmenter` is unevenly available on Workers, which is why `chunk.ts`
 detects sentences by hand instead of using the obvious tool.
 
+## Setting up the Cloudflare account
+
+Everything in this repo runs offline against local emulation, so none of this is
+needed to develop. It is needed to deploy.
+
+    npx wrangler login
+    npm run cf:setup -- --write     create the six resources, write the two ids
+    npm run cf-typegen
+    npm run db:migrate:remote
+
+`cf:setup` is idempotent — every create tolerates "already exists" and the ids
+are read back with `list` rather than scraped from the create output, so
+re-running it on a half-finished account finishes it. Without `--write` it
+prints the two ids for you to paste instead.
+
+Two things it deliberately does not do. It does not log you in: authenticating
+should be a conscious act. And it does not write secrets —
+
+    npx wrangler secret put TURNSTILE_SECRET_KEY
+    npx wrangler secret put R2_S3_SECRET_ACCESS_KEY
+
+`.dev.vars.example` lists every optional setting, what switches on when you fill
+it in, and what stand-in runs when you do not.
+
+**`npm run deploy` refuses to run while `wrangler.jsonc` still has placeholder
+resource ids.** Those placeholders are the local-development default — local D1
+and KV ignore the id entirely — so they are correct to have and wrong to deploy,
+and the failure they cause otherwise names the API rather than the cause. The
+check parses the config rather than grepping it, so a placeholder mentioned in a
+comment does not trip it. `npm run preview` is deliberately not guarded:
+previewing against local emulation with placeholder ids is the intended
+workflow.
+
 ## Storage (Cluster D)
 
 D1 holds the rows, R2 holds the bytes, KV holds only what can be rebuilt, and
