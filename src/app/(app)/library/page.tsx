@@ -100,7 +100,7 @@ function DocumentColumn({
               )}
               {doc.status === "chunking" && (
                 <p className="mt-0.5 text-meta text-slate">
-                  Chunked and mirrored. Embedding arrives in Cluster E.
+                  Chunked, mirrored into D1 and embedded into Vectorize by the ingestion queue.
                 </p>
               )}
             </li>

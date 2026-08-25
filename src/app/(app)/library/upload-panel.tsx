@@ -326,6 +326,14 @@ export function UploadPanel() {
         <>
           <input type="hidden" name="extractedText" value={phase.text} />
           <input type="hidden" name="pageCount" value={phase.pageCount} />
+          {/* What the preview showed. The pipeline computes the real count
+              from the same chunker; this is only so the confirmation matches
+              what the reviewer was just looking at. */}
+          <input
+            type="hidden"
+            name="chunkCount"
+            value={phase.chunks.length}
+          />
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             <div>

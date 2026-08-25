@@ -1,6 +1,7 @@
 "use server";
 
 import { audit } from "@/lib/audit";
+import { dispatch } from "@/lib/pipeline";
 import { advance, type IntakeState } from "@/lib/intake/conversation";
 import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
@@ -83,6 +84,12 @@ export async function sendChatMessage(
       },
     });
     await store.put(record);
+
+    // Hand the case to the pipeline. Retrieval is not run here: a member of
+    // the public pressing Send should not wait for a model, and non-negotiable
+    // #5 says an AI failure must never block a human write — so the case is
+    // already stored before this line and stays stored if it fails.
+    await dispatch({ kind: "assess_case", caseId: record.id });
 
     audit({
       actor: "public",

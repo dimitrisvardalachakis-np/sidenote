@@ -207,9 +207,20 @@ export const chunks = sqliteTable(
     /** Set once the vector is in Vectorize. Lets the pipeline find work that
      * was chunked but never embedded, rather than assuming success. */
     embeddedAt: text("embedded_at"),
+    /**
+     * SHA-256 of `text`. This is the "dedupe" step of CLAUDE.md's pipeline.
+     *
+     * Safety documents repeat themselves: a CCDS v7.2 is mostly a CCDS v7.1,
+     * and a label revision changes two sections out of nine. Embedding the
+     * identical paragraph again costs a model call and a vector slot, and
+     * returns the same passage twice in one result list — which reads to a
+     * reviewer as two independent pieces of evidence for the same claim.
+     */
+    textHash: text("text_hash").notNull().default(""),
   },
   (table) => [
     index("chunks_document_idx").on(table.documentId),
+    index("chunks_text_hash_idx").on(table.textHash),
     // Retrieval always filters by namespace first; a company chunk must never
     // be a candidate for a public query.
     index("chunks_source_type_idx").on(table.sourceType),

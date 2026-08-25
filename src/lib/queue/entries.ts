@@ -3,6 +3,7 @@ import { z } from "zod";
 import { buildSeedCases } from "@/lib/fixtures/seed";
 import { getCaseStore } from "@/lib/store/case-store";
 import { CACHE_KEY, TRIAGE_QUEUE_TTL_SECONDS, getCache } from "@/lib/cache/kv";
+import { assessmentsForCases } from "@/lib/db/assessments";
 import { Case } from "@/lib/schemas";
 import type { Assessment, IsoDate } from "@/lib/schemas";
 
@@ -58,9 +59,20 @@ export async function loadQueue(today: IsoDate): Promise<readonly QueueEntry[]> 
     TRIAGE_QUEUE_TTL_SECONDS,
     () => store.list().then((cases) => [...cases]),
   );
+  /**
+   * Assessments are looked up, not assumed absent.
+   *
+   * Before Cluster E this was hard-coded to null, which was true — nothing
+   * assessed anything. Now the pipeline writes them, and `null` has to mean
+   * what it has always claimed to mean: nobody has looked yet. One query for
+   * the whole page rather than one per case.
+   */
+  const assessments = await assessmentsForCases(
+    submitted.map((record) => record.id),
+  );
   const submittedEntries: QueueEntry[] = submitted.map((record) => ({
     record,
-    assessment: null,
+    assessment: assessments.get(record.id) ?? null,
   }));
 
   return [...submittedEntries, ...seeded];

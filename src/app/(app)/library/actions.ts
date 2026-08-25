@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
 import { audit } from "@/lib/audit";
-import { chunkDocument } from "@/lib/ingest/chunk";
 import { assessExtraction, isAcceptedFilename } from "@/lib/ingest/extract";
 import {
   DocumentUpload,
@@ -14,6 +13,7 @@ import {
 import { DocumentId, REJECTION_MESSAGES, SafetyDocument } from "@/lib/schemas";
 import { getDocumentStore, objectKeyFor } from "@/lib/store/document-store";
 import { getDocumentLibrary } from "@/lib/store/library-store";
+import { dispatch } from "@/lib/pipeline";
 import {
   presignUpload,
   presignedUploadsAvailable,
@@ -139,6 +139,10 @@ export async function saveDocument(
     };
   }
 
+  const rawChunkCount = Number(formData.get("chunkCount"));
+  const clientChunkCount = Number.isFinite(rawChunkCount)
+    ? Math.max(0, Math.trunc(rawChunkCount))
+    : 0;
   const extractedText = formData.get("extractedText");
   const rawPageCount = Number(formData.get("pageCount"));
   const assessment = assessExtraction({
@@ -234,7 +238,23 @@ export async function saveDocument(
     };
   }
 
-  const chunks = chunkDocument(assessment.text, { documentId, sourceType });
+  /**
+   * THE ACTION NO LONGER CHUNKS. Cluster E moved that onto the queue.
+   *
+   * CLAUDE.md's pipeline, steps 4 and 5: "Extracted text → server action →
+   * queue. Consumer chunks it." The action's job is now to put the text
+   * somewhere durable and say that there is work to do.
+   *
+   * Why that is better than chunking here, beyond following the plan: chunking
+   * a 400-page label is real CPU, and a Worker has a CPU limit per request. The
+   * reviewer was waiting for it. Now they wait for two writes.
+   */
+  const textKey = `${objectKey}.txt`;
+  await (await getDocumentStore()).put(
+    textKey,
+    new TextEncoder().encode(assessment.text),
+    { contentType: "text/plain; charset=utf-8", filename: `${file.name}.txt` },
+  );
 
   const document = SafetyDocument.parse({
     id: documentId,
@@ -245,15 +265,18 @@ export async function saveDocument(
     version: parsed.data.version,
     effectiveDate: parsed.data.effectiveDate,
     objectKey,
-    // Chunked, not embedded. There is no Vectorize this session, and marking
-    // it "embedded" would be a lie a later cluster has to unpick.
+    // `chunking` — the queue has it. Not `embedded`, which is a claim about
+    // Vectorize that only the pipeline is entitled to make, and it makes it by
+    // setting `embeddedAt` on the chunks it actually upserted.
     status: "chunking",
     rejectionReason: null,
-    chunkCount: chunks.length,
+    chunkCount: 0,
     uploadedAt: new Date().toISOString(),
   });
 
-  await (await getDocumentLibrary()).save({ document, chunks });
+  await (await getDocumentLibrary()).save({ document, chunks: [] });
+
+  const mode = await dispatch({ kind: "chunk_document", documentId, textKey });
 
   audit({
     actor: session.reviewerId,
@@ -263,8 +286,9 @@ export async function saveDocument(
     detail: {
       sourceType,
       kind: parsed.data.kind,
-      chunks: chunks.length,
       pages: assessment.pageCount,
+      pipeline: mode,
+      presigned: alreadyUploaded,
     },
   });
 
@@ -273,6 +297,13 @@ export async function saveDocument(
     status: "saved",
     errors: {},
     values,
-    saved: { title: document.title, chunkCount: chunks.length, objectKey },
+    // The count the CLIENT computed, which is what the reviewer was shown in
+    // the preview. The authoritative count comes back from the pipeline and
+    // appears on the library page once it has run.
+    saved: {
+      title: document.title,
+      chunkCount: clientChunkCount,
+      objectKey,
+    },
   };
 }

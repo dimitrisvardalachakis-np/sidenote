@@ -30,6 +30,9 @@
 // handler should do stays OpenNext's business.
 import openNextWorker from "../.open-next/worker.js";
 
+import { runQueueBatch } from "../src/lib/pipeline/consumer";
+import { setAmbientCloudflareEnv } from "../src/lib/platform/env";
+
 /**
  * OpenNext's own Durable Objects, passed straight through.
  *
@@ -83,11 +86,26 @@ const sidenoteWorker = {
     return nextHandler.fetch(request, env, ctx);
   },
 
-  // Cluster E adds `queue` here, and Cluster F adds `scheduled`. Both are
-  // sibling handlers on this same object; neither exists yet, and a stub that
-  // accepted a cron tick and did nothing would be worse than no handler at
-  // all — Cloudflare reports a missing handler, and reports a silent one as a
-  // successful run.
+  /**
+   * Cluster E. Queue consumer.
+   *
+   * Not wrapped in a try/catch. Each message acks or retries itself inside
+   * runQueueBatch, so there is nothing left here for a catch to do except hide
+   * a bug in the loop that does the acking.
+   */
+  async queue(
+    batch: MessageBatch<unknown>,
+    env: CloudflareEnv,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    // OpenNext only publishes its Cloudflare context from `fetch`, so without
+    // this the whole of src/lib sees no bindings and the pipeline runs to
+    // completion having done nothing. See setAmbientCloudflareEnv.
+    setAmbientCloudflareEnv(env);
+    await runQueueBatch(batch, env, ctx);
+  },
+
+  // Cluster F adds `scheduled` here — a sibling handler on this same object.
 };
 
 export default sidenoteWorker;

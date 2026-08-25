@@ -54,17 +54,45 @@ declare global {
  * which the schemas and the protection modules all do — does not drag the
  * adapter into a test's module graph or a build that has no use for it.
  */
+/**
+ * The env for handlers that are not `fetch`.
+ *
+ * FOUND BY RUNNING IT. A report was submitted, the queue consumer ran —
+ * `QUEUE sidenote-ingest 1/1 (3ms)` — and did nothing at all. Three
+ * milliseconds, no audit line, no assessment.
+ *
+ * The cause: OpenNext publishes its Cloudflare context by writing it onto
+ * `globalThis` from the FETCH entrypoint. A queue or cron handler never goes
+ * through that path, so `getCloudflareContext()` throws, `getCloudflareEnv()`
+ * returned null, D1 looked unbound, the case store fell back to memory, the
+ * case was "not found", and the step returned successfully having skipped its
+ * own work. Every layer behaved exactly as designed and the pipeline was inert.
+ *
+ * So the worker entry hands the env in explicitly for those handlers. Module
+ * scope is safe for this: `env` is per-isolate, not per-request — the same
+ * object is passed to every invocation — so there is no request whose bindings
+ * could leak into another's.
+ */
+let ambientEnv: CloudflareEnv | null = null;
+
+/** Called by worker/index.ts for the queue and scheduled handlers. */
+export function setAmbientCloudflareEnv(env: CloudflareEnv): void {
+  ambientEnv = env;
+}
+
 export async function getCloudflareEnv(): Promise<CloudflareEnv | null> {
   try {
     const { getCloudflareContext } = await import("@opennextjs/cloudflare");
     const context = await getCloudflareContext({ async: true });
     return context.env;
   } catch {
-    // getCloudflareContext throws when the adapter is not initialised. That is
-    // the "running on plain Node" case and it is not a failure, so it is not
-    // logged: this is called on every guarded request and a line per request
-    // would bury the audit log it sits next to.
-    return null;
+    // getCloudflareContext throws when the adapter is not initialised: plain
+    // Node, or a non-fetch handler. Not logged — this runs on every guarded
+    // request and a line per request would bury the audit log it sits next to.
+    //
+    // The adapter is tried FIRST so that a real request always uses its own
+    // context; the ambient env is the fallback, not the default.
+    return ambientEnv;
   }
 }
 

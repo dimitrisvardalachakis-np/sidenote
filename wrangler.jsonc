@@ -27,6 +27,13 @@
     "enabled": true
   },
 
+  // See worker/server-only.js. The queue consumer drags most of src/lib into a
+  // bundle wrangler builds rather than Next, and without React's "react-server"
+  // resolver condition the `server-only` marker throws at Worker startup.
+  "alias": {
+    "server-only": "./worker/server-only.js"
+  },
+
   // ---------------------------------------------------------------- Cluster D
 
   // Cases, reactions, drugs, assessments, documents, chunks, audit.
@@ -90,6 +97,62 @@
       "new_sqlite_classes": ["CaseCoordinator", "ReferenceMinter"]
     }
   ],
+
+  // ---------------------------------------------------------------- Cluster E
+
+  // Extract -> chunk -> embed -> dedupe -> assess.
+  //
+  // Producer and consumer are the same queue: the pipeline chains by enqueuing
+  // its own next step, so that chunking and embedding retry independently.
+  // Chunking is pure and deterministic; embedding is a model call that can be
+  // rate limited. Retrying one because the other failed shows up on a bill.
+  "queues": {
+    "producers": [
+      {
+        "binding": "INGEST_QUEUE",
+        "queue": "sidenote-ingest"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "sidenote-ingest",
+        // Small batches: each message can be several model calls, and a large
+        // batch is a large amount of work to redo when one message fails.
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        // Matches MAX_RETRIES in src/lib/pipeline/messages.ts, which the
+        // consumer's audit line quotes. A number that disagrees with the
+        // platform's is worse than no number.
+        "max_retries": 3,
+        // A queue somebody has to look at, not a bin. Messages that can never
+        // succeed are acked with an audit line instead of being sent here —
+        // filling the DLQ with the hopeless teaches people to ignore it.
+        "dead_letter_queue": "sidenote-ingest-dlq"
+      }
+    ]
+  },
+
+  // One index, two namespaces — `company` and `public`. Namespaces rather than
+  // two indexes because a namespace is a filter applied inside the index, which
+  // is exactly the shape wanted: the same query, run against one corpus or the
+  // other, never both. The namespace IS the confidentiality boundary.
+  //
+  // 768 dimensions is not a preference: it is the width of
+  // @cf/baai/bge-base-en-v1.5, and an index created at another width rejects
+  // every upsert. Create it with:
+  //   wrangler vectorize create sidenote-chunks --dimensions=768 --metric=cosine
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "sidenote-chunks"
+    }
+  ],
+
+  // Workers AI. Embeddings today; CLAUDE.md's Whisper and Llama rows are not
+  // built, and no code pretends they are.
+  "ai": {
+    "binding": "AI"
+  },
 
   // CLAUDE.md's architecture row: "Public report form protection | Turnstile +
   // rate-limit binding". This is the rate-limit half.

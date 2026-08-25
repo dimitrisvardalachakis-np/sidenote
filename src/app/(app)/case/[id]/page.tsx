@@ -166,8 +166,9 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                   </p>
                 )}
                 <p className="mt-2 text-meta text-slate">
-                  Retrieval runs on a queue consumer in Cluster E. Until then a
-                  reviewer assesses by hand.
+                  Retrieval runs on the ingestion queue and writes its findings
+                  here when it completes. A reviewer can assess by hand at any
+                  point without waiting for it.
                 </p>
               </div>
             ) : (

@@ -250,3 +250,66 @@ posting bytes through the Server Action — slower, capped by
 **KV has no `put`.** CLAUDE.md's "(rebuildable only)" is enforced by the API
 rather than by a comment: `cached()` takes the function that rebuilds the value,
 so there is no way to write a key without saying where it comes from.
+
+## The ingestion pipeline (Cluster E)
+
+Queues carry the work, Workers AI embeds it, Vectorize stores the vectors, and
+retrieval fuses dense with lexical.
+
+    wrangler queues create sidenote-ingest
+    wrangler queues create sidenote-ingest-dlq
+    wrangler vectorize create sidenote-chunks --dimensions=768 --metric=cosine
+
+768 is not a preference — it is the width of `@cf/baai/bge-base-en-v1.5`, and an
+index created at another width rejects every upsert.
+
+**Messages carry ids, never payloads.** A Queues message is capped at 128 KB and
+the extracted text of a 40-page CCDS is larger, so the text goes to R2 and the
+message says where. A message that is *usually* small enough is a pipeline that
+works in testing and fails on the document somebody cares about.
+
+**Steps return their follow-ups rather than enqueuing them.** That keeps each
+step a function from a message to a list of messages — testable without a queue
+binding, and it stops the producer and the steps importing each other. Chunking
+and embedding are separate messages because they fail for different reasons:
+chunking is pure and deterministic, embedding is a model call that can be rate
+limited. Retrying one because the other failed shows up on a bill.
+
+**Not everything goes to the dead-letter queue.** A transient failure is
+retried and eventually lands there, which is a queue somebody has to look at.
+A message whose work can never succeed — a document that no longer exists — is
+acked with an audit line instead, because filling the DLQ with the hopeless
+teaches people to ignore the DLQ.
+
+**Dedupe is by content hash.** A CCDS v7.2 is mostly a CCDS v7.1. Identical text
+is embedded once however many chunks carry it, which saves the model call and,
+more importantly, stops a result list showing the same passage twice — which
+reads as two independent pieces of evidence for one claim.
+
+**Retrieval fuses up to three rankings** through the RRF that has been sitting in
+`search.ts` since Cluster A: dense from Vectorize, lexical from D1 FTS5, and the
+seeded demo corpus in memory. The third exists because the fixtures never went
+through the pipeline, so they have no FTS5 rows and no vectors, and without it
+the demo would go quiet the moment a database was bound. Each half reports
+whether it *ran*, because "found nothing" and "did not happen" are different
+facts — the same distinction the assessment schema already draws.
+
+### Two things that only running it would have found
+
+**OpenNext's Cloudflare context is published from `fetch` and nowhere else.**
+A queue or cron handler never goes through that path, so `getCloudflareEnv()`
+returned null, D1 looked unbound, the case store fell back to memory, the case
+was "not found", and the step returned successfully having done nothing —
+`QUEUE sidenote-ingest 1/1 (3ms)`. Every layer behaved as designed and the
+pipeline was inert. `setAmbientCloudflareEnv()` in `worker/index.ts` is the fix.
+
+**Vectorize and Workers AI have no local emulation**, and binding them made
+`initOpenNextCloudflareForDev()` open a *remote* session — so adding those two
+bindings broke `next build` for anyone without a `CLOUDFLARE_API_TOKEN`. Hence
+`remoteBindings: false` and the `NEXT_PHASE` guard in `next.config.ts`.
+
+The consequence for anyone reading this: **the embedding and Vectorize paths are
+written and typechecked but have never executed.** `wrangler dev` reports both
+bindings as "not supported" locally. Everything else in this cluster — the
+queue, the chunker, D1 mirroring, FTS5, RRF, the assessment write — is verified
+on workerd.

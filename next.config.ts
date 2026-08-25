@@ -29,8 +29,21 @@ export default nextConfig;
  * developer with a real Turnstile secret in .dev.vars would still be
  * exercising UnprotectedBotGate, and would find that out in production.
  *
- * A no-op outside `next dev`: it is not awaited because the adapter documents
- * it as fire-and-forget, and a Next config that returns a promise is a
- * different thing entirely.
+ * TWO GUARDS, BOTH LEARNED THE HARD WAY.
+ *
+ * `remoteBindings: false`. Cluster E added Vectorize and Workers AI, and
+ * neither has local emulation — the proxy tries to open a REMOTE session for
+ * them, and without a CLOUDFLARE_API_TOKEN that is a hard failure. Which means
+ * that on the day those two bindings were added, `next build` stopped working
+ * for anyone without a Cloudflare account. It is off here so the local
+ * toolchain stays usable offline; the cost is that those two bindings are
+ * absent in `next dev`, which the code already handles because it has to
+ * handle them being absent in a fresh deployment too.
+ *
+ * Only during `next dev`. The adapter is documented as a no-op elsewhere, but
+ * it is not: it initialises during `next build` as well, which is where the
+ * remote-session failure above actually surfaced.
  */
-void initOpenNextCloudflareForDev();
+if (process.env["NEXT_PHASE"] === "phase-development-server") {
+  void initOpenNextCloudflareForDev({ remoteBindings: false });
+}
