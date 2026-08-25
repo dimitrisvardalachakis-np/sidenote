@@ -52,3 +52,8 @@ next-env.d.ts
 # development and in `wrangler secret put` everywhere else. Never committed.
 .dev.vars
 .dev.vars.*
+# ...except the template, which is the whole point of having one. `.dev.vars.*`
+# is there to catch real per-environment secret files (.dev.vars.production and
+# friends), and it swallowed the example too — so the file existed on disk,
+# explained every setting, and was invisible to everyone who cloned the repo.
+!.dev.vars.example
