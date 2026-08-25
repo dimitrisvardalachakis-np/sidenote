@@ -17,8 +17,9 @@ import {
 /**
  * Cases submitted through the app, as opposed to the seeded fixtures.
  *
- * Same seam as the other stores: an interface the app talks to, two
- * implementations chosen by runtime, one line for Cluster D to change to D1.
+ * Same seam as the other stores: an interface the app talks to, and three
+ * implementations chosen by what is bound — D1 when there is a database, the
+ * local disk when there is one, memory only when there is neither.
  *
  * The queue merges these with the fixtures rather than replacing them, so a
  * reviewer sees a realistic backlog AND anything just submitted. Submitted

@@ -23,7 +23,8 @@ export default function AppError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Cluster F replaces this with the structured audit sink.
+    // The structured audit sink is audit.ts; this stays console.error because
+    // a render failure is not a mutation and has no actor, action or target.
     console.error("[AUDIT]", JSON.stringify({
       actor: "system",
       action: "render_error",

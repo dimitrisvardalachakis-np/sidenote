@@ -313,3 +313,45 @@ written and typechecked but have never executed.** `wrangler dev` reports both
 bindings as "not supported" locally. Everything else in this cluster — the
 queue, the chunker, D1 mirroring, FTS5, RRF, the assessment write — is verified
 on workerd.
+
+## Cron and the audit trail (Cluster F)
+
+Two nightly sweeps, declared in `wrangler.jsonc` and dispatched on the cron
+expression itself in `src/lib/schedule/run.ts` — matched literally, so an
+expression added in one place and not the other falls through to a branch that
+runs both sweeps and says so, rather than silently doing nothing.
+
+    0 2 * * *   deadline sweep
+    0 3 * * *   label diff
+
+**The sweep is not redundant with the Durable Object alarm.** The alarm is
+precise and fires for one case at the moment its deadline passes; it exists only
+if something armed it. The sweep is coarse and sees everything. They read
+different stores — DO storage and D1 — so a regulatory deadline has two
+independent ways of being noticed.
+
+**Both are idempotent, because they run every night forever.** Re-arming a clock
+with the same `dueOn` is a no-op by construction. An overdue case is reported
+once, checked against the audit trail — an alert that fires every night for
+three weeks is worse than no alert, because it looks like coverage.
+
+**A case with no ruling gets no clock.** "Serious and unlisted" is the condition,
+and until a human has ruled, `unlisted` is not established — the model may have
+suggested it, and the model never decides. Arming on a suggestion would put a
+red overdue marker on a case nobody has read.
+
+**The label diff is why KV's third job exists.** CLAUDE.md gives KV "cached label
+lookups"; this is the only thing that fetches a label, and the cache is what
+makes "did it change?" answerable — something has to remember what it said last
+night. A changed `spl_set_id` or `effective_time` re-enqueues assessment for the
+cases that cited it, because expectedness flipping is exactly what turns an
+already-known reaction into a newly-unexpected one.
+
+**The console was already the real sink.** `audit.ts` said Cluster F would give
+it one; it turned out not to need it. `observability` is enabled, so Workers
+Logs retains those lines and Logpush ships them, and replacing `console.log`
+with a database write would have traded a sink that survives the Worker crashing
+for one that does not. What Cluster F added is a *mirror* in D1
+(`audit-log.ts`), for a different reason: the sweep has to read its own trail.
+Use `recordAudit()` for lines something later needs to query, and `audit()`
+everywhere else.

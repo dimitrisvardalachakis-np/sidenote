@@ -24,11 +24,11 @@ import {
  * 1. The application only ever holds the OBJECT KEY. The bytes are written
  *    once and read back only to serve a download. CLAUDE.md is explicit that
  *    the Worker stores the key and nothing else.
- * 2. In Cluster D the browser PUTs to a presigned URL directly and these
- *    bytes never pass through application code at all. Locally there is no
- *    presigning, so the file travels through a Server Action instead — which
- *    is why next.config.ts raises the action body limit. That limit exists
- *    only because of this gap and should be deleted along with it.
+ * 2. The browser PUTs to a presigned URL directly when R2's S3 credentials
+ *    are configured, and those bytes never pass through application code at
+ *    all — see lib/store/presign.ts. Without them the file travels through a
+ *    Server Action instead, which is why next.config.ts still raises the
+ *    action body limit: it is the size cap on the FALLBACK path.
  */
 
 export interface StoredObject {

@@ -8,8 +8,16 @@
  * prefix exists so the line can be grepped out of everything else a Worker
  * prints.
  *
- * In Cluster F this gains a real sink. The shape does not change when it
- * does, which is the point of pinning it now.
+ * Cluster F did not replace this. It turned out the console WAS the real sink:
+ * `observability` is enabled in wrangler.jsonc, so Workers Logs retains these
+ * lines and Logpush ships them, and swapping console.log for a database write
+ * would have traded a sink that survives the Worker crashing for one that does
+ * not.
+ *
+ * What Cluster F added is a MIRROR, in audit-log.ts, for a different reason
+ * than durability: the nightly sweep has to be able to read its own trail, or
+ * it reports every overdue case again every night. Use `recordAudit()` there
+ * — for lines something later needs to query — and this everywhere else.
  */
 
 export type AuditOutcome = "success" | "rejected" | "failure";
@@ -35,6 +43,6 @@ export function audit(line: AuditLine): void {
     outcome: line.outcome,
     ...(line.detail === undefined ? {} : { detail: line.detail }),
   };
-  // console IS the audit sink until Cluster F gives it a real one.
+  // console IS the audit sink. See the note above — that is not a placeholder.
   console.log(`[AUDIT] ${JSON.stringify(record)}`);
 }

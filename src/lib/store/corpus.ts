@@ -12,9 +12,10 @@ import { getDocumentLibrary } from "./library-store";
  * reviewer has uploaded.
  *
  * Merged rather than either-or, so a fresh checkout has a working demo and an
- * upload immediately becomes searchable. In Cluster E this is replaced by a
- * Vectorize query plus a D1 FTS5 query; the callers ask for a corpus and do
- * not care that it currently arrives as an array.
+ * upload immediately becomes searchable. Retrieval no longer goes through
+ * here when D1 is bound — see lib/retrieval/hybrid.ts, which queries FTS5 and
+ * Vectorize — but this stays as the corpus for a laptop with nothing bound,
+ * and as the source of the product names the intake chat matches against.
  */
 export interface Corpus {
   readonly chunks: readonly DocumentChunk[];

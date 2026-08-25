@@ -7,12 +7,12 @@ const nextConfig: NextConfig = {
       /**
        * Default is 1MB, which a 40-page CCDS blows through immediately.
        *
-       * This limit exists ONLY because Cluster A has no presigned uploads, so
-       * the original file has to travel through a Server Action. CLAUDE.md's
-       * target architecture sends the bytes browser-to-R2 directly and has
-       * the Worker keep nothing but the object key — at which point the
-       * action carries metadata and extracted text alone, and this line
-       * should be deleted rather than raised again.
+       * This is now the cap on the FALLBACK path only. When R2's S3
+       * credentials are configured the browser PUTs straight to the bucket and
+       * the action carries metadata and extracted text alone — see
+       * src/lib/store/presign.ts. Without them the bytes still come through
+       * here, so the limit stays. Raise it and you are raising how much of a
+       * Worker's memory one upload may spend; configure presigning instead.
        */
       bodySizeLimit: "12mb",
     },

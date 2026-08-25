@@ -27,6 +27,19 @@
     "enabled": true
   },
 
+  // ---------------------------------------------------------------- Cluster F
+
+  // Both nightly, an hour apart so they never contend for the database.
+  // The expressions are matched literally in src/lib/schedule/run.ts — changing
+  // one here without changing it there falls through to the "unrecognised"
+  // branch, which runs both sweeps and says so rather than doing nothing.
+  //
+  // UTC. 02:00 is after the day has rolled over everywhere that matters for a
+  // deadline counted in days.
+  "triggers": {
+    "crons": ["0 2 * * *", "0 3 * * *"]
+  },
+
   // See worker/server-only.js. The queue consumer drags most of src/lib into a
   // bundle wrangler builds rather than Next, and without React's "react-server"
   // resolver condition the `server-only` marker throws at Worker startup.

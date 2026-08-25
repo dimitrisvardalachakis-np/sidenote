@@ -74,9 +74,10 @@ export const Case = z.object({
 
   status: CaseStatus,
   /**
-   * One case, one reviewer. For now a nullable field; in Cluster D the claim
-   * is arbitrated by a Durable Object keyed `idFromName(caseId)` and this
-   * becomes a mirror of that state rather than the source of truth.
+   * One case, one reviewer. A MIRROR, not the source of truth: the claim is
+   * arbitrated by the CaseCoordinator Durable Object, keyed
+   * `idFromName(caseId)`. Ask the coordinator before writing to a case; this
+   * field is for display and for queries that do not need to be exact.
    */
   assignedTo: ReviewerId.nullable(),
 

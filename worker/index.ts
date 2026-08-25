@@ -32,6 +32,7 @@ import openNextWorker from "../.open-next/worker.js";
 
 import { runQueueBatch } from "../src/lib/pipeline/consumer";
 import { setAmbientCloudflareEnv } from "../src/lib/platform/env";
+import { runScheduled } from "../src/lib/schedule/run";
 
 /**
  * OpenNext's own Durable Objects, passed straight through.
@@ -105,7 +106,27 @@ const sidenoteWorker = {
     await runQueueBatch(batch, env, ctx);
   },
 
-  // Cluster F adds `scheduled` here — a sibling handler on this same object.
+  /**
+   * Cluster F. Cron triggers arrive here.
+   *
+   * `waitUntil` rather than a bare await: the sweeps walk every open case and
+   * may talk to openFDA, and a scheduled handler that returns before its work
+   * finishes has its work cancelled. The promise is what keeps the isolate
+   * alive until the sweep is done.
+   */
+  async scheduled(
+    controller: ScheduledController,
+    env: CloudflareEnv,
+    ctx: ExecutionContext,
+  ): Promise<void> {
+    // Same reason as `queue` above — OpenNext publishes its context from fetch
+    // and nowhere else, so without this the sweeps see no bindings and report
+    // a tidy zero.
+    setAmbientCloudflareEnv(env);
+    ctx.waitUntil(
+      runScheduled(controller.cron, env, controller.scheduledTime),
+    );
+  },
 };
 
 export default sidenoteWorker;
