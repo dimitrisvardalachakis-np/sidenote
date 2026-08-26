@@ -11,9 +11,11 @@ import {
   caseValidity,
   expeditedClock,
   isSerious,
+  ruledListedness,
   sourcesDisagree,
   spanMatchesNarrative,
-  ruledListedness,
+  type ExpectednessFinding,
+  type ListednessFinding,
 } from "@/lib/schemas";
 import { buildSeedCases, findSeedCase } from "./seed";
 
@@ -200,5 +202,59 @@ describe("findSeedCase", () => {
 
   it("returns null for an unknown id", () => {
     expect(findSeedCase(TODAY, "not-a-case")).toBeNull();
+  });
+});
+
+describe("the fixture timeline is coherent", () => {
+  /**
+   * Evidence is gathered before it is ruled on. The retrieval stamp used to be
+   * a pinned instant while every other timestamp moved with `today`, so a
+   * reviewer could be recorded ruling on evidence that would not be retrieved
+   * for another three weeks.
+   */
+  const stampOf = (f: ListednessFinding | ExpectednessFinding): string =>
+    f.state === "source_unavailable" ? f.attemptedAt : f.retrievedAt;
+
+  it("retrieves after the case is created and before any ruling", () => {
+    for (const seeded of cases) {
+      const created = seeded.record.createdAt;
+      for (const finding of [
+        seeded.assessment.listedness,
+        seeded.assessment.expectedness,
+      ]) {
+        const at = stampOf(finding);
+        expect(at >= created).toBe(true);
+        const ruling = seeded.assessment.ruling;
+        if (ruling !== null) expect(at <= ruling.decidedAt).toBe(true);
+      }
+    }
+  });
+
+  it("keeps the retrieval stamp on the same day the case arrived", () => {
+    for (const seeded of cases) {
+      expect(stampOf(seeded.assessment.listedness).slice(0, 10)).toBe(
+        seeded.record.receivedAt,
+      );
+    }
+  });
+
+  it("gives every case somebody has opened a named reviewer", () => {
+    // "in_review" means a reviewer is holding it. A null assignee contradicts
+    // the status, and one case said both.
+    for (const seeded of cases) {
+      if (seeded.record.status !== "received") {
+        expect(seeded.record.assignedTo).not.toBeNull();
+      }
+    }
+  });
+
+  it("only rules on cases a reviewer has actually worked", () => {
+    for (const seeded of cases) {
+      if (seeded.assessment.ruling !== null) {
+        expect(["assessed", "reported", "closed"]).toContain(
+          seeded.record.status,
+        );
+      }
+    }
   });
 });

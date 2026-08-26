@@ -135,8 +135,9 @@ function Reading({ reading }: { reading: ModelReading }) {
         </span>
       </p>
       <p className="mt-1 text-meta text-slate">
-        A reading of the passage quoted, checked to occur in it word for word.
-        It is not a determination — listedness is yours to record below.
+        Checked to occur word for word in the source passage, of which an
+        extract is shown below — so the quotation above may sit outside the
+        extract. Not a determination: listedness is yours to record below.
       </p>
     </div>
   );

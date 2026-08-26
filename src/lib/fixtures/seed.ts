@@ -174,6 +174,16 @@ function labelCitation(section: string, quote: string, chunk: string): Citation 
   };
 }
 
+/**
+ * A placeholder in the specs below, rewritten per case by `stampFinding`.
+ *
+ * Every other timestamp in this file is derived from `receivedAt`, which is
+ * itself relative to `today`. This one used to be a pinned instant, so on any
+ * date other than the one hard-coded here the retrieval was stamped days after
+ * the ruling it supposedly informed — case 101 had a reviewer ruling on
+ * evidence that would not be retrieved for another three weeks. Nothing read
+ * the field, so nothing broke; it was simply untrue.
+ */
 const RETRIEVED_AT = "2026-08-24T08:15:00Z";
 
 /**
@@ -601,7 +611,7 @@ const SPECS: readonly CaseSpec[] = [
     origin: "clinical_trial",
     receivedDaysAgo: 4,
     status: "in_review",
-    assignedTo: null,
+    assignedTo: "reviewer-demo",
     narrative:
       "Trial subject developed a fever of 39.1C with a neutrophil count of 0.4 x10^9/L on day 21. Study drug was held and the subject was admitted for intravenous antibiotics. Counts recovered over five days.",
     verbatimTerm: "febrile neutropenia",
@@ -740,7 +750,7 @@ const SPECS: readonly CaseSpec[] = [
       expectedness: "unexpected",
       by: "reviewer-demo",
       rationale:
-        "Absent from both the CCDS and the FDA label. Serious by hospitalisation, so the expedited clock applies.",
+        "Absent from both the CCDS and the FDA label. Life-threatening airway swelling, so the expedited clock applies.",
     },
     listedness: {
       state: "grounded",
@@ -912,6 +922,24 @@ function buildFlags(spec: CaseSpec): SeriousnessFlags {
   return flags as SeriousnessFlags;
 }
 
+/**
+ * Put a finding's timestamp on the case's own timeline.
+ *
+ * The specs carry a placeholder because they are written as plain literals and
+ * have no access to `receivedAt`. The order that has to hold is
+ * createdAt (09:00) < retrieved (09:05) < decided (14:20): evidence is
+ * gathered before it is ruled on.
+ */
+function stampFinding<T extends { readonly state: string }>(
+  finding: T,
+  receivedAt: IsoDate,
+): T {
+  const at = `${receivedAt}T09:05:00Z`;
+  return "retrievedAt" in finding
+    ? { ...finding, retrievedAt: at }
+    : { ...finding, attemptedAt: at };
+}
+
 function buildCase(spec: CaseSpec, today: IsoDate): SeededCase {
   const receivedAt = daysBefore(today, spec.receivedDaysAgo);
   const caseId = CaseId.parse(fixtureUuid(UUID_KIND.case, spec.n));
@@ -986,8 +1014,8 @@ function buildCase(spec: CaseSpec, today: IsoDate): SeededCase {
     caseId,
     reactionId,
     drugId,
-    listedness: spec.listedness,
-    expectedness: spec.expectedness,
+    listedness: stampFinding(spec.listedness, receivedAt),
+    expectedness: stampFinding(spec.expectedness, receivedAt),
     ruling:
       spec.ruling === undefined
         ? null
