@@ -163,3 +163,50 @@ describe("with no model at all", () => {
     expect(out.listedness.state).not.toBe("no_result");
   });
 });
+
+describe("holes found by review", () => {
+  it("says the source was unavailable when no document exists for the namespace", async () => {
+    // Not "nothing found". A company library with no CCDS in it must not
+    // produce the finding that the CCDS appears not to mention the reaction —
+    // that is a claim of silence about a document nobody opened.
+    const publicOnly = SEED_CHUNKS.filter((c) => c.sourceType === "public");
+    const out = await assessCase({
+      ...base,
+      chunks: publicOnly,
+      reactionTerm: "liver failure, died",
+      drugName: "Hepalex",
+      ai: { binding: null, reason: "no binding" },
+    });
+    expect(out.listedness.state).toBe("source_unavailable");
+    expect(out.listedness.state).not.toBe("no_result");
+  });
+
+  it("reads the two namespaces one after the other, not concurrently", async () => {
+    // aiGatewayLogId is a mutable property the runtime overwrites per call.
+    // Concurrent reads race on it and a reading gets stamped with the other
+    // namespace's inference id, which makes the audit trail point at the
+    // wrong inference.
+    const order: string[] = [];
+    let inFlight = 0;
+    const binding: AiBinding = {
+      run: async () => {
+        inFlight += 1;
+        order.push(`start:${inFlight}`);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+        return {
+          response: JSON.stringify({ found: false, chunkId: null, quotedSpan: null, rationale: null }),
+        };
+      },
+      aiGatewayLogId: "aig-1",
+    };
+    await assessCase({
+      ...base,
+      reactionTerm: "liver failure, died",
+      drugName: "Hepalex",
+      ai: { binding, reason: null },
+    });
+    // Never two in flight at once.
+    expect(order.every((o) => o === "start:1")).toBe(true);
+  });
+});

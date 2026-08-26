@@ -22,10 +22,12 @@
 import { z } from "zod";
 import type { DocumentChunk, ModelReading } from "@/lib/schemas";
 import {
+  ModelReading as ModelReadingSchema,
   RATIONALE_MAX_CHARS,
   containsRecommendation,
   isSingleSentence,
 } from "@/lib/schemas/reading";
+import { sanitisePassage } from "./prompt";
 
 /**
  * The literal shape the model is asked for. Deliberately permissive about
@@ -39,6 +41,20 @@ export const RawGeneration = z.object({
   quotedSpan: z.string().nullable(),
   rationale: z.string().nullable(),
 });
+
+/**
+ * A span of nothing is not a quotation.
+ *
+ * `"any text".includes("")` is true in JavaScript, so an empty string
+ * "occurs verbatim" in every chunk ever sent — and a whitespace-only span
+ * occurs in almost all of them. That is exactly the reply an 8B model gives
+ * when it cannot copy a sentence exactly but has already committed to
+ * found:true, and it would have rendered as an empty blockquote captioned
+ * "checked to occur in it word for word".
+ */
+function isEmptySpan(span: string): boolean {
+  return span.trim().length === 0;
+}
 export type RawGeneration = z.output<typeof RawGeneration>;
 
 /** Why a reply was refused. Recorded on the audit line and used to word the retry. */
@@ -73,7 +89,10 @@ export type VerifyResult =
  */
 export function unwrapFence(text: string): string {
   const trimmed = text.trim();
-  const fence = /^```(?:json)?\s*\n([\s\S]*?)\n?```$/.exec(trimmed);
+  // `\s*` on both sides rather than a mandatory newline: a model that emits
+  // ```json {"found": false, ...} ``` on one line has made the same trivial
+  // formatting slip, and burning the only retry on it buys nothing.
+  const fence = /^```(?:json)?\s*([\s\S]*?)\s*```$/.exec(trimmed);
   return fence?.[1]?.trim() ?? trimmed;
 }
 
@@ -146,15 +165,10 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
         },
       };
     }
-    return {
-      ok: true,
-      reading: {
-        status: "nothing_found",
-        model,
-        gatewayRequestId,
-        generatedAt: now,
-      },
-    };
+    return parsed(
+      { status: "nothing_found", model, gatewayRequestId, generatedAt: now },
+      "nothing_found",
+    );
   }
 
   if (raw.chunkId === null || raw.quotedSpan === null) {
@@ -163,6 +177,16 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
       rejection: {
         kind: "incoherent",
         detail: "found was true but chunkId or quotedSpan was null",
+      },
+    };
+  }
+
+  if (isEmptySpan(raw.quotedSpan)) {
+    return {
+      ok: false,
+      rejection: {
+        kind: "incoherent",
+        detail: "found was true but the quoted span was empty",
       },
     };
   }
@@ -182,7 +206,12 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
   // quotes or dashes — normalising here would mean the span we display is not
   // the span we verified, and the gap between the two is precisely where a
   // fabricated quotation would live.
-  if (!cited.text.includes(raw.quotedSpan)) {
+  //
+  // Checked against the SANITISED text, which is the string the model was
+  // actually shown. For every real document the two are identical; they differ
+  // only when a chunk contains the passage fence, and there the model can only
+  // faithfully copy what was in front of it.
+  if (!sanitisePassage(cited.text).includes(raw.quotedSpan)) {
     return {
       ok: false,
       rejection: {
@@ -192,9 +221,8 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
     };
   }
 
-  return {
-    ok: true,
-    reading: {
+  return parsed(
+    {
       status: "read",
       // The chunk's own id, not the string the model sent. They are equal by
       // the check above; using the trusted one means no unvalidated string
@@ -206,7 +234,36 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
       gatewayRequestId,
       generatedAt: now,
     },
-  };
+    "read",
+  );
+}
+
+/**
+ * Run the reading through its own schema before returning it.
+ *
+ * Without this the schema was decoration: `verifyGeneration` built a bare
+ * object literal, and nothing on the path from the model to the screen ever
+ * parsed it. The rules attached to `ModelReading` — a non-empty span, a
+ * rationale that does not recommend — only ever ran if something else happened
+ * to parse an Assessment later. A backstop that never fires is not a backstop,
+ * and the comments claiming one were wrong.
+ *
+ * A failure here is a bug in the checks above rather than a bad model reply,
+ * so it is reported as a rejection and the reviewer sees the degraded state:
+ * whatever went wrong, the one thing that must not happen is rendering it.
+ */
+function parsed(candidate: unknown, kind: string): VerifyResult {
+  const result = ModelReadingSchema.safeParse(candidate);
+  if (!result.success) {
+    return {
+      ok: false,
+      rejection: {
+        kind: "wrong_shape",
+        detail: `the ${kind} reading failed its own schema (${z.prettifyError(result.error).replace(/\s+/g, " ").slice(0, 160)})`,
+      },
+    };
+  }
+  return { ok: true, reading: result.data };
 }
 
 /**

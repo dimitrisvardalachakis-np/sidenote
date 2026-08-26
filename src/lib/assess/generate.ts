@@ -168,12 +168,16 @@ export async function readPassages(
       // A transport failure is not a rejected reply; retrying a stricter
       // instruction at a model that did not answer is pointless. Stop.
       const message = cause instanceof Error ? cause.message : "unknown error";
-      attempts.push({ attempt, rejection: null, gatewayRequestId: null });
+      // Keep the gateway id if the runtime managed to set one. A timeout or a
+      // 522 is precisely the case where an operator needs it: the request may
+      // well have been logged upstream even though nothing came back.
+      const failedId = binding.aiGatewayLogId ?? null;
+      attempts.push({ attempt, rejection: null, gatewayRequestId: failedId });
       return {
         reading: unavailable(
           `the model could not be reached (${message})`,
           GENERATION_MODEL,
-          null,
+          failedId,
           now,
         ),
         attempts,

@@ -6,7 +6,7 @@
  * file exists.
  */
 import { describe, expect, it } from "vitest";
-import { ChunkId, DocumentId, type DocumentChunk } from "@/lib/schemas";
+import { ChunkId, DocumentId, ModelReading, type DocumentChunk } from "@/lib/schemas";
 import {
   acceptableRationale,
   parseGeneration,
@@ -193,5 +193,64 @@ describe("a rationale reports; it does not recommend", () => {
     const r = verify({ rationale: null });
     expect(r.ok).toBe(true);
     if (r.ok && r.reading.status === "read") expect(r.reading.rationale).toBeNull();
+  });
+});
+
+/**
+ * Regressions from the step 3 review. Every one of these was a real hole that
+ * shipped in the first draft of this file; each test is the shape of the hole.
+ */
+describe("holes found by review", () => {
+  it("refuses an empty quoted span, which 'occurs verbatim' in every chunk", () => {
+    // "any text".includes("") is true, so this passed the verbatim check and
+    // rendered as an empty blockquote captioned "checked word for word".
+    const r = verify({ quotedSpan: "" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.rejection.kind).toBe("incoherent");
+  });
+
+  it("refuses a whitespace-only span for the same reason", () => {
+    const r = verify({ quotedSpan: "   " });
+    expect(r.ok).toBe(false);
+  });
+
+  it("catches every inflection of a recommendation marker", () => {
+    // The original denylist wrapped each marker in \b...\b, so "recommended"
+    // and "expedited" walked straight past it. This is the sentence that did.
+    expect(acceptableRationale("Expedited reporting is recommended for this reaction.")).toBeNull();
+    expect(acceptableRationale("It is recommended that this be looked at.")).toBeNull();
+    expect(acceptableRationale("This recommends further action.")).toBeNull();
+    expect(acceptableRationale("An expedited report is required.")).toBeNull();
+    expect(acceptableRationale("Reporting to the agency is required.")).toBeNull();
+    expect(acceptableRationale("Reported to the regulator already.")).toBeNull();
+  });
+
+  it("still does not fire on 'shoulder'", () => {
+    expect(acceptableRationale("Shoulder pain is described in the passage.")).not.toBeNull();
+  });
+
+  it("keeps a one-sentence rationale containing an abbreviation", () => {
+    // The comment claimed a capital-letter test that the regex did not have,
+    // so "e.g." split the sentence and a good rationale was silently dropped.
+    expect(acceptableRationale("Hepatic events, e.g. jaundice, are described.")).not.toBeNull();
+    expect(acceptableRationale("Approx. 3% of patients developed jaundice.")).not.toBeNull();
+  });
+
+  it("still splits a genuinely second sentence", () => {
+    expect(acceptableRationale("See section 4.8. Jaundice is listed rarely.")).toBeNull();
+  });
+
+  it("peels a fence emitted on a single line", () => {
+    const r = parseGeneration('```json {"found":false,"chunkId":null,"quotedSpan":null,"rationale":null} ```');
+    expect(r.ok).toBe(true);
+  });
+
+  it("runs the reading through its own schema before returning it", () => {
+    // The schema was decoration until now: verifyGeneration built a bare
+    // object literal and nothing on the live path ever parsed it, so the
+    // "second lock" the comments advertised never actually turned.
+    const r = verify({});
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(ModelReading.safeParse(r.reading).success).toBe(true);
   });
 });

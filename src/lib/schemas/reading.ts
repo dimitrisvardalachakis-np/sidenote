@@ -30,19 +30,35 @@ import { ChunkId, IsoDateTime } from "./primitives";
 export const RATIONALE_MAX_CHARS = 240;
 
 /**
- * Words that turn a reading into a recommendation.
+ * Language that turns a reading into a recommendation.
  *
  * "The passage lists hepatic failure" is a reading. "This should be expedited"
  * is a decision wearing a reading's clothes, and it is the specific way a
- * grounded summariser starts doing the reviewer's job. A rationale containing
+ * grounded summariser starts doing the reviewer's job. A rationale matching
  * any of these is discarded and the citation kept — the quotation was still
  * verified, and it is the part that carries the evidence.
  *
- * This is a denylist, which is a blunt instrument: it will not catch every
- * phrasing of a recommendation, and it will occasionally take a harmless
- * sentence with it. Both errors fail safe — towards showing the reviewer a
- * quotation with no gloss on it.
+ * These are prefix patterns, not whole words, and that is the whole point. An
+ * earlier version required a word boundary on both ends, so `recommend` did
+ * not match "recommended" and `expedite` did not match "expedited" — which let
+ * "Expedited reporting is recommended for this reaction" through untouched.
+ * A denylist that misses the most natural inflection of its own marker is not
+ * a denylist. `should` keeps its trailing boundary because it has no
+ * inflections and the prefix form would swallow "shoulder".
+ *
+ * It is still a blunt instrument: it will not catch every phrasing of a
+ * recommendation, and it will occasionally take a harmless sentence with it.
+ * Both errors fail safe — towards showing the reviewer a quotation with no
+ * gloss on it.
  */
+export const RECOMMENDATION_PATTERNS: readonly RegExp[] = [
+  /\bshould\b/,
+  /\brecommend/, // recommend, recommends, recommended, recommendation
+  /\bexpedit/, // expedite, expedited, expediting, expeditious
+  /\breport(?:s|ed|ing)?\s+to\b/,
+];
+
+/** The markers as the brief words them, for documentation and the evals. */
 export const RECOMMENDATION_MARKERS: readonly string[] = [
   "should",
   "recommend",
@@ -53,24 +69,23 @@ export const RECOMMENDATION_MARKERS: readonly string[] = [
 /** True when a rationale strays into telling the reviewer what to do. */
 export function containsRecommendation(text: string): boolean {
   const lower = text.toLowerCase();
-  return RECOMMENDATION_MARKERS.some((marker) =>
-    // Word-boundary matched so "shoulder" is not a recommendation. Markers
-    // containing a space are matched as phrases, which \b still handles.
-    new RegExp(`\\b${marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(
-      lower,
-    ),
-  );
+  return RECOMMENDATION_PATTERNS.some((pattern) => pattern.test(lower));
 }
 
 /**
  * True when the text is a single sentence.
  *
- * Counting terminators that are followed by whitespace and a capital avoids
- * splitting "2.1% of patients" or "e.g. jaundice" into two sentences. A
- * trailing full stop is fine.
+ * A terminator only ends a sentence when a capital follows it. Without that
+ * test — an earlier version had the comment but not the check — "Hepatic
+ * events, e.g. jaundice, are described" counts as two sentences and a
+ * perfectly good rationale is thrown away. The capital also keeps "2.1% of
+ * patients" and "Approx. 3%" intact.
+ *
+ * It still splits "See section 4.8. Jaundice is listed rarely", and that is
+ * correct: those are two sentences.
  */
 export function isSingleSentence(text: string): boolean {
-  return !/[.!?]["')\]]?\s+\S/.test(text.trim().replace(/\s+$/, ""));
+  return !/[.!?]["')\]]?\s+[A-Z]/.test(text.trim());
 }
 
 /**
