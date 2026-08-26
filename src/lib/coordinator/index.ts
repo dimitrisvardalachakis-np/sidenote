@@ -225,18 +225,23 @@ class UnarbitratedCoordination implements CaseCoordination {
     reference: string,
     dueOn: IsoDate | null,
   ): Promise<void> {
+    // Standing a clock down is a no-op with nothing to stand down, so it says
+    // nothing. The nightly sweep calls this for EVERY open case, most of which
+    // want no clock at all, and logging those produced a failure line per case
+    // per night — a wall of red about work nobody asked for, which is how a log
+    // stops being read.
+    if (dueOn === null) return;
+
     // There is no alarm without a Durable Object, and there is no honest way
     // to fake one — a setTimeout dies with the process and would be a promise
-    // to notify that nothing keeps.
+    // to notify that nothing keeps. So a clock that was genuinely WANTED and
+    // cannot be armed is still reported, every time.
     audit({
       actor: "system",
       action: "arm_expedited_clock",
       target: reference,
       outcome: "failure",
-      detail: {
-        reason: "no_durable_object_bound",
-        dueOn: dueOn ?? "none",
-      },
+      detail: { reason: "no_durable_object_bound", dueOn },
     });
   }
 

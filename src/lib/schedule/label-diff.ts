@@ -135,11 +135,15 @@ export async function runLabelDiff(): Promise<LabelDiffReport> {
     // is already queued or already visibly unassessed; adding it here would
     // hide a pipeline failure behind a nightly retry.
     const assessments = await assessmentsForCases(caseIds);
+    // Counted per substance. `reflagged` is the run total and reporting it on
+    // a per-substance line would say "12 cases" for a drug that had two.
+    let reflaggedHere = 0;
     for (const caseId of caseIds) {
       if (!assessments.has(caseId)) continue;
       await dispatch({ kind: "assess_case", caseId: CaseId.parse(caseId) });
-      reflagged += 1;
+      reflaggedHere += 1;
     }
+    reflagged += reflaggedHere;
 
     await recordAudit({
       actor: "system",
@@ -149,7 +153,7 @@ export async function runLabelDiff(): Promise<LabelDiffReport> {
       detail: {
         from: `${previous.setId}@${previous.effectiveTime}`,
         to: `${current.setId}@${current.effectiveTime}`,
-        cases: reflagged,
+        cases: reflaggedHere,
       },
     });
   }
@@ -177,8 +181,20 @@ export async function runLabelDiff(): Promise<LabelDiffReport> {
   };
 }
 
-/** A day. The sweep runs nightly, so anything shorter is wasted fetches. */
-const LABEL_TTL_SECONDS = 24 * 60 * 60;
+/**
+ * A WEEK, not a day — and the difference is the whole feature.
+ *
+ * The obvious value is 24 hours, matching the sweep. That is exactly wrong: the
+ * cache IS the memory of what the label said last night, and a TTL equal to the
+ * interval means it may expire minutes before the run that needs it. Then
+ * `cached()` misses, re-fetches, stores today's value, compares it with itself,
+ * and finds no change — every night, forever. The diff would never fire once,
+ * and nothing would look broken.
+ *
+ * Seven days leaves six spare so a late or skipped run still has something to
+ * compare against.
+ */
+const LABEL_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /**
  * Ask openFDA what the label says now.
@@ -194,10 +210,19 @@ const LABEL_TTL_SECONDS = 24 * 60 * 60;
  * profile for a demo would be the worse choice.
  */
 async function fetchLabel(substance: string): Promise<CachedLabel | null> {
+  // The substance is interpolated into a QUERY EXPRESSION, not a plain
+  // parameter — openFDA's `search` has its own syntax with quotes, `AND`/`OR`
+  // and `+`. A drug name carrying a quote would break the query, and the
+  // failure would be a 404 that this function reads as "no such label", which
+  // is a different and quieter wrong answer. Reduced to characters that cannot
+  // mean anything to the parser.
+  const safe = substance.replace(/[^a-z0-9 -]/gi, " ").trim();
+  if (safe === "") return null;
+
   const url = new URL(OPENFDA_ENDPOINT);
   url.searchParams.set(
     "search",
-    `openfda.generic_name:"${substance}" OR openfda.brand_name:"${substance}"`,
+    `openfda.generic_name:"${safe}" OR openfda.brand_name:"${safe}"`,
   );
   url.searchParams.set("limit", "1");
 

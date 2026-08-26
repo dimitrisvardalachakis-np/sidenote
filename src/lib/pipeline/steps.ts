@@ -103,9 +103,19 @@ async function chunkStep(
     sourceType: entry.document.sourceType,
   });
 
+  // `chunking`, not `chunked` — IngestionStatus is
+  // pending / extracting / chunking / embedded / rejected, and there is no
+  // past tense of chunking in it. Writing one threw inside SafetyDocument.parse,
+  // which sent every uploaded document round the retry loop three times and
+  // into the dead-letter queue. Caught in review, because the assess path was
+  // verified end to end and this one never was.
+  //
+  // The document stays at `chunking` until embedStep upserts its vectors and
+  // moves it to `embedded` — the status names the stage it is IN, not the last
+  // one it finished.
   const document = SafetyDocument.parse({
     ...entry.document,
-    status: chunks.length === 0 ? "rejected" : "chunked",
+    status: chunks.length === 0 ? "rejected" : "chunking",
     rejectionReason: chunks.length === 0 ? "empty_document" : null,
     chunkCount: chunks.length,
   });
@@ -244,10 +254,34 @@ async function embedStep(
     // Marked only after the vector is actually in the index. The other order
     // would leave chunks recorded as embedded that no search can find, and
     // nothing would ever try again.
+    // `inArray` with an empty list builds `IN ()`, which is a syntax error
+    // rather than a no-op. Reachable whenever a batch produced no vectors —
+    // every group in it having been filtered out by the index guard above.
+    const embeddedIds = vectors.map((v) => v.id);
+    if (embeddedIds.length > 0) {
+      await db
+        .update(schema.chunks)
+        .set({ embeddedAt })
+        .where(inArray(schema.chunks.id, embeddedIds));
+    }
+  }
+
+  // The document reaches `embedded` HERE and nowhere else — the status is a
+  // claim about Vectorize, and only the step that upserted is entitled to make
+  // it. Without this a fully-ingested document sat at `chunking` forever and
+  // the library screen never showed it as usable.
+  //
+  // ONE COLUMN, NOT THE WHOLE ENTRY. `library.save()` deletes and re-inserts a
+  // document's chunks from DocumentChunk values, and a DocumentChunk carries
+  // neither `embeddedAt` nor `textHash` — they are storage bookkeeping, not
+  // domain. Saving the entry back would therefore wipe the two columns this
+  // step has just spent model calls filling in, and the next run would re-embed
+  // the entire document and pay for all of them again.
+  if (upserted > 0) {
     await db
-      .update(schema.chunks)
-      .set({ embeddedAt })
-      .where(inArray(schema.chunks.id, vectors.map((v) => v.id)));
+      .update(schema.documents)
+      .set({ status: "embedded" })
+      .where(eq(schema.documents.id, documentId));
   }
 
   audit({
@@ -283,6 +317,19 @@ async function assessStep(caseId: string): Promise<readonly IngestMessage[]> {
   const record = await store.get(caseId);
   if (record === null) return [];
 
+  /**
+   * ONE PAIR, AND THAT IS A KNOWN LIMITATION RATHER THAN A DESIGN.
+   *
+   * Assessment is per reaction-drug pair — the same reaction against two drugs
+   * is two questions with two answers, and the schema says so. This assesses
+   * the first reaction against the first suspect drug and no others, so a case
+   * reporting two reactions gets evidence for one of them.
+   *
+   * Written down rather than left to be discovered: the case screen renders a
+   * single assessment, so the gap is invisible until somebody files a
+   * multi-reaction report. Fixing it means the screen has to show several, and
+   * that is a UI decision, not a pipeline one.
+   */
   const reaction = record.reactions[0];
   const drug = record.drugs.find((d) => d.role === "suspect") ?? record.drugs[0];
   if (reaction === undefined || drug === undefined) {
