@@ -13,7 +13,7 @@ import {
   isSerious,
   sourcesDisagree,
   spanMatchesNarrative,
-  standingListedness,
+  ruledListedness,
 } from "@/lib/schemas";
 import { buildSeedCases, findSeedCase } from "./seed";
 
@@ -25,7 +25,7 @@ const clockFor = (index: number) => {
   if (seeded === undefined) throw new Error("missing fixture");
   return expeditedClock(
     seeded.record,
-    standingListedness(seeded.assessment) === "unlisted",
+    ruledListedness(seeded.assessment) === "unlisted",
     TODAY,
   );
 };
@@ -74,7 +74,7 @@ describe("clock states", () => {
 
   it("never starts a clock on a listed reaction", () => {
     for (const [index, seeded] of cases.entries()) {
-      if (standingListedness(seeded.assessment) === "listed") {
+      if (ruledListedness(seeded.assessment) === "listed") {
         expect(clockFor(index).state).toBe("not_applicable");
       }
     }
@@ -108,10 +108,11 @@ describe("the two disagreements", () => {
   });
 
   it("covers both directions", () => {
-    const directions = disagreeing.map((c) => {
-      const l = c.assessment.listedness;
-      return l.state === "grounded" ? l.determination : "?";
-    });
+    // The determination now lives on the ruling and nowhere else, so this
+    // reads it from the reviewer's decision rather than from the finding.
+    const directions = disagreeing.map(
+      (c) => c.assessment.ruling?.listedness ?? "?",
+    );
     expect(new Set(directions)).toEqual(new Set(["listed", "unlisted"]));
   });
 });

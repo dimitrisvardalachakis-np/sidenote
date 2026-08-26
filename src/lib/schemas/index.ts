@@ -12,6 +12,7 @@ export * from "./patient";
 export * from "./reporter";
 export * from "./drug";
 export * from "./reaction";
+export * from "./reading";
 export * from "./document";
 export * from "./assessment";
 export * from "./case";

@@ -19,10 +19,13 @@ import {
   SafetyDocument,
   SeriousnessFlags,
   caseValidity,
+  documentStance,
   expeditedClock,
   expeditedDeadline,
   flaggedCriteria,
   isSerious,
+  readingsDiverge,
+  ruledListedness,
   sourcesDisagree,
   spanMatchesNarrative,
   type Citation,
@@ -108,6 +111,26 @@ const completeDraft = {
   drugs: [suspectDrug],
   reactions: [seriousReaction],
 };
+
+/** No model ran. The honest default everywhere in this project today. */
+const NO_READING = {
+  status: "unavailable" as const,
+  reason: "no Workers AI binding is configured in this environment",
+  model: null,
+  gatewayRequestId: null,
+  attemptedAt: "2026-08-24T09:00:00Z",
+};
+
+/** A verified reading, for the tests that need one. */
+const readingOf = (chunkId: string) => ({
+  status: "read" as const,
+  chunkId,
+  quotedSpan: "hepatic enzyme elevations have been reported",
+  rationale: "The passage records hepatic enzyme elevations.",
+  model: "@cf/meta/llama-3.1-8b-instruct",
+  gatewayRequestId: "aig-log-1",
+  generatedAt: "2026-08-24T09:00:00Z",
+});
 
 const companyCitation: Citation = {
   chunkId: ChunkId.parse("doc-a#12"),
@@ -302,9 +325,8 @@ describe("seriousness", () => {
 describe("no citation, no claim (non-negotiable #3)", () => {
   const groundedBase = {
     state: "grounded" as const,
-    determination: "listed" as const,
     documentKind: "ccds" as const,
-    suggestedBy: "model" as const,
+    reading: NO_READING,
     retrievedAt: "2026-08-24T09:00:00Z",
   };
 
@@ -354,7 +376,76 @@ describe("no citation, no claim (non-negotiable #3)", () => {
 });
 
 describe("when the two sources disagree, that is the headline", () => {
-  const assessmentWith = (listed: string, expected: string) =>
+  /**
+   * A determination now exists in exactly one place: the reviewer's ruling.
+   * These build an assessment whose findings carry passages and no verdict,
+   * then rule on it — which is the order the real flow works in.
+   */
+  const ruled = (listed: string, expected: string) =>
+    Assessment.parse({
+      id: uuid(4),
+      caseId: uuid(5),
+      reactionId: uuid(1),
+      drugId: uuid(2),
+      createdAt: "2026-08-24T09:00:00Z",
+      updatedAt: "2026-08-24T09:00:00Z",
+      ruling: {
+        listedness: listed,
+        expectedness: expected,
+        decidedBy: "reviewer-7",
+        decidedAt: "2026-08-24T11:00:00Z",
+        rationale: "Read both passages and ruled.",
+      },
+      listedness: {
+        state: "grounded",
+        documentKind: "ccds",
+        citations: [companyCitation],
+        reading: NO_READING,
+        retrievedAt: "2026-08-24T09:00:00Z",
+      },
+      expectedness: {
+        state: "grounded",
+        citations: [publicCitation],
+        reading: NO_READING,
+        labelSetId: "abc-123",
+        retrievedAt: "2026-08-24T09:00:00Z",
+      },
+    });
+
+  it("sees no conflict when both sources agree", () => {
+    expect(sourcesDisagree(ruled("listed", "expected"))).toBe(false);
+    expect(sourcesDisagree(ruled("unlisted", "unexpected"))).toBe(false);
+  });
+
+  it("flags the company doc being ahead of the label", () => {
+    expect(sourcesDisagree(ruled("listed", "unexpected"))).toBe(true);
+  });
+
+  it("flags the label being ahead of the company doc", () => {
+    expect(sourcesDisagree(ruled("unlisted", "expected"))).toBe(true);
+  });
+
+  it("does not call an unresolved question a disagreement", () => {
+    expect(sourcesDisagree(ruled("unlisted", "indeterminate"))).toBe(false);
+    expect(sourcesDisagree(ruled("indeterminate", "expected"))).toBe(false);
+  });
+
+  it("has no determination at all until a reviewer rules", () => {
+    const unruled = Assessment.parse({
+      ...ruled("listed", "expected"),
+      ruling: null,
+    });
+    // The model produced passages and a reading. Neither is a verdict, and
+    // there is no field on a finding in which one could be recorded.
+    expect(ruledListedness(unruled)).toBeNull();
+    expect(sourcesDisagree(unruled)).toBe(false);
+    expect(unruled.listedness).not.toHaveProperty("determination");
+    expect(unruled.expectedness).not.toHaveProperty("determination");
+  });
+});
+
+describe("what the documents were observed to say", () => {
+  const withReadings = (company: unknown, label: unknown) =>
     Assessment.parse({
       id: uuid(4),
       caseId: uuid(5),
@@ -365,58 +456,73 @@ describe("when the two sources disagree, that is the headline", () => {
       ruling: null,
       listedness: {
         state: "grounded",
-        determination: listed,
         documentKind: "ccds",
         citations: [companyCitation],
-        suggestedBy: "model",
+        reading: company,
         retrievedAt: "2026-08-24T09:00:00Z",
       },
       expectedness: {
         state: "grounded",
-        determination: expected,
         citations: [publicCitation],
-        suggestedBy: "model",
+        reading: label,
         labelSetId: "abc-123",
         retrievedAt: "2026-08-24T09:00:00Z",
       },
     });
 
-  it("sees no conflict when both sources agree", () => {
-    expect(sourcesDisagree(assessmentWith("listed", "expected"))).toBe(false);
-    expect(sourcesDisagree(assessmentWith("unlisted", "unexpected"))).toBe(false);
+  const found = (c: Citation) => readingOf(c.chunkId);
+  const silent = {
+    status: "nothing_found" as const,
+    model: "@cf/meta/llama-3.1-8b-instruct",
+    gatewayRequestId: null,
+    generatedAt: "2026-08-24T09:00:00Z",
+  };
+
+  it("reads a verified citation as the document describing the reaction", () => {
+    const a = withReadings(found(companyCitation), silent);
+    expect(documentStance(a.listedness)).toBe("describes");
+    expect(documentStance(a.expectedness)).toBe("silent");
   });
 
-  it("flags the company doc being ahead of the label", () => {
-    expect(sourcesDisagree(assessmentWith("listed", "unexpected"))).toBe(true);
+  it("calls one describing and the other silent a divergence", () => {
+    expect(readingsDiverge(withReadings(found(companyCitation), silent))).toBe(
+      true,
+    );
+    expect(readingsDiverge(withReadings(silent, found(publicCitation)))).toBe(
+      true,
+    );
   });
 
-  it("flags the label being ahead of the company doc", () => {
-    expect(sourcesDisagree(assessmentWith("unlisted", "expected"))).toBe(true);
+  it("does not call agreement a divergence", () => {
+    expect(readingsDiverge(withReadings(silent, silent))).toBe(false);
   });
 
-  it("does not call an unresolved question a disagreement", () => {
-    expect(sourcesDisagree(assessmentWith("unlisted", "indeterminate"))).toBe(
+  it("never calls an outage a divergence", () => {
+    // The failure this exists to prevent: a model that could not be reached
+    // must not make the two sources look like they conflict.
+    expect(documentStance(withReadings(NO_READING, silent).listedness)).toBe(
+      "unknown",
+    );
+    expect(readingsDiverge(withReadings(NO_READING, silent))).toBe(false);
+    expect(readingsDiverge(withReadings(NO_READING, found(publicCitation)))).toBe(
       false,
     );
-    expect(sourcesDisagree(assessmentWith("indeterminate", "expected"))).toBe(
-      false,
-    );
   });
 
-  it("lets a reviewer ruling override the model's findings", () => {
-    const a = assessmentWith("listed", "expected");
-    const ruled = Assessment.parse({
-      ...a,
-      ruling: {
-        listedness: "unlisted",
-        expectedness: "expected",
-        decidedBy: "reviewer-7",
-        decidedAt: "2026-08-24T11:00:00Z",
-        rationale: "The CCDS passage describes a different reaction entirely.",
+  it("refuses a reading that cites a passage it was not given", () => {
+    // The second of the two locks: verify.ts rejects an unknown chunk id at
+    // generation time, and this rejects it for any Assessment parsed anywhere.
+    const result = Assessment.safeParse({
+      ...withReadings(silent, silent),
+      listedness: {
+        state: "grounded",
+        documentKind: "ccds",
+        citations: [companyCitation],
+        reading: readingOf("doc-z#99"),
+        retrievedAt: "2026-08-24T09:00:00Z",
       },
     });
-    expect(sourcesDisagree(a)).toBe(false);
-    expect(sourcesDisagree(ruled)).toBe(true);
+    expect(result.success).toBe(false);
   });
 });
 

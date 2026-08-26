@@ -10,6 +10,16 @@ export default defineConfig({
     // against a module the app never loads.
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      /**
+       * `server-only` throws on import outside a React Server Component, which
+       * is exactly what it is for — Next enforces the boundary at build time
+       * through the react-server export condition. Vitest is neither, so the
+       * module is stubbed here to let server modules be unit-tested directly.
+       * This weakens nothing: the build-time guarantee is untouched.
+       */
+      "server-only": fileURLToPath(
+        new URL("./src/lib/test/server-only-stub.ts", import.meta.url),
+      ),
     },
   },
   test: {

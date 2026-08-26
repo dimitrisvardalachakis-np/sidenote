@@ -5,7 +5,7 @@ import {
   expeditedClock,
   isSerious,
   sourcesDisagree,
-  standingListedness,
+  ruledListedness,
   type IsoDate,
 } from "@/lib/schemas";
 
@@ -28,7 +28,7 @@ export default async function QueuePage() {
       ? null
       : expeditedClock(
           entry.record,
-          standingListedness(entry.assessment) === "unlisted",
+          ruledListedness(entry.assessment) === "unlisted",
           today,
         );
 
@@ -87,7 +87,7 @@ function rank(entry: QueueEntry, today: IsoDate): number {
   }
   const clock = expeditedClock(
     entry.record,
-    standingListedness(entry.assessment) === "unlisted",
+    ruledListedness(entry.assessment) === "unlisted",
     today,
   );
   switch (clock.state) {

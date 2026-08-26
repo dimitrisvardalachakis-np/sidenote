@@ -6,7 +6,7 @@ import {
   flaggedCriteria,
   isSerious,
   sourcesDisagree,
-  standingListedness,
+  ruledListedness,
   type Case,
   type ExpeditedClock,
   type IsoDate,
@@ -99,7 +99,7 @@ export function CaseRow({
   const { record, assessment } = seeded;
   // Not assessed yet: nobody has looked, so nothing can be concluded about
   // listedness and no clock can be computed. See QueueEntry.
-  const listed = assessment === null ? null : standingListedness(assessment);
+  const listed = assessment === null ? null : ruledListedness(assessment);
   const clock =
     assessment === null
       ? null

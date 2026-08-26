@@ -8,8 +8,8 @@ import {
   expeditedClock,
   isSerious,
   sourcesDisagree,
-  standingExpectedness,
-  standingListedness,
+  ruledExpectedness,
+  ruledListedness,
   type IsoDate,
 } from "@/lib/schemas";
 
@@ -32,8 +32,8 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
   if (entry === null) notFound();
 
   const { record, assessment } = entry;
-  const listed = assessment === null ? null : standingListedness(assessment);
-  const expected = assessment === null ? null : standingExpectedness(assessment);
+  const listed = assessment === null ? null : ruledListedness(assessment);
+  const expected = assessment === null ? null : ruledExpectedness(assessment);
   const clock =
     assessment === null
       ? null

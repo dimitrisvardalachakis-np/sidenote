@@ -2,6 +2,7 @@ import type {
   Citation,
   ExpectednessFinding,
   ListednessFinding,
+  ModelReading,
 } from "@/lib/schemas";
 
 /**
@@ -71,14 +72,71 @@ function PanelShell({
   );
 }
 
-/** Shown when the model has an answer. Always labelled as a suggestion. */
-function Determination({ value }: { value: string }) {
+/**
+ * The model's reading of the passages below.
+ *
+ * This used to render a determination — the single word "unlisted" at title
+ * size, with a caption explaining it was only a suggestion. The caption was
+ * true and the word was still the largest thing in the panel, which is how a
+ * suggestion becomes a decision in practice. There is no determination here
+ * any more; there is a quotation and a sentence about it.
+ *
+ * The three states are visually distinct for the same reason the retrieval
+ * states are. "The model read these and none describes the reaction" is a
+ * reading a reviewer can weigh. "No reading could be produced" is not, and it
+ * must never be mistaken for the first.
+ */
+function Reading({ reading }: { reading: ModelReading }) {
+  if (reading.status === "unavailable") {
+    return (
+      /* Dashed, never --signal. A missing reading is not a deadline. */
+      <div className="border border-dashed border-rule px-3 py-2 rounded-soft">
+        <p className="text-base font-medium">Assessment unavailable</p>
+        <p className="mt-1 text-meta text-slate">
+          The passages below were retrieved, but no reading of them could be
+          produced. This is not a finding that the document is silent — nothing
+          has read it. Read the passages yourself.
+        </p>
+        <p className="mt-2 text-meta text-ink">{reading.reason}</p>
+      </div>
+    );
+  }
+
+  if (reading.status === "nothing_found") {
+    return (
+      <div className="border-b border-rule pb-2">
+        <p className="text-base font-medium">
+          No passage below describes this reaction
+        </p>
+        <p className="mt-0.5 text-meta text-slate">
+          The retrieved passages were read and none was identified as
+          describing it. The passages are shown so you can check that reading.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="border-b border-rule pb-2">
-      <p className="text-title font-medium">{value}</p>
-      <p className="mt-0.5 text-meta text-slate">
-        Suggested by the model from the passages below. Not a decision — a
-        reviewer accepts or rejects it.
+      {/* The verified span. This is the claim; everything else is provenance. */}
+      <blockquote className="border-l-2 border-steady pl-3 text-prose">
+        {reading.quotedSpan}
+      </blockquote>
+      {reading.rationale !== null && (
+        <p className="mt-1.5 text-meta text-ink">{reading.rationale}</p>
+      )}
+      <p className="mt-1 text-micro uppercase tracking-label text-slate">
+        <span className="font-mono normal-case tracking-normal">
+          {reading.chunkId}
+        </span>
+        {" · read by "}
+        <span className="font-mono normal-case tracking-normal">
+          {reading.model}
+        </span>
+      </p>
+      <p className="mt-1 text-meta text-slate">
+        A reading of the passage quoted, checked to occur in it word for word.
+        It is not a determination — listedness is yours to record below.
       </p>
     </div>
   );
@@ -127,7 +185,7 @@ export function CompanyEvidence({ finding }: { finding: ListednessFinding }) {
     <PanelShell heading="Company documents" note={`${documentLabel} · confidential`}>
       {finding.state === "grounded" && (
         <>
-          <Determination value={finding.determination} />
+          <Reading reading={finding.reading} />
           <ul className="mt-2">
             {finding.citations.map((citation) => (
               <CitationBlock key={citation.chunkId} citation={citation} />
@@ -150,7 +208,7 @@ export function PublicEvidence({ finding }: { finding: ExpectednessFinding }) {
     <PanelShell heading="FDA label" note="public">
       {finding.state === "grounded" && (
         <>
-          <Determination value={finding.determination} />
+          <Reading reading={finding.reading} />
           <ul className="mt-2">
             {finding.citations.map((citation) => (
               <CitationBlock key={citation.chunkId} citation={citation} />

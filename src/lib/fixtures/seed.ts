@@ -7,10 +7,19 @@
  * drugs outright is safer than borrowing a real product's safety profile and
  * getting it subtly wrong.
  *
- * The AI findings are hardcoded this session, per the brief. They are shaped
- * exactly as Cluster E's retrieval will produce them — the same discriminated
- * union with the same three states — so swapping the fixture for a real call
- * changes where the data comes from and nothing about what renders.
+ * The retrieval findings are hardcoded this session, shaped exactly as
+ * Cluster E will produce them — the same discriminated union with the same
+ * three states — so swapping the fixture for a real call changes where the
+ * data comes from and nothing about what renders.
+ *
+ * What they no longer contain is model output. Every finding here used to
+ * carry a `determination` marked `suggestedBy: "model"`, which was a claim
+ * about an inference that had never happened — there is no model in this
+ * project. Those determinations were, in truth, the judgements of whoever
+ * wrote this file, so they are now recorded as what they are: reviewer
+ * rulings, each with a named reviewer and a stated reason. The readings are
+ * `unavailable`, because that is the honest state of a system with no
+ * Workers AI binding, and it is the state step 8 has to prove survivable.
  *
  * `buildSeedCases(today)` takes the date rather than reading a clock, for the
  * same reason expeditedClock does: the queue must be reproducible in a test
@@ -29,8 +38,11 @@ import {
   ReactionId,
   ReviewerId,
   type Citation,
+  type ExpectednessDetermination,
   type ExpectednessFinding,
+  type ListednessDetermination,
   type ListednessFinding,
+  type ModelReading,
   type NarrativeSpan,
   type Reaction,
   type SeriousnessFlags,
@@ -164,6 +176,27 @@ function labelCitation(section: string, quote: string, chunk: string): Citation 
 
 const RETRIEVED_AT = "2026-08-24T08:15:00Z";
 
+/**
+ * No model has read these passages, because there is no model here.
+ *
+ * The alternative — writing a plausible rationale by hand and stamping it with
+ * a model name — is exactly the fiction this file has just been cleaned of. A
+ * fixture that claims an inference happened would also defeat step 10, which
+ * checks quoted spans against their source chunk: a fabricated span would
+ * either fail that check or, worse, be written to pass it.
+ *
+ * So the seeded queue demonstrates the degraded path by default. The citations
+ * are real fixture passages and still render; the model's account of them is
+ * honestly missing.
+ */
+const NO_READING: ModelReading = {
+  status: "unavailable",
+  reason: "no Workers AI binding is configured in this environment",
+  model: null,
+  gatewayRequestId: null,
+  attemptedAt: RETRIEVED_AT,
+};
+
 // ---------------------------------------------------------------------------
 // The twelve
 // ---------------------------------------------------------------------------
@@ -203,6 +236,19 @@ interface CaseSpec {
   } | null;
   readonly listedness: ListednessFinding;
   readonly expectedness: ExpectednessFinding;
+  /**
+   * The reviewer's ruling, where one has been made. Absent on cases nobody has
+   * finished working — and a case with no ruling has no expedited clock, which
+   * is the whole point of making the determination the reviewer's.
+   */
+  readonly ruling?:
+    | {
+        readonly listedness: ListednessDetermination;
+        readonly expectedness: ExpectednessDetermination;
+        readonly by: string;
+        readonly rationale: string;
+      }
+    | undefined;
 }
 
 const SPECS: readonly CaseSpec[] = [
@@ -213,7 +259,7 @@ const SPECS: readonly CaseSpec[] = [
     product: HEPALEX,
     origin: "health_authority",
     receivedDaysAgo: 22,
-    status: "in_review",
+    status: "assessed",
     assignedTo: "reviewer-demo",
     narrative:
       "A 58-year-old man was started on Hepalex 20mg daily for high blood pressure. Eleven days later he became deeply jaundiced and confused. He was admitted to intensive care with acute liver failure and died four days after admission. No other new medicines had been started.",
@@ -232,9 +278,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "yellowcard@example.gov",
       qualification: "physician",
     },
+    ruling: {
+      listedness: "unlisted",
+      expectedness: "unexpected",
+      by: "reviewer-demo",
+      rationale:
+        "CCDS 4.8 records transaminase elevation and rare jaundice, but not hepatic failure; the FDA label states no cases were seen in trials. Fatal outcome, so this is unlisted and expedited.",
+    },
     listedness: {
       state: "grounded",
-      determination: "unlisted",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -243,12 +295,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-7.2#41",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "unexpected",
       citations: [
         labelCitation(
           "6 ADVERSE REACTIONS",
@@ -256,7 +307,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-hepalex#18",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },
@@ -269,8 +320,8 @@ const SPECS: readonly CaseSpec[] = [
     product: HEPALEX,
     origin: "email",
     receivedDaysAgo: 13,
-    status: "in_review",
-    assignedTo: null,
+    status: "assessed",
+    assignedTo: "reviewer-demo",
     narrative:
       "Patient reports that two weeks after starting the tablets her eyes and skin turned yellow. Her GP stopped the medicine and she was kept in hospital overnight for tests. The yellowing has started to fade since stopping.",
     verbatimTerm: "yellow skin and eyes",
@@ -284,9 +335,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "a.weber@example.org",
       qualification: "physician",
     },
+    ruling: {
+      listedness: "unlisted",
+      expectedness: "unexpected",
+      by: "reviewer-demo",
+      rationale:
+        "Neither the CCDS adverse-reactions table nor the FDA label describes this reaction at this severity.",
+    },
     listedness: {
       state: "grounded",
-      determination: "unlisted",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -295,12 +352,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-7.2#42",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "unexpected",
       citations: [
         labelCitation(
           "6 ADVERSE REACTIONS",
@@ -308,7 +364,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-hepalex#18",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },
@@ -336,9 +392,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "p.nowak@example.org",
       qualification: "pharmacist",
     },
+    ruling: {
+      listedness: "listed",
+      expectedness: "expected",
+      by: "reviewer-demo",
+      rationale:
+        "The reaction is described in CCDS 4.8 and in the FDA label at comparable frequency; no new information.",
+    },
     listedness: {
       state: "grounded",
-      determination: "listed",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -347,12 +409,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-cardiquel#33",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "expected",
       citations: [
         labelCitation(
           "6.1 Clinical Trials Experience",
@@ -360,7 +421,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-cardiquel#9",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "3c81-cardiquel-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -373,8 +434,8 @@ const SPECS: readonly CaseSpec[] = [
     product: DERMACIL,
     origin: "literature",
     receivedDaysAgo: 9,
-    status: "in_review",
-    assignedTo: null,
+    status: "assessed",
+    assignedTo: "reviewer-demo",
     narrative:
       "Case report describes a 33-year-old woman who developed painful mucosal ulceration and skin detachment over 30% of body surface area after four weeks of Dermacil. A diagnosis of Stevens-Johnson syndrome was made and she required intensive care.",
     verbatimTerm: "Stevens-Johnson syndrome",
@@ -391,9 +452,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "j.okafor@example.org",
       qualification: "physician",
     },
+    ruling: {
+      listedness: "listed",
+      expectedness: "unexpected",
+      by: "reviewer-demo",
+      rationale:
+        "The CCDS was updated to include this reaction; the FDA label has not yet caught up. Company document takes precedence for listedness.",
+    },
     listedness: {
       state: "grounded",
-      determination: "listed",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -402,12 +469,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-dermacil#57",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "unexpected",
       citations: [
         labelCitation(
           "6 ADVERSE REACTIONS",
@@ -415,7 +481,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-dermacil#12",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "77bd-dermacil-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -428,8 +494,8 @@ const SPECS: readonly CaseSpec[] = [
     product: PULMOXA,
     origin: "email",
     receivedDaysAgo: 10,
-    status: "in_review",
-    assignedTo: null,
+    status: "assessed",
+    assignedTo: "reviewer-demo",
     narrative:
       "Progressive breathlessness developed six weeks into treatment. High-resolution CT showed new bilateral ground-glass opacities and the patient was hospitalised for investigation. Drug-induced interstitial lung disease was suspected and Pulmoxa was withdrawn.",
     verbatimTerm: "interstitial lung disease",
@@ -443,9 +509,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "m.haddad@example.org",
       qualification: "physician",
     },
+    ruling: {
+      listedness: "unlisted",
+      expectedness: "expected",
+      by: "reviewer-demo",
+      rationale:
+        "The FDA label describes the reaction but the current CCDS does not. Referred to the labelling team; treated as unlisted for reporting.",
+    },
     listedness: {
       state: "grounded",
-      determination: "unlisted",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -454,12 +526,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-pulmoxa#28",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "expected",
       citations: [
         labelCitation(
           "5.2 Interstitial Lung Disease",
@@ -467,7 +538,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-pulmoxa#5",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "51ae-pulmoxa-2026",
       retrievedAt: RETRIEVED_AT,
     },
@@ -495,7 +566,6 @@ const SPECS: readonly CaseSpec[] = [
     },
     listedness: {
       state: "grounded",
-      determination: "listed",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -504,12 +574,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-cardiquel#21",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "expected",
       citations: [
         labelCitation(
           "6.1 Clinical Trials Experience",
@@ -517,7 +586,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-cardiquel#8",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "3c81-cardiquel-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -570,7 +639,7 @@ const SPECS: readonly CaseSpec[] = [
     product: NEUROVAST,
     origin: "clinical_trial",
     receivedDaysAgo: 6,
-    status: "in_review",
+    status: "assessed",
     assignedTo: "reviewer-demo",
     narrative:
       "During the second infusion the subject developed flushing, throat tightness and hypotension. The infusion was stopped immediately and adrenaline was given. Symptoms resolved within the hour and the subject was observed overnight.",
@@ -588,9 +657,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "site011@example.org",
       qualification: "physician",
     },
+    ruling: {
+      listedness: "unlisted",
+      expectedness: "indeterminate",
+      by: "reviewer-demo",
+      rationale:
+        "Not described in the CCDS. No label passage could be retrieved, so expectedness cannot be stated either way.",
+    },
     listedness: {
       state: "grounded",
-      determination: "unlisted",
       documentKind: "investigators_brochure",
       citations: [
         ibCitation(
@@ -599,7 +674,7 @@ const SPECS: readonly CaseSpec[] = [
           "ib-nrv114-v4#63",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -646,8 +721,8 @@ const SPECS: readonly CaseSpec[] = [
     product: DERMACIL,
     origin: "email",
     receivedDaysAgo: 15,
-    status: "in_review",
-    assignedTo: null,
+    status: "assessed",
+    assignedTo: "reviewer-demo",
     narrative:
       "Sudden swelling of the lips and tongue occurred within an hour of the second injection. The patient had difficulty breathing and called an ambulance. Treated with adrenaline and steroids in the emergency department.",
     verbatimTerm: "swelling of lips and tongue",
@@ -660,9 +735,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "e.rossi@example.org",
       qualification: "other_health_professional",
     },
+    ruling: {
+      listedness: "unlisted",
+      expectedness: "unexpected",
+      by: "reviewer-demo",
+      rationale:
+        "Absent from both the CCDS and the FDA label. Serious by hospitalisation, so the expedited clock applies.",
+    },
     listedness: {
       state: "grounded",
-      determination: "unlisted",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -671,12 +752,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-dermacil#44",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "unexpected",
       citations: [
         labelCitation(
           "6 ADVERSE REACTIONS",
@@ -684,7 +764,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-dermacil#13",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "77bd-dermacil-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -716,7 +796,6 @@ const SPECS: readonly CaseSpec[] = [
     },
     listedness: {
       state: "grounded",
-      determination: "unlisted",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -725,7 +804,7 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-pulmoxa#28",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -755,9 +834,15 @@ const SPECS: readonly CaseSpec[] = [
       email: "t.cole@example.org",
       qualification: "consumer_or_carer",
     },
+    ruling: {
+      listedness: "listed",
+      expectedness: "expected",
+      by: "reviewer-demo",
+      rationale:
+        "Described in both the CCDS and the FDA label. Closed with no expedited action required.",
+    },
     listedness: {
       state: "grounded",
-      determination: "listed",
       documentKind: "ccds",
       citations: [
         companyCitation(
@@ -766,12 +851,11 @@ const SPECS: readonly CaseSpec[] = [
           "ccds-7.2#21",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
       state: "grounded",
-      determination: "expected",
       citations: [
         labelCitation(
           "6 ADVERSE REACTIONS",
@@ -779,7 +863,7 @@ const SPECS: readonly CaseSpec[] = [
           "lbl-hepalex#17",
         ),
       ],
-      suggestedBy: "model",
+      reading: NO_READING,
       labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },
@@ -904,7 +988,16 @@ function buildCase(spec: CaseSpec, today: IsoDate): SeededCase {
     drugId,
     listedness: spec.listedness,
     expectedness: spec.expectedness,
-    ruling: null,
+    ruling:
+      spec.ruling === undefined
+        ? null
+        : {
+            listedness: spec.ruling.listedness,
+            expectedness: spec.ruling.expectedness,
+            decidedBy: ReviewerId.parse(spec.ruling.by),
+            decidedAt: `${receivedAt}T14:20:00Z`,
+            rationale: spec.ruling.rationale,
+          },
     createdAt: `${receivedAt}T09:05:00Z`,
     updatedAt: `${receivedAt}T09:05:00Z`,
   });
