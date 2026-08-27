@@ -133,7 +133,7 @@ export interface AiGatewayConfig {
 export const GATEWAY_CACHE_TTL_SECONDS = 3600;
 
 /**
- * The spend cap, as a per-request ceiling this code can actually enforce.
+ * The generation ceiling for one assessment.
  *
  * AI Gateway's own budget limit is set in the dashboard and is the real cap;
  * it is not something a Worker can assert at call time. What this side can do
@@ -142,8 +142,26 @@ export const GATEWAY_CACHE_TTL_SECONDS = 3600;
  * than four short completions no matter how badly the model behaves. A runaway
  * loop is the failure mode a dashboard budget catches late and a bounded retry
  * count prevents outright.
+ *
+ * NOT THE TOTAL NUMBER OF INFERENCES. Since hybrid retrieval landed, an
+ * assessment also spends `MAX_EMBEDDINGS_PER_ASSESSMENT` before any generation
+ * runs. This constant is deliberately still about generations only, because it
+ * bounds the retry loop in `generate.ts` and the two costs are not
+ * interchangeable — an embedding is a different model at a different price,
+ * and folding them into one number would make this bound mean nothing.
  */
 export const MAX_CALLS_PER_ASSESSMENT = 4;
+
+/**
+ * The embedding ceiling for one assessment: one, for the query.
+ *
+ * One rather than two because the query is the reaction term and it is
+ * identical on the company and public sides, so `assessCase` embeds it once
+ * and hands the vector to both namespace searches. Document embedding is not
+ * counted here — that happens at ingestion, once per document, not per
+ * assessment.
+ */
+export const MAX_EMBEDDINGS_PER_ASSESSMENT = 1;
 
 /**
  * Read the gateway configuration from the environment.

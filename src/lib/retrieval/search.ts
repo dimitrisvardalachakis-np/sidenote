@@ -1,19 +1,24 @@
 /**
- * Lexical retrieval over ingested chunks.
+ * Lexical retrieval over ingested chunks. Half of hybrid retrieval.
  *
- * CLAUDE.md specifies hybrid retrieval: Vectorize dense results fused with D1
- * FTS5 lexical results via Reciprocal Rank Fusion. This module is the lexical
- * half, implemented in pure TypeScript because there is no D1 and no Vectorize
- * in this session — and because the lexical half is the one that can be made
- * to work honestly right now. `fuseByRank` below is the RRF seam: when Cluster
- * E returns dense hits, they go in as a second ranking and nothing else here
- * changes.
+ * CLAUDE.md specifies dense results fused with lexical results via Reciprocal
+ * Rank Fusion. This module is the lexical half — BM25-style scoring over the
+ * chunk text already mirrored into the library, in pure TypeScript because
+ * there is no D1 FTS5 in this session. The dense half is `dense.ts`, and
+ * `fuseByRank` below now genuinely gets two rankings on the reviewer path.
  *
- * Being explicit about what this is: BM25-style scoring over the chunk text
- * already mirrored into the library. It genuinely finds passages and the
- * citations it returns are real chunks from real uploaded documents. It is not
- * a semantic search — it will not connect "rash" to "erythema" unless a
- * synonym is listed below. That gap is exactly what the dense half closes.
+ * Being explicit about what this half is and is not: it genuinely finds
+ * passages and its citations are real chunks from real documents, but it is
+ * not a semantic search. It will not connect "rash" to "erythema" unless a
+ * synonym is listed below, and the table has 24 rows. That gap is what the
+ * dense half closes — and the table is now a cheap fallback that also works
+ * when no model is configured, rather than the ceiling on what can be found.
+ *
+ * WHERE IT IS STILL THE ONLY HALF. The public search answer (`answer.ts`) and
+ * the intake chat (`conversation.ts`) are lexical-only, deliberately, this
+ * round. That is worth stating rather than leaving to be discovered: the
+ * public surfaces are where lay language is most likely, so the ceiling bites
+ * hardest exactly where it has not been lifted.
  */
 import type { Citation, DocumentChunk, SourceType } from "@/lib/schemas";
 
@@ -193,11 +198,18 @@ export function lexicalSearch(
 /**
  * Reciprocal Rank Fusion.
  *
- * The seam CLAUDE.md asks for. Today it is called with one ranking, which is a
- * no-op reordering; when Cluster E supplies dense hits from Vectorize it is
- * called with two and fuses them. RRF is used rather than score averaging
- * because BM25 scores and cosine similarities are not on comparable scales,
- * and averaging them silently lets whichever has the bigger numbers win.
+ * The seam CLAUDE.md asks for, and it now gets both rankings on the reviewer
+ * path: `assessCase` calls it with `[lexical, dense]`. RRF is used rather than
+ * score averaging because BM25 scores and cosine similarities are not on
+ * comparable scales, and averaging them silently lets whichever has the bigger
+ * numbers win. Note that `hit.score` is never read below — only the index is —
+ * which is what makes the two scales irrelevant rather than merely rescaled.
+ *
+ * THIS APPLIES NO LIMIT AND NO THRESHOLD. It returns every distinct chunk from
+ * every ranking, so fusing two rankings of five can yield ten. Callers must
+ * slice. With one ranking that was invisible, because the lexical search had
+ * already capped itself; with two it is a silent doubling of everything
+ * downstream. `assessCase` supplies the cap explicitly for exactly this reason.
  */
 export function fuseByRank(
   rankings: readonly (readonly ScoredChunk[])[],

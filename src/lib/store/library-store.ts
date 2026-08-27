@@ -14,7 +14,12 @@ import type { DocumentChunk, SafetyDocument } from "@/lib/schemas";
  * Chunk text is deliberately stored here alongside the document, mirroring
  * step 7 of the ingestion pipeline in CLAUDE.md: "Chunk text and metadata
  * mirrored into D1 so a citation can be rendered without a second vector
- * call, and so lexical search works." The Vectorize half arrives in Cluster E.
+ * call, and so lexical search works."
+ *
+ * That mirroring is now load-bearing in a second way. `dense.ts` hydrates
+ * every vector match from these chunks and drops any match this library does
+ * not confirm, so a stale or leaked vector cannot become a citation. The
+ * vector index contributes an id and a rank; the text always comes from here.
  */
 
 export interface LibraryEntry {

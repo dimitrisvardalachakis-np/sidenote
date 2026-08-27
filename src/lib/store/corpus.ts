@@ -12,9 +12,14 @@ import { getDocumentLibrary } from "./library-store";
  * reviewer has uploaded.
  *
  * Merged rather than either-or, so a fresh checkout has a working demo and an
- * upload immediately becomes searchable. In Cluster E this is replaced by a
- * Vectorize query plus a D1 FTS5 query; the callers ask for a corpus and do
- * not care that it currently arrives as an array.
+ * upload immediately becomes searchable.
+ *
+ * Still an array, and still every chunk. The dense half does not change that
+ * and could not: `dense.ts` hydrates its matches from this corpus and refuses
+ * anything the corpus does not confirm, so retrieval needs the whole mirror in
+ * hand regardless of where the ranking came from. What Cluster E replaces is
+ * how the array is produced — a D1 FTS5 query rather than a filesystem read —
+ * not the fact that callers get one.
  */
 export interface Corpus {
   readonly chunks: readonly DocumentChunk[];

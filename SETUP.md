@@ -167,23 +167,151 @@ it exists to prove the plumbing, not the intelligence.
 
 ---
 
-## What this does *not* turn on
 
-Being clear about the ceiling, because it is a real one.
+## Turning on semantic search
 
-The retrieval half is **lexical only** — BM25 over chunk text. There are no
-embeddings and no vector search, so matching a reporter's words to a label's
-words relies on literal overlap plus a hand-written table of 25 synonym
-entries (`rash` ↔ `erythema`, and so on).
+Retrieval is hybrid on the reviewer's **Assess this case** button: BM25 over
+chunk text, fused with cosine similarity over embeddings, through Reciprocal
+Rank Fusion.
 
-Outside that table there is no bridge:
+**The default needs nothing new.** The same `CLOUDFLARE_ACCOUNT_ID` and
+`CLOUDFLARE_API_TOKEN` that turn on generation also turn on embeddings, and the
+vector store defaults to a local file-backed index under `.data/vectors`. That
+was a deliberate choice: a feature that stays dark until somebody provisions a
+remote service is a feature nobody reviews.
 
-- "my face puffed up" → *angioedema* — **missed**
+The local index is brute-force cosine over every vector. Microseconds at
+fixture scale, painful past a few thousand chunks — the library screen and the
+audit line both say which store you are on.
+
+### Two things to do once
+
+**1. Generate the seed vectors.** The fourteen seeded chunks ship without
+embeddings, because an embedding is a network call and the fixtures are built
+synchronously at module load.
+
+```
+npm run embed:seed
+```
+
+This needs **real credentials**. It refuses to run with `SIDENOTE_AI_BASE_URL`
+set, because the stub server hashes words into buckets and an artifact of those
+labelled `@cf/baai/bge-base-en-v1.5` would be a file claiming an inference that
+never happened. Until you run it, semantic search covers uploaded documents
+only and the seeded demo corpus stays keyword-only.
+
+**2. Backfill anything already uploaded.** Documents uploaded before this
+landed have no vectors and nothing would ever revisit them.
+
+```
+npm run embed:backfill
+```
+
+New uploads are embedded automatically. A document shows **"Chunked and
+mirrored. Keyword search only"** until its vectors are in, and **"Chunked,
+mirrored and embedded"** afterwards — that status is written only after the
+upsert actually resolved, so it is not a promise.
+
+### Switching between the stub and real credentials
+
+Vectors written while `SIDENOTE_AI_BASE_URL` was set are stamped as such and
+are **ignored** by a run using real credentials, and vice versa. This is on
+purpose: stub vectors are hashed word buckets, and scoring a real query vector
+against them would rank confidently over noise with nothing saying so. You do
+not need to clear `.data/vectors` by hand, but re-run `npm run embed:backfill`
+after switching so the documents are re-embedded by the model you are actually
+using.
+
+### Optional: Cloudflare Vectorize
+
+Only worth doing past a few thousand chunks. Everything works without it.
+
+1. **Widen the API token.** The one from the generation setup is scoped
+   `Workers AI · Read`. Add `Account · Vectorize · Edit`, or every call 403s.
+
+2. **Create the index** — 768 dimensions and cosine, both of which must match
+   `@cf/baai/bge-base-en-v1.5` exactly. The client reads the index config and
+   **refuses to query a non-cosine index**, because the relevance floor is a
+   similarity where higher is better and a euclidean index returns a distance
+   where lower is better — the same floor would then admit everything
+   unrelated and reject everything good, silently.
+
+   ```
+   curl -X POST \
+     "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/vectorize/v2/indexes" \
+     -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+     -H "content-type: application/json" \
+     -d '{"name":"sidenote","config":{"dimensions":768,"metric":"cosine"}}'
+   ```
+
+3. **Create the metadata index** so `sourceType` can be filtered. Without it
+   the filter is rejected and every query over-fetches.
+
+   ```
+   curl -X POST \
+     "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/vectorize/v2/indexes/sidenote/metadata_index/create" \
+     -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+     -H "content-type: application/json" \
+     -d '{"propertyName":"sourceType","indexType":"string"}'
+   ```
+
+4. **Point the app at it** in `.env.local`, then backfill:
+
+   ```
+   SIDENOTE_VECTORIZE_INDEX=sidenote
+   ```
+   ```
+   npm run embed:backfill
+   ```
+
+No `wrangler` needed — all three calls are REST, consistent with the rest of
+this file.
+
+**Note on scope.** `documentId` is deliberately *not* sent in the Vectorize
+metadata filter. The guarantee that a Covaxil case never cites a Hepalex
+document is a post-filter in `dense.ts` that runs against the library mirror,
+and it must not depend on a remote service's filter semantics. The remote
+filter is an optimisation.
+
+### The off switch
+
+```
+SIDENOTE_VECTOR_DISABLED=1
+```
+
+Wins over everything, mirroring `SIDENOTE_AI_DISABLED`. Retrieval falls back to
+lexical-only and says so on the audit line. Setting `SIDENOTE_AI_DISABLED=1`
+also turns off the dense half, because semantic search needs the same model
+access generation does.
+
+---
+
+## What this still does *not* turn on
+
+Being clear about the ceiling, because there is still a real one.
+
+**The public surfaces are lexical-only.** The public search answer and the
+intake chat both still rely on literal overlap plus the 24-entry synonym table.
+Measured against the seeded corpus, all three of these return nothing:
+
+- "my face puffed up" → *angioedema* — **missed**. The table has a `swelling`
+  entry that reaches `angioedema`, but the reporter wrote "puffed up", and a
+  lookup table only fires on the word somebody thought to list.
 - "heart was racing" → *tachycardia* — **missed**
+- "my muscles ached all over" → *myalgia* — **missed**
 
-When retrieval misses, the model is never asked, and the screen says
-"No matching passage" — which reads like a finding. Closing that gap means
-embedding chunks with `@cf/baai/bge-base-en-v1.5` into Vectorize and passing
-the dense results as a second ranking to `fuseByRank`, which already accepts
-several and has only ever been given one. That is the next real piece of work,
-and it is what makes the retrieval genuinely *hybrid* as the design intends.
+That is deliberate for this round and it is the wrong way round: the public
+form is where lay language is most likely, so the gap bites hardest exactly
+where it has not been lifted. `answer.ts` already calls `fuseByRank`, so it is
+a small follow-up; the intake chat has no fusion call at all and needs a seam
+built first.
+
+**Nothing is automatic.** Assessment runs when a reviewer presses the button,
+not when a case arrives. An inference costs money and a button makes it obvious
+one was spent. The queue consumer that does this on arrival is Cluster E.
+
+**A semantically-near passage is a new failure mode.** Dense retrieval can
+surface a plausible-but-wrong paragraph that lexical never would. The verbatim
+check still guarantees any *quotation* is real and scoping still guarantees the
+right product — but a near-miss from the right document is a new way to put a
+misleading-yet-honest citation in front of a reviewer. Worth watching.

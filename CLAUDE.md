@@ -176,15 +176,29 @@ no longer runs ESLint, which is why `npm run build` chains `eslint` in front of
 Clusters A and B are built. The generation step landed on top of them, and the
 shape of the system is now:
 
-**Deterministic, and staying that way.** Retrieval is BM25 over chunk text
-mirrored into the library (`lib/retrieval/search.ts`), fused through
-`fuseByRank`, which is the RRF seam waiting for Vectorize's dense half. The
-chunker, the schemas, `caseValidity` and `expeditedClock` are pure functions
-over their inputs, with the clock and the date passed in rather than read.
+**Deterministic, and staying that way.** The chunker, the schemas,
+`caseValidity` and `expeditedClock` are pure functions over their inputs, with
+the clock and the date passed in rather than read. Retrieval's ranking is
+deterministic too, and its fusion weights by rank alone — `fuseByRank` never
+reads a score, which is what lets a BM25 number and a cosine share one list.
+
+**Hybrid, on the reviewer path.** `assessCase` fuses BM25 over the mirrored
+chunk text (`lib/retrieval/search.ts`) with cosine over embeddings
+(`lib/retrieval/dense.ts`), through the RRF seam that had only ever been handed
+one ranking. The vector store is an interface with two implementations,
+resolved like the AI binding: a local file-backed index by default, so semantic
+search works with nothing but the credentials generation already needs, and
+Cloudflare Vectorize when `SIDENOTE_VECTORIZE_INDEX` is set. Every match is
+hydrated from the library mirror and any match the mirror does not confirm is
+dropped — the store contributes an id and a rank, never text, never a citation,
+never scope. **The public search answer and the intake chat are still
+lexical-only**, which is the wrong way round and is stated in SETUP.md rather
+than left to be found.
 
 **Generated, and fenced in.** Two model calls per case, one per source
-namespace, after fusion, plus at most one retry each — so four inferences is
-the real ceiling, not two (`lib/assess/`). One call per public report, on the
+namespace, after fusion, plus at most one retry each — so four generations is
+the ceiling, not two (`lib/assess/`), and one embedding of the query before any
+of them, shared by both namespaces. One call per public report, on the
 reporter's own account (`lib/extract/`). Both return strict JSON, are
 zod-validated, retry once against a stricter instruction naming the failed
 check, and degrade to an explicit unavailable state rather than a finding.
@@ -216,12 +230,20 @@ domain honours all three — `ruledListedness`, `requiresExpeditedReport` and
 them yet.
 
 **Still standing in for Cloudflare.** There is no wrangler config, no D1, no
-Vectorize, no R2, no Queues in this session, and retrieval is therefore
-lexical only — the dense half of the hybrid design is the next real work. `resolveAiBinding`
-returns null and every assessment degrades honestly; that degraded path is
-walked end to end in `lib/assess/degraded.test.ts` and was exercised against
-the running app. Stores are in-memory. Each of these is one line to change,
-and each is marked where it sits.
+R2, no Queues in this session. Vectorize now has a real REST client but is
+opt-in; the default vector store is a local file, which is brute-force cosine
+over every vector and says so on the screen and the audit line. Stores are
+in-memory or on disk. Each of these is one line to change, and each is marked
+where it sits.
+
+**Degradation is the tested path, not the assumed one.** With no model
+configured, `resolveAiBinding` returns null, the dense half switches off with
+it — semantic search needs the same model access generation does — and every
+assessment degrades honestly rather than reporting silence as a finding. That
+path is walked end to end in `lib/assess/degraded.test.ts`, and the distinction
+that makes it honest is preserved one layer down: a dense outage is recorded on
+the audit line and never escalates a `no_result` into `source_unavailable`,
+because the document *was* consulted.
 
 **Gates.** `npm run build` is `lint && test && next build`. The verbatim-span
 check fails the build; sabotaging it exits 1.

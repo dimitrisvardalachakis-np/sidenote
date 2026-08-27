@@ -31,12 +31,19 @@ export type DocumentKind = z.output<typeof DocumentKind>;
 /**
  * Where a document is in the pipeline. Cluster E turns these into queue
  * states; for now they are what the library screen renders.
+ *
+ * `chunking` and `embedded` are the two a reviewer actually sees, and the
+ * difference between them is which searches can find the document — keyword
+ * only, or keyword and semantic. Only `library/actions.ts` and the backfill
+ * write `embedded`, and only downstream of an upsert that resolved: a document
+ * labelled `embedded` with no vectors would tell a reviewer that "no matching
+ * passage" is a fact about the document when it is a fact about the index.
  */
 export const IngestionStatus = z.enum([
   "pending", // uploaded, nothing done yet
   "extracting", // pulling text out
-  "chunking",
-  "embedded", // in Vectorize and mirrored into D1 — usable
+  "chunking", // mirrored and keyword-searchable; not embedded
+  "embedded", // vectors in the index and chunks mirrored — both searches work
   "rejected", // will never be usable; see rejectionReason
 ]);
 export type IngestionStatus = z.output<typeof IngestionStatus>;

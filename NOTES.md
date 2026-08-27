@@ -11,7 +11,9 @@ I built the retrieval layer fully deterministic and was pleased with it. BM25
 over the chunk text, a synonym table standing in for embeddings, Reciprocal
 Rank Fusion sitting ready with one ranking in it. Real citations, real chunk
 ids, real quoted spans out of real uploaded documents. Every panel on the
-reviewer screen filled in.
+reviewer screen filled in. (That fusion seam has since been given its second
+ranking — see "The 24-row ceiling" below — but the shape of the mistake this
+section is about is unchanged.)
 
 Then I went looking for the generation step and there wasn't one. Not a
 disconnected worker, not a stub — nothing. No wrangler config, no `ai` binding,
@@ -191,6 +193,134 @@ that matched neither their symptom nor even their medicine. Telling somebody
 their reaction is already known is the answer most likely to make them decide
 not to bother, so that is the one that must not be wrong. Scope answers "which
 product"; the query answers "which passage".
+
+---
+
+## The 24-row ceiling
+
+The synonym table in `search.ts` has twenty-four entries. I had been reading it
+as a stand-in for embeddings — a bit crude, but doing the job. It is not doing
+the job. It is a hand-written list of the paraphrases somebody happened to
+think of, and outside it there is no bridge at all between a reporter's words
+and a label's words.
+
+Checked against the terms actually in the seeded corpus, "my muscles ached all
+over" returns **nothing** for *myalgia*, in either namespace. Not a weak hit —
+zero. And when retrieval returns nothing, the model is never asked, and the
+evidence panel says **"No matching passage"**, which a reviewer reads as *this
+document does not describe it*. That is the worst failure mode this system has:
+silent, and shaped exactly like a finding.
+
+So `fuseByRank` finally got the second ranking it was written for.
+
+### Two of the three examples I had written down were wrong
+
+The design named three reporter phrasings as unreachable: "pins and needles in
+my hands" → *paraesthesia*, "my throat closed up after the injection" →
+*anaphylaxis*, and the myalgia one. I went to write the test that proves
+lexical search returns nothing for them, and two of the three returned a chunk.
+
+"Pins and needles in my hands" matches, because the CCDS paragraph containing
+*paraesthesia* also contains the sentence "Delayed cutaneous reactions
+involving **the hands** and forearms". "My throat closed up after the
+injection" matches on *injection*.
+
+Both are coincidences on an irrelevant token, and in one way they are worse
+than a clean miss: `toCitation` centres its excerpt on `matched[0]`, so the
+reviewer is shown the sentence about cutaneous reactions rather than the
+nervous-system line that mattered. But they are not "lexical finds nothing", so
+the proof test uses the one that is. **The lesson is the old one**: a claim in a
+plan is a hypothesis until something measures it, and I had written three
+confident table rows from reading the synonym list rather than running it.
+
+### Fusion had a bug the moment it got a second ranking
+
+`fuseByRank` applies no limit and no threshold. It returns every distinct chunk
+from every ranking it is given. With one ranking that was invisible, because
+`lexicalSearch` had already capped itself at five — the cap was being supplied
+by accident, by the caller's own limit, and nothing downstream re-applied it.
+With two rankings a fused list can be twice as long, and every entry goes into
+the prompt as a passage: double the tokens on every namespace of every case, no
+wrong answer, no failing test, nothing to notice.
+
+`assessCase` now slices explicitly. Writing the test for it was more
+interesting than writing the fix: both halves cap at five, so a dense ranking
+that returns "everything" overlaps the lexical one and the union lands at
+exactly five, leaving the slice a provable no-op. The test only bites when the
+dense ranking is ordered to put the chunks lexical *missed* at the top — which
+is, not coincidentally, the case the whole feature exists for.
+
+### A vector store contributes an id and a rank. Nothing else.
+
+A vector index can outlive the thing it indexes. A document gets re-chunked and
+the old ids linger; a metadata filter silently does nothing because its index
+was never created; a delete never happened. In every one of those cases the
+store hands back an id that must not be cited.
+
+So `dense.ts` hydrates every match from the library mirror, using the same two
+predicates `inScope` applies, and drops anything the mirror does not confirm.
+Text, citation and scope all come from the mirror; the store supplies an id and
+an ordering. The end-to-end test for this goes red only when **both** filters
+are removed — `retrieve` pre-filters what it hands to `denseSearch`, and
+`denseSearch` filters again — and I made the test say so, because one green
+tick over two locks reads like proof that one lock works.
+
+### The failures that do not announce themselves
+
+Three of these, and they are the reason this took longer than the feature
+itself. All three produce confident output rather than an error.
+
+**A euclidean index inverts the floor.** `DENSE_MIN_COSINE = 0.55` assumes a
+similarity where higher is better. Vectorize indexes can also be created
+`euclidean`, which returns a *distance* where lower is better. Same floor,
+same code path, no exception: everything unrelated clears it and everything
+good is rejected, and a reviewer is shown confident citations to the least
+relevant paragraphs in the document. The client now reads the index config once
+and refuses a non-cosine index, which degrades to lexical-only and says why.
+
+**A batch count mismatch shifts every subsequent vector.** If three texts come
+back as two vectors, zipping them against the chunks attaches chunk 1's vector
+to chunk 0, and so on down the document, permanently. The index then ranks the
+wrong passages forever with no symptom. Checked in `createEmbedder` and again
+in `embedAndUpsert` — twice, deliberately, because the consequence is not an
+error but a wrong-citation generator.
+
+**A file claiming an inference that never happened.** I found this one only
+because I ran the whole chain against `scripts/stub-model.mjs` and then looked
+at what it had written to disk. The local store stamped every file with
+`model: "@cf/baai/bge-base-en-v1.5"` as a hardcoded literal — including files
+whose vectors the stub had produced by hashing words into buckets. Nothing read
+the field, so nothing caught it. Develop against the stub, switch to real
+credentials, and every query then scores a real query vector against hashed
+buckets: ranking confidently over noise.
+
+That is the same defect `fixtures/vectors.ts` already refuses for the seed
+artifact — the rule that a fixture never claims provenance it does not have —
+and I had reintroduced it one directory over, in a field I had written and
+never read. The fix is that the field is now the shared constant rather than a
+literal, a provenance stamp records whether the model endpoint was overridden,
+and all three are checked on read.
+
+**The pattern, for the third time in this project**: a written-but-never-read
+field is not a record, it is a decoration, and a decoration will eventually be
+false. NOTES.md already had "a guarantee stated in a comment is not a
+guarantee" from three checks that read correctly and did nothing. This is the
+same lesson wearing different clothes — a guarantee stated in a *file format* is
+not a guarantee either, until something rejects a file that violates it.
+
+### What the stub can and cannot prove
+
+The whole chain runs offline against the stub: fourteen chunks across four seed
+documents embedded, upserted, queried, fused, read, and quoted verbatim, all
+over a real socket.
+
+What it cannot prove is the only thing the feature is actually for. The stub
+hashes words into buckets, so a paraphrase with no shared token scores exactly
+0.0000 — it is lexical matching in disguise. A semantic rescue can only be
+demonstrated against real bge, which is precisely why `npm run embed:seed`
+refuses to run with `SIDENOTE_AI_BASE_URL` set. The plumbing is proved offline;
+the intelligence is not, and the tests say so out loud rather than implying
+otherwise by passing.
 
 ---
 
@@ -375,6 +505,18 @@ partially-merged record that neither path is responsible for.
   320-character extract.** So a quoted span can sit outside the passage
   rendered beneath it. The caption now says so, which is honest but not the
   same as fixed.
-- **No Cloudflare.** No wrangler config, no bindings, no D1, no Vectorize, no
-  R2, no Queues. `resolveAiBinding` returns null, stores are in-memory, and
+- **Cloudflare, mostly still stubbed.** No wrangler config, no bindings, no D1,
+  no R2, no Queues. Vectorize has a real REST client now but is opt-in; the
+  default vector store is a local file. Stores are in-memory or on disk, and
   every one of these is one line to change and marked where it sits.
+- **The public surfaces are still lexical-only.** The dense half is wired into
+  `assessCase` and nowhere else, so the public search answer and the intake
+  chat still cannot connect "my muscles ached all over" to *myalgia*. That is
+  the wrong way round — the public form is where lay language is most likely —
+  and it is the first thing I would do next. `answer.ts` already calls
+  `fuseByRank`; `assessAgainstDocuments` has no fusion call at all.
+- **The cosine floor is a guess.** `DENSE_MIN_COSINE = 0.55` comes from the
+  model's typical distribution, not from a measurement on this corpus. Earning
+  a real number needs a labelled query-to-chunk set, which does not exist.
+  Unlike the BM25 floor it will not drift with corpus size, but it *will* drift
+  with the model, and the constant says so.
