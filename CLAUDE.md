@@ -191,9 +191,11 @@ search works with nothing but the credentials generation already needs, and
 Cloudflare Vectorize when `SIDENOTE_VECTORIZE_INDEX` is set. Every match is
 hydrated from the library mirror and any match the mirror does not confirm is
 dropped — the store contributes an id and a rank, never text, never a citation,
-never scope. **The public search answer and the intake chat are still
-lexical-only**, which is the wrong way round and is stated in SETUP.md rather
-than left to be found.
+never scope. The public search answer (`lib/assess/answer.ts`) is hybrid too.
+**The intake chat is not, and deliberately so** — it is the one surface that
+asserts what a document says with no model reading the passage, so a better
+retriever there would only make it more confident. That is a shape problem to
+fix before a ranking problem; SETUP.md and NOTES.md both say so.
 
 **Generated, and fenced in.** Two model calls per case, one per source
 namespace, after fusion, plus at most one retry each — so four generations is

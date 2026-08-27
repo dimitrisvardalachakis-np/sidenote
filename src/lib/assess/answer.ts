@@ -1,25 +1,54 @@
 import "server-only";
 import { audit } from "@/lib/audit";
-import { fuseByRank, lexicalSearch, toCitation } from "@/lib/retrieval/search";
+import { denseSearch } from "@/lib/retrieval/dense";
+import { resolveDenseFor } from "@/lib/retrieval/resolve";
+import type { DenseAvailability } from "@/lib/retrieval/vectors";
+import {
+  fuseByRank,
+  lexicalSearch,
+  toCitation,
+  type ScoredChunk,
+} from "@/lib/retrieval/search";
 import { MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
-import type { Citation, DocumentChunk, ModelReading } from "@/lib/schemas";
-import { resolveAiBinding, resolveGateway } from "./ai";
+import type {
+  Citation,
+  DocumentChunk,
+  DocumentId,
+  ModelReading,
+} from "@/lib/schemas";
+import {
+  resolveAiBinding,
+  resolveGateway,
+  type AiAvailability,
+  type AiGatewayConfig,
+} from "./ai";
 import { aiEnv } from "./env";
 import { readPassages } from "./generate";
 
 /**
  * Ask a question of the public labels, and get an answer grounded in them.
  *
- * This is the same three steps the reviewer's assessment takes — retrieve,
- * fuse, read — pointed at a question somebody typed instead of at a case
- * record. It reuses `readPassages` rather than reimplementing it, so the
- * verbatim check, the single retry, the recommendation filter and the honest
- * degraded state all apply here exactly as they do on the reviewer screen.
+ * This is the same four steps the reviewer's assessment takes — retrieve
+ * lexically, retrieve densely, fuse, read — pointed at a question somebody
+ * typed instead of at a case record. It reuses `readPassages` rather than
+ * reimplementing it, so the verbatim check, the single retry, the
+ * recommendation filter and the honest degraded state all apply here exactly
+ * as they do on the reviewer screen.
  *
  * PUBLIC NAMESPACE ONLY, and that is a confidentiality boundary rather than a
  * relevance tweak: there is no login on this page and the company library
  * holds CCDS text. The `sourceType` filter is the only thing standing between
  * an anonymous visitor and a confidential document.
+ *
+ * WHY THE DENSE HALF IS SAFE TO ADD HERE, when it is not yet safe on the
+ * intake chat. Dense retrieval's new failure mode is a semantically-near but
+ * wrong passage — one that shares no words with the question. On this path a
+ * model reads every candidate before anything is claimed, and it can answer
+ * `found: false`; a near-miss therefore becomes "no passage describes this"
+ * rather than an answer. The intake chat has no model between retrieval and
+ * the sentence it shows a reporter, so the same change there would assert a
+ * document's contents on the strength of a ranking alone. Same ranking, very
+ * different blast radius.
  */
 export const ANSWER_LIMIT = 4;
 
@@ -31,31 +60,125 @@ export interface PublicAnswer {
   readonly hits: readonly DocumentChunk[];
 }
 
+/**
+ * Every public document in the corpus, as the dense half's scope.
+ *
+ * `denseSearch` requires a document-id set because on the reviewer path that
+ * set is the wrong-product guarantee. This page has no product to scope to —
+ * a visitor may not name a medicine at all — so the honest set is "every
+ * public document", and the confidentiality boundary stays where it already
+ * was, on `sourceType`.
+ *
+ * Derived from the corpus rather than passed in, so a company document id
+ * structurally cannot appear in it. Combined with `sourceType: "public"` in
+ * the search itself, that is two independent locks on the one boundary this
+ * page must not cross.
+ */
+function publicDocumentIds(
+  corpus: readonly DocumentChunk[],
+): ReadonlySet<DocumentId> {
+  const ids = new Set<DocumentId>();
+  for (const chunk of corpus) {
+    if (chunk.sourceType === "public") ids.add(chunk.documentId);
+  }
+  return ids;
+}
+
+/** The production wiring, kept in one place so a test can bypass it whole. */
+async function resolveFromEnv(): Promise<AnswerDeps> {
+  const env = await aiEnv();
+  const ai = resolveAiBinding(env);
+  return { ai, dense: resolveDenseFor(env, ai), gateway: resolveGateway(env) };
+}
+
+/**
+ * Everything this function needs from the outside world.
+ *
+ * Optional, and resolved from the environment when omitted — so the page keeps
+ * calling with two arguments and nothing about the production path changes.
+ * It exists because this function reads its own environment, which is exactly
+ * why it had no tests: there was no way to hand it a model or a vector store.
+ * A public surface with a confidentiality boundary and no test file is the
+ * wrong trade, and `assessCase` already takes its dependencies this way.
+ */
+export interface AnswerDeps {
+  readonly ai: AiAvailability;
+  readonly dense: DenseAvailability | null;
+  readonly gateway: AiGatewayConfig | null;
+}
+
 export async function answerPublicQuestion(
   question: string,
   corpus: readonly DocumentChunk[],
+  deps?: AnswerDeps,
 ): Promise<PublicAnswer> {
   const query = question.trim();
   if (query.length < 2) return { citations: [], reading: null, hits: [] };
 
-  const fused = fuseByRank([
-    lexicalSearch(corpus, query, {
-      sourceType: "public",
-      limit: ANSWER_LIMIT,
-      minScore: MATCHED_ANY_TERM,
-    }),
-  ]);
+  /*
+    Resolved before retrieval now, not after it.
+
+    It used to sit below the early return, because retrieval could not fail and
+    needed nothing from the environment. The dense half needs a model to embed
+    the question with, so the environment has to be read first — which also
+    means an embedding is spent on questions that go on to match nothing. That
+    is the cost of the recall this buys and it is not avoidable: the whole
+    point is to find passages the lexical half missed, and there is no way to
+    know one was missed without looking.
+  */
+  const resolved = deps ?? (await resolveFromEnv());
+  const { ai, dense } = resolved;
+
+  const lexical = lexicalSearch(corpus, query, {
+    sourceType: "public",
+    limit: ANSWER_LIMIT,
+    minScore: MATCHED_ANY_TERM,
+  });
+
+  // Never throws. A dense failure leaves this page doing exactly what it did
+  // before the ranking existed, and the reason lands on the audit line.
+  const semantic =
+    dense === null
+      ? {
+          hits: [] as readonly ScoredChunk[],
+          unavailableReason: "semantic retrieval was not configured for this call",
+        }
+      : await denseSearch({
+          dense,
+          chunks: corpus,
+          query,
+          sourceType: "public",
+          documentIds: publicDocumentIds(corpus),
+          // The same depth as the lexical ranking, deliberately: RRF weights
+          // by rank, so a deeper ranking would get more chances to contribute
+          // and quietly outweigh the shallower one for no reason anybody chose.
+          limit: ANSWER_LIMIT,
+        });
+
+  /*
+    Fuse, and slice.
+
+    `fuseByRank` applies no limit and no threshold — it returns every distinct
+    chunk from every ranking. With one ranking that was invisible, because
+    `lexicalSearch` had already capped itself at ANSWER_LIMIT and the cap was
+    being supplied by accident. With two, the union can be twice as long and
+    every entry of it goes into the prompt as a passage. This line is now the
+    only thing supplying the cap, exactly as in assess.ts.
+
+    Lexical first, so its hydrated chunk wins a tie in fuseByRank's
+    first-writer-wins — and so a hit that carries real `matched` terms supplies
+    the excerpt rather than a semantic hit whose `matched` is legitimately empty.
+  */
+  const fused = fuseByRank([lexical, semantic.hits]).slice(0, ANSWER_LIMIT);
 
   if (fused.length === 0) return { citations: [], reading: null, hits: [] };
 
-  const env = await aiEnv();
-  const ai = resolveAiBinding(env);
   const chunks = fused.map((hit) => hit.chunk);
 
   const { reading, attempts } = await readPassages({
     binding: ai.binding,
     unavailableReason: ai.reason ?? "no model is configured",
-    gateway: resolveGateway(env),
+    gateway: resolved.gateway,
     /*
       The question goes in where a case's reaction term would.
 
@@ -82,6 +205,18 @@ export async function answerPublicQuestion(
       source: ai.source,
       passages: chunks.length,
       inferences: attempts.length,
+      /*
+        Which half found the evidence, and whether both halves ran.
+
+        Safe to record: every message these strings can carry comes from
+        `FetchJsonError`, whose `.message` is built from the status and the
+        endpoint URL only — the request body lives on `.body`, which is never
+        read here. So a dense failure reason cannot carry the question.
+      */
+      retrieval: semantic.unavailableReason === null ? "hybrid" : "lexical",
+      lexicalHits: lexical.length,
+      denseHits: semantic.hits.length,
+      denseUnavailable: semantic.unavailableReason ?? "none",
       // The question itself is NOT logged. It is a member of the public
       // describing a medical event, which makes it personal data, and
       // non-negotiable #9 says never to put that on an audit line.

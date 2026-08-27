@@ -290,9 +290,9 @@ access generation does.
 
 Being clear about the ceiling, because there is still a real one.
 
-**The public surfaces are lexical-only.** The public search answer and the
-intake chat both still rely on literal overlap plus the 24-entry synonym table.
-Measured against the seeded corpus, all three of these return nothing:
+**The intake chat is lexical-only, and that is now a refusal rather than a
+gap.** It still relies on literal overlap plus the 24-entry synonym table, so
+measured against the seeded corpus all three of these return nothing:
 
 - "my face puffed up" → *angioedema* — **missed**. The table has a `swelling`
   entry that reaches `angioedema`, but the reporter wrote "puffed up", and a
@@ -300,11 +300,21 @@ Measured against the seeded corpus, all three of these return nothing:
 - "heart was racing" → *tachycardia* — **missed**
 - "my muscles ached all over" → *myalgia* — **missed**
 
-That is deliberate for this round and it is the wrong way round: the public
-form is where lay language is most likely, so the gap bites hardest exactly
-where it has not been lifted. `answer.ts` already calls `fuseByRank`, so it is
-a small follow-up; the intake chat has no fusion call at all and needs a seam
-built first.
+Adding the dense half there was the obvious next step and it is the wrong one
+until something else changes first. `assessAgainstDocuments` turns a bare
+retrieval hit into `alreadyDescribed`, which tells a member of the public their
+reaction *"does appear in the published information"* — with **no model reading
+the passage**. Every other surface puts a model between the ranking and the
+claim. A better retriever on that path would not make the answer truer, only
+more confident, and a semantic hit carries no `matched` terms, so the passage
+shown underneath would be the chunk's opening heading rather than the sentence
+that matched — removing the one safeguard that path relies on.
+
+The report reaches a reviewer either way, so nothing is suppressed; what is at
+stake is telling somebody something untrue about a safety document. The order
+is: give `IntakeVerdict` a third state (it currently cannot distinguish
+"searched and found nothing" from "nothing was in scope to search"), stop
+asserting on a ranking alone, and then add dense.
 
 **Nothing is automatic.** Assessment runs when a reviewer presses the button,
 not when a case arrives. An inference costs money and a button makes it obvious

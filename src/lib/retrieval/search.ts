@@ -14,11 +14,13 @@
  * dense half closes — and the table is now a cheap fallback that also works
  * when no model is configured, rather than the ceiling on what can be found.
  *
- * WHERE IT IS STILL THE ONLY HALF. The public search answer (`answer.ts`) and
- * the intake chat (`conversation.ts`) are lexical-only, deliberately, this
- * round. That is worth stating rather than leaving to be discovered: the
- * public surfaces are where lay language is most likely, so the ceiling bites
- * hardest exactly where it has not been lifted.
+ * WHERE IT IS STILL THE ONLY HALF. The intake chat (`conversation.ts`) is
+ * lexical-only, and that is now a deliberate refusal rather than work not yet
+ * done. It converts a bare retrieval hit into `alreadyDescribed`, which tells
+ * a member of the public their reaction "does appear in the published
+ * information" — with no model reading the passage. Every other surface puts a
+ * model between the ranking and the claim; that one does not, so a better
+ * retriever there would only assert more confidently. See NOTES.md.
  */
 import type { Citation, DocumentChunk, SourceType } from "@/lib/schemas";
 

@@ -324,6 +324,86 @@ otherwise by passing.
 
 ---
 
+## The surface that should not get the better retriever
+
+Having made retrieval hybrid on the reviewer path, the obvious next move was to
+do the same for the two public surfaces. I wrote that down as the next step,
+went to do it, and found that one of the two should not have it yet.
+
+`answer.ts` — the public search page — was straightforward and is now hybrid. A
+model reads every retrieved passage before anything is claimed to the visitor,
+and it can answer `found: false`. Dense retrieval's new failure mode is a
+semantically-near but wrong passage; on that path a near-miss becomes "no
+passage describes this" rather than an answer. The guard was already there.
+
+The intake chat is a different shape entirely. `assessAgainstDocuments`
+(`conversation.ts:410`) ends at:
+
+```ts
+alreadyDescribed: company.length > 0 || publicHits.length > 0,
+```
+
+A bare hit count. No model, no binding parameter, nothing between the ranking
+and this sentence shown to a member of the public: *"Thank you. {reaction} does
+appear in the published information for {drug}."* It is the only surface in the
+system that asserts what a document says without a model having read it.
+
+So a better retriever there does not make the answer truer. It makes it more
+confident.
+
+### What I got wrong on the way to that
+
+My first framing was that this would discourage people from reporting, and that
+is false. I had it checked adversarially rather than trusting it, and the check
+refuted exactly that step: the report is written to the store in the *same*
+server-action turn that produces the message. `advance` only reaches the verdict
+inside the branch that sets `phase: "complete"`, and `sendChatMessage`
+early-returns before the store write on every other turn. The reporter reads
+"does appear in the published information" and their reference number in the
+same render, with the reply form already gone. There is no step left to drop
+out of, and the file says so itself.
+
+What actually makes the asymmetry real is subtler and better: a false negative
+is caught downstream, because a reviewer reads every case regardless. A false
+positive is seen only by the reporter, who is the last human in the chain and
+has nothing to check it against.
+
+### The mechanism I had not thought of
+
+The adversarial pass also turned up something I would not have found. `dense.ts`
+sets `matched: []` for a genuinely semantic hit, and justifies it in a comment:
+"For a genuinely semantic match this is legitimately empty, and the model picks
+the sentence downstream anyway."
+
+There is no downstream model on the intake path. `excerpt` centres on
+`matched[0]` and falls back to offset 0 when it is absent, so the passage
+rendered under "Here is the passage I found:" would be the chunk's opening —
+usually a section heading — rather than the sentence that matched. That destroys
+the exact safeguard `conversation.ts` leans on: "the safeguard on this path is
+not the threshold: it is that the reporter is shown the passage and can see for
+themselves what it says."
+
+A design decision that is correct in one file becomes a defect in another
+because its stated precondition is not met there. The comment was right; it just
+was not true everywhere the function is called.
+
+### And a bug that has nothing to do with dense
+
+Falling out of the same reading: `alreadyDescribed === false` conflates
+"searched the label and it is not there" with "there was nothing in scope to
+search". If `documentsForDrug` returns an empty set, the reporter is told "I
+could not find X in the published information for Y" — an assertion about a
+document nobody consulted. That is the two-state collapse non-negotiable #5
+exists to prevent, and `IntakeVerdict` has no field able to express the third
+state. It leans the safe way, which is why it has survived, but it is the same
+mistake in the other direction.
+
+**The order, then**: give `IntakeVerdict` its third state, stop asserting on a
+ranking alone, and only then add dense retrieval. The ranking was never the
+problem on that path.
+
+---
+
 ## The injection test (Cluster F security story)
 
 The company library holds documents reviewers upload. A PDF can contain any
@@ -509,12 +589,10 @@ partially-merged record that neither path is responsible for.
   no R2, no Queues. Vectorize has a real REST client now but is opt-in; the
   default vector store is a local file. Stores are in-memory or on disk, and
   every one of these is one line to change and marked where it sits.
-- **The public surfaces are still lexical-only.** The dense half is wired into
-  `assessCase` and nowhere else, so the public search answer and the intake
-  chat still cannot connect "my muscles ached all over" to *myalgia*. That is
-  the wrong way round — the public form is where lay language is most likely —
-  and it is the first thing I would do next. `answer.ts` already calls
-  `fuseByRank`; `assessAgainstDocuments` has no fusion call at all.
+- **The intake chat is still lexical-only, on purpose.** See "The surface that
+  should not get the better retriever" below. `IntakeVerdict` needs a third
+  state and the assertion needs a model behind it before a better ranking is an
+  improvement rather than a louder guess.
 - **The cosine floor is a guess.** `DENSE_MIN_COSINE = 0.55` comes from the
   model's typical distribution, not from a measurement on this corpus. Earning
   a real number needs a labelled query-to-chunk set, which does not exist.
