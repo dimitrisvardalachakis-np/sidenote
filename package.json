@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "evals": "vitest run src/lib/evals",
-    "embed:seed": "SIDENOTE_EMBED_SEED=1 vitest run src/lib/fixtures/embed-seed.test.ts"
+    "embed:seed": "SIDENOTE_EMBED_SEED=1 vitest run src/lib/fixtures/embed-seed.test.ts",
+    "embed:backfill": "SIDENOTE_EMBED_BACKFILL=1 vitest run src/lib/retrieval/backfill.test.ts"
   },
   "dependencies": {
     "next": "16.3.2",

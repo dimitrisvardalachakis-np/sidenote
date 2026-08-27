@@ -14,6 +14,10 @@ import {
 import { DocumentId, REJECTION_MESSAGES, SafetyDocument } from "@/lib/schemas";
 import { getDocumentStore, objectKeyFor } from "@/lib/store/document-store";
 import { getDocumentLibrary } from "@/lib/store/library-store";
+import { resolveAiBinding } from "@/lib/assess/ai";
+import { aiEnv } from "@/lib/assess/env";
+import { embedAndUpsert } from "@/lib/retrieval/ingest";
+import { resolveDenseFor } from "@/lib/retrieval/resolve";
 import type { UploadState } from "./upload-state";
 
 const MAX_BYTES = 8 * 1024 * 1024;
@@ -160,8 +164,17 @@ export async function saveDocument(
     version: parsed.data.version,
     effectiveDate: parsed.data.effectiveDate,
     objectKey,
-    // Chunked, not embedded. There is no Vectorize this session, and marking
-    // it "embedded" would be a lie a later cluster has to unpick.
+    /*
+      Chunked. Not yet embedded, and deliberately written that way first.
+
+      The mirror is saved before the vectors are attempted, because the two
+      failure modes are not symmetric: a document in the library but not the
+      index is lexically searchable and honestly labelled, while a document in
+      the index but not the library is a vector that can never be hydrated.
+      Given a crash between the two, the first is strictly better — so the
+      status starts pessimistic and is corrected upwards only if the upsert
+      actually resolved.
+    */
     status: "chunking",
     rejectionReason: null,
     chunkCount: chunks.length,
@@ -170,16 +183,39 @@ export async function saveDocument(
 
   await getDocumentLibrary().save({ document, chunks });
 
+  const env = await aiEnv();
+  const ingest = await embedAndUpsert({
+    dense: resolveDenseFor(env, resolveAiBinding(env)),
+    document,
+    chunks,
+  });
+
+  // The only path in the codebase that writes "embedded", and it is downstream
+  // of an upsert that resolved. A comment cannot keep that status honest; this
+  // control flow can.
+  if (ingest.status === "embedded") {
+    await getDocumentLibrary().save({
+      document: SafetyDocument.parse({ ...document, status: "embedded" }),
+      chunks,
+    });
+  }
+
   audit({
     actor: session.reviewerId,
     action: "upload_document",
     target: documentId,
+    // Still a success. The document is stored, chunked, mirrored and
+    // searchable; whether the dense half saw it is a separate fact, recorded
+    // separately, and never a reason to tell a reviewer their upload failed.
     outcome: "success",
     detail: {
       sourceType,
       kind: parsed.data.kind,
       chunks: chunks.length,
       pages: assessment.pageCount,
+      embedding: ingest.status,
+      vectors: ingest.status === "embedded" ? ingest.vectors : 0,
+      embeddingDetail: ingest.status === "embedded" ? "none" : ingest.reason,
     },
   });
 

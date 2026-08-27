@@ -6,6 +6,7 @@ import { audit } from "@/lib/audit";
 import { requireSession } from "@/lib/auth";
 import { assessCase } from "@/lib/assess/assess";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
+import { resolveDenseFor } from "@/lib/retrieval/resolve";
 import { aiEnv } from "@/lib/assess/env";
 import { documentsForDrug } from "@/lib/assess/scope";
 import { findQueueEntry } from "@/lib/queue/entries";
@@ -54,6 +55,7 @@ export async function runAssessment(caseId: string): Promise<void> {
   const { chunks, documents } = await loadCorpus();
   const env = await aiEnv();
   const ai = resolveAiBinding(env);
+  const dense = resolveDenseFor(env, ai);
 
   const findings = await assessCase({
     chunks,
@@ -64,6 +66,7 @@ export async function runAssessment(caseId: string): Promise<void> {
       drug.marketingStatus === "marketed" ? "ccds" : "investigators_brochure",
     labelSetId: null,
     ai,
+    dense,
     gateway: resolveGateway(env),
     now: new Date().toISOString(),
     actor: session.reviewerId,
@@ -103,6 +106,10 @@ export async function runAssessment(caseId: string): Promise<void> {
     outcome: "success",
     detail: {
       source: ai.source,
+      // Which retrieval a reviewer's evidence came from. `assessCase` records
+      // the per-namespace detail; this is the one line that says whether the
+      // dense half was available for this run at all.
+      retrieval: dense.store === null ? "lexical" : `hybrid:${dense.source}`,
       listedness: findings.listedness.state,
       expectedness: findings.expectedness.state,
     },

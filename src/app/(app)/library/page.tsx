@@ -98,9 +98,26 @@ function DocumentColumn({
                   {REJECTION_MESSAGES[doc.rejectionReason]}
                 </p>
               )}
+              {/*
+                Two states, kept apart on purpose.
+
+                "Chunked and mirrored" is not a failure — the document is
+                stored and lexically searchable, and that is what the sentence
+                says. What it must not do is imply the semantic half saw it,
+                because a reviewer who believes a document is fully indexed
+                reads "no matching passage" as a fact about the document
+                rather than about the index. The reason it stopped short is on
+                the audit line; this is the reviewer-facing half of the same
+                honesty.
+              */}
               {doc.status === "chunking" && (
                 <p className="mt-0.5 text-meta text-slate">
-                  Chunked and mirrored. Embedding arrives in Cluster E.
+                  Chunked and mirrored. Keyword search only — not embedded.
+                </p>
+              )}
+              {doc.status === "embedded" && (
+                <p className="mt-0.5 text-meta text-slate">
+                  Chunked, mirrored and embedded. Keyword and semantic search.
                 </p>
               )}
             </li>

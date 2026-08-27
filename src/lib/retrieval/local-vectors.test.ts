@@ -7,10 +7,17 @@
  * dimensions mean the expected cosine can be computed by hand and checked,
  * rather than asserted against whatever the code happens to produce.
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ChunkId, DocumentId, type SourceType } from "@/lib/schemas";
+import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "@/lib/assess/ai";
 import { cosine, createLocalVectorStore } from "./local-vectors";
 import { resolveVectorStore, type VectorStore } from "./vectors";
+
+/** The store resolves `.data/vectors` relative to cwd, so tests chdir. */
+const ORIGINAL_CWD = process.cwd();
 
 const DOC_A = DocumentId.parse("0000000f-0000-4000-8000-00000000000a");
 const DOC_B = DocumentId.parse("0000000f-0000-4000-8000-00000000000b");
@@ -164,5 +171,106 @@ describe("choosing a store", () => {
     );
     expect(out.store).toBeNull();
     expect(out.source).toBe("none");
+  });
+});
+
+describe("vectors from another model or another endpoint are not read", () => {
+  /*
+    The failure this prevents is the quiet one, again.
+
+    scripts/stub-model.mjs answers embedding requests by hashing words into
+    buckets. Those vectors land in the same directory, under the same
+    filenames, as real ones, and the writer cannot tell which model it just
+    talked to. Develop against the stub, switch to real credentials, and every
+    query scores a real query vector against hashed buckets: confident
+    rankings over noise, with nothing anywhere saying so.
+
+    fixtures/vectors.ts refuses exactly this for the seed artifact. This is the
+    same rule for the uploaded half, and it has to hold in code — the person
+    who hits it has no reason to suspect the directory.
+  */
+  const tmp = join(tmpdir(), `sidenote-vectors-${process.pid}`);
+
+  beforeEach(async () => {
+    await mkdir(join(tmp, ".data", "vectors"), { recursive: true });
+    process.chdir(tmp);
+  });
+  afterEach(async () => {
+    process.chdir(ORIGINAL_CWD);
+    await rm(tmp, { recursive: true, force: true });
+  });
+
+  const write = async (file: Record<string, unknown>) =>
+    writeFile(
+      join(tmp, ".data", "vectors", `${DOC_A}.json`),
+      JSON.stringify(file),
+      "utf8",
+    );
+
+  const stored = (over: Record<string, unknown> = {}) => ({
+    documentId: DOC_A,
+    model: EMBEDDING_MODEL,
+    dimensions: EMBEDDING_DIMENSIONS,
+    source: "workers-ai",
+    vectors: [
+      {
+        id: "a#0",
+        sourceType: "company",
+        activeSubstance: "covaxilin",
+        values: Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === 0 ? 1 : 0)),
+      },
+    ],
+    ...over,
+  });
+
+  const queryFor = (store: VectorStore) =>
+    store.query({
+      vector: Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === 0 ? 1 : 0)),
+      topK: 10,
+      sourceType: "company",
+      documentIds: new Set([DOC_A]),
+    });
+
+  it("reads a file written by the same endpoint", async () => {
+    await write(stored());
+    expect(await queryFor(createLocalVectorStore("workers-ai"))).toHaveLength(1);
+  });
+
+  it("skips a file written against an overridden endpoint", async () => {
+    await write(stored({ source: "override:http://localhost:8787" }));
+    expect(await queryFor(createLocalVectorStore("workers-ai"))).toHaveLength(0);
+  });
+
+  it("skips a file written by a different model", async () => {
+    await write(stored({ model: "@cf/baai/bge-small-en-v1.5" }));
+    expect(await queryFor(createLocalVectorStore("workers-ai"))).toHaveLength(0);
+  });
+
+  it("skips a file of the wrong width", async () => {
+    await write(stored({ dimensions: 384 }));
+    expect(await queryFor(createLocalVectorStore("workers-ai"))).toHaveLength(0);
+  });
+
+  it("reads a file written before the stamp existed", async () => {
+    // Absent is not a mismatch. "Written by whatever was configured then" is
+    // the best that can be said about it, and discarding it silently would be
+    // a worse default than reading it.
+    const { source: _source, ...withoutStamp } = stored();
+    await write(withoutStamp);
+    expect(await queryFor(createLocalVectorStore("workers-ai"))).toHaveLength(1);
+  });
+
+  it("round-trips what it writes", async () => {
+    const store = createLocalVectorStore("override:http://localhost:8787");
+    await store.upsert([
+      {
+        id: ChunkId.parse("a#0"),
+        values: Array.from({ length: EMBEDDING_DIMENSIONS }, (_, i) => (i === 0 ? 1 : 0)),
+        metadata: { documentId: DOC_A, sourceType: "company", activeSubstance: "covaxilin" },
+      },
+    ]);
+    // Same provenance reads it back; the real endpoint does not.
+    expect(await queryFor(store)).toHaveLength(1);
+    expect(await queryFor(createLocalVectorStore("workers-ai"))).toHaveLength(0);
   });
 });
