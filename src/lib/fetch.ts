@@ -157,6 +157,24 @@ export async function fetchJson<S extends z.ZodType>(
   schema: S,
   init?: RequestInit,
 ): Promise<z.output<S>> {
+  return (await fetchJsonWithHeaders(url, schema, init)).data;
+}
+
+/**
+ * As `fetchJson`, but hands back the response headers too.
+ *
+ * Added for one reason: AI Gateway returns the id that ties a rendered
+ * assessment back to a single inference in the `cf-aig-log-id` HEADER, not in
+ * the body. Non-negotiable #9 requires that id on the audit line, and a caller
+ * that reached for the raw `fetch` to get it would be the second door into the
+ * network this file exists to prevent — so the door widens rather than being
+ * walked around. The body is still schema-checked; that part is not optional.
+ */
+export async function fetchJsonWithHeaders<S extends z.ZodType>(
+  url: string | URL,
+  schema: S,
+  init?: RequestInit,
+): Promise<{ readonly data: z.output<S>; readonly headers: Headers }> {
   const href = typeof url === "string" ? url : url.toString();
 
   const headers = new Headers(init?.headers);
@@ -207,7 +225,7 @@ export async function fetchJson<S extends z.ZodType>(
   if (!result.success) {
     throw new SchemaMismatchError(href, result.error, parsed.value);
   }
-  return result.data;
+  return { data: result.data, headers: res.headers };
 }
 
 type JsonParseResult =

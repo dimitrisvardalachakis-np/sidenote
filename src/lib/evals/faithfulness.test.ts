@@ -245,7 +245,7 @@ async function sampleAssessments(binding: AiBinding): Promise<ScoredReading[]> {
       drugName: c.drug.reportedName,
       documentKind: "ccds",
       labelSetId: null,
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
       gateway: null,
       now: "2026-08-26T10:00:00Z",
       actor: "eval",

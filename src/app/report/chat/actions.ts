@@ -12,6 +12,7 @@ import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { guardPublicConversation } from "@/lib/protection/guard";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
+import { aiEnv } from "@/lib/assess/env";
 import { extractReport } from "@/lib/extract/extract";
 import type { ChatState } from "./chat-state";
 
@@ -62,14 +63,14 @@ export async function sendChatMessage(
     extraction is what `advance` already expects, and the regex path is what
     runs. The report is accepted either way.
   */
-  const ai = resolveAiBinding(process.env);
+  const ai = resolveAiBinding(await aiEnv());
   const extraction =
     previous.intake.pending === "narrative"
       ? (
           await extractReport({
             binding: ai.binding,
             unavailableReason: ai.reason ?? "no model configured",
-            gateway: resolveGateway(process.env),
+            gateway: resolveGateway(await aiEnv()),
             sourceText: reply,
             knownProducts: products,
             now: new Date().toISOString(),

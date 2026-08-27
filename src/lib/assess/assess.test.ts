@@ -83,7 +83,7 @@ describe("two calls per case, maximum", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     expect(prompts).toHaveLength(2);
   });
@@ -98,7 +98,7 @@ describe("two calls per case, maximum", () => {
       documentIds: documentsForDrug(SEED_DOCUMENTS, COVAXIL),
       reactionTerm: "rash",
       drugName: "Covaxil",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     const passages = prompts.map((p) => p.split("<<<PASSAGE").length - 1);
     expect(Math.max(...passages)).toBeGreaterThan(1);
@@ -114,7 +114,7 @@ describe("the two namespaces stay apart", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     if (out.listedness.state === "grounded") {
       expect(out.listedness.citations.every((c) => c.sourceType === "company")).toBe(true);
@@ -130,7 +130,7 @@ describe("the two namespaces stay apart", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     if (out.listedness.state === "grounded" && out.listedness.reading.status === "read") {
       const ids = out.listedness.citations.map((c) => c.chunkId);
@@ -146,7 +146,7 @@ describe("when retrieval finds nothing", () => {
       ...base,
       reactionTerm: "zzzznonsensereaction",
       drugName: "zzzznonsensedrug",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     expect(out.listedness.state).toBe("no_result");
     expect(out.expectedness.state).toBe("no_result");
@@ -162,7 +162,7 @@ describe("with no model at all", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding: null, reason: "generation is disabled by configuration" },
+      ai: { binding: null, reason: "generation is disabled by configuration", source: "none" as const },
     });
     expect(out.listedness.state).toBe("grounded");
     if (out.listedness.state === "grounded") {
@@ -180,7 +180,7 @@ describe("with no model at all", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding: null, reason: "no binding" },
+      ai: { binding: null, reason: "no binding", source: "none" as const },
     });
     if (out.listedness.state === "grounded") {
       expect(out.listedness.reading.status).not.toBe("nothing_found");
@@ -200,7 +200,7 @@ describe("holes found by review", () => {
       chunks: publicOnly,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding: null, reason: "no binding" },
+      ai: { binding: null, reason: "no binding", source: "none" as const },
     });
     expect(out.listedness.state).toBe("source_unavailable");
     expect(out.listedness.state).not.toBe("no_result");
@@ -229,7 +229,7 @@ describe("holes found by review", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     // Never two in flight at once.
     expect(order.every((o) => o === "start:1")).toBe(true);
@@ -250,7 +250,7 @@ describe("retrieval never leaves this case's own documents", () => {
       documentIds: documentsForDrug(SEED_DOCUMENTS, COVAXIL),
       reactionTerm: "jaundice",
       drugName: "Covaxil",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
 
     const covaxilDocs = documentsForDrug(SEED_DOCUMENTS, COVAXIL);
@@ -280,7 +280,7 @@ describe("retrieval never leaves this case's own documents", () => {
       documentIds: documentsForDrug(SEED_DOCUMENTS, drug("Unknownium", "unobtainium")),
       reactionTerm: "jaundice",
       drugName: "Unknownium",
-      ai: { binding: null, reason: "no binding" },
+      ai: { binding: null, reason: "no binding", source: "none" as const },
     });
     expect(out.listedness.state).toBe("source_unavailable");
     expect(out.expectedness.state).toBe("source_unavailable");
@@ -298,7 +298,7 @@ describe("the query is the reaction, not the reaction plus the drug", () => {
       ...base,
       reactionTerm: "zzzz unrelated symptom",
       drugName: "Hepalex",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     expect(out.listedness.state).toBe("no_result");
     expect(out.expectedness.state).toBe("no_result");
@@ -312,7 +312,7 @@ describe("the query is the reaction, not the reaction plus the drug", () => {
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
-      ai: { binding, reason: null },
+      ai: { binding, reason: null, source: "http" as const },
     });
     expect(out.listedness.state).toBe("grounded");
   });

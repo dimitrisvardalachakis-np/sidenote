@@ -4,6 +4,9 @@ import { CaseDetail } from "@/components/case-detail";
 import { CaseList, clockLabel } from "@/components/case-list";
 import { CompanyEvidence, PublicEvidence } from "@/components/evidence";
 import { findQueueEntry, loadQueue } from "@/lib/queue/entries";
+import { resolveAiBinding } from "@/lib/assess/ai";
+import { aiEnv } from "@/lib/assess/env";
+import { runAssessment } from "./actions";
 import {
   documentStance,
   expeditedClock,
@@ -54,6 +57,11 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
     assessment !== null && documentStance(assessment.listedness) === "describes";
   const serious = record.reactions.some((r) => isSerious(r.seriousness));
   const all = await loadQueue(today);
+
+  // Whether a model is reachable at all, so the control can say what pressing
+  // it will actually do rather than failing silently after the click.
+  const ai = resolveAiBinding(await aiEnv());
+  const assess = runAssessment.bind(null, record.id);
 
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-4">
@@ -152,15 +160,37 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
           </div>
 
           <section aria-label="Evidence" className="mt-6 border-t border-rule pt-4">
-            <div className="flex items-baseline justify-between gap-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
               <h2 className="text-micro uppercase tracking-label text-slate">
                 Evidence
               </h2>
-              <p className="text-meta text-slate">
+              <p className="flex-1 text-meta text-slate">
                 Retrieved passages, and what a model read in them. No claim is
                 shown without the passage it came from.
               </p>
+              <form action={assess}>
+                <button
+                  type="submit"
+                  disabled={ai.binding === null}
+                  title={ai.reason ?? "Search the safety documents and read the passages found"}
+                  className="cursor-pointer rounded-soft border border-ink px-3 py-1 text-meta hover:border-steady hover:text-steady disabled:cursor-not-allowed disabled:border-rule disabled:text-slate"
+                >
+                  {assessment === null ? "Assess this case" : "Re-assess"}
+                </button>
+              </form>
             </div>
+            {ai.binding === null && (
+              /*
+                Say why the control is dead rather than leaving a disabled
+                button with no explanation. A reviewer who cannot tell the
+                difference between "broken" and "not configured" will assume
+                the first and stop trusting the screen.
+              */
+              <p className="mt-1 text-meta text-slate">
+                No model is configured, so the passages can be retrieved but
+                not read. {ai.reason} — see SETUP.md.
+              </p>
+            )}
 
             {assessment === null ? (
               /*
@@ -187,8 +217,10 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                   </p>
                 )}
                 <p className="mt-2 text-meta text-slate">
-                  Retrieval runs on a queue consumer in Cluster E. Until then a
-                  reviewer assesses by hand.
+                  Press <strong>Assess this case</strong> to search the safety
+                  documents for this product and read what they say. In Cluster
+                  E a queue consumer does this on arrival; until then it is a
+                  reviewer&rsquo;s decision to spend the inference.
                 </p>
               </div>
             ) : (

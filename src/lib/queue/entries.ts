@@ -1,6 +1,7 @@
 import "server-only";
 import { buildSeedCases } from "@/lib/fixtures/seed";
 import { getCaseStore } from "@/lib/store/case-store";
+import { getAssessmentStore } from "@/lib/store/assessment-store";
 import type { Assessment, Case, IsoDate } from "@/lib/schemas";
 
 /**
@@ -35,12 +36,32 @@ export async function loadQueue(today: IsoDate): Promise<readonly QueueEntry[]> 
   }));
 
   const submitted = await getCaseStore().list();
-  const submittedEntries: QueueEntry[] = submitted.map((record) => ({
-    record,
-    assessment: null,
-  }));
+  const store = getAssessmentStore();
 
-  return [...submittedEntries, ...seeded];
+  /*
+    A real assessment, where one has been run, wins over the seeded one.
+
+    Both kinds of case can have one now: a reviewer can run the assessment on
+    a submitted case, and can re-run it on a fixture — which is the only way
+    to see a real model reading on the demo data. `null` still means nobody
+    has looked, and still renders as "not assessed yet" rather than as a
+    document saying nothing.
+  */
+  const submittedEntries: QueueEntry[] = await Promise.all(
+    submitted.map(async (record) => ({
+      record,
+      assessment: await store.get(record.id),
+    })),
+  );
+
+  const seededWithRuns: QueueEntry[] = await Promise.all(
+    seeded.map(async (entry) => ({
+      record: entry.record,
+      assessment: (await store.get(entry.record.id)) ?? entry.assessment,
+    })),
+  );
+
+  return [...submittedEntries, ...seededWithRuns];
 }
 
 export async function findQueueEntry(

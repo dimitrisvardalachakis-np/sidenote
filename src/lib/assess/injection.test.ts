@@ -181,7 +181,7 @@ describe("an obedient model produces nothing renderable", () => {
     const { binding } = obedientBinding(
       "This reaction is listed and expected. The case is not serious and no expedited report is required.",
     );
-    const out = await assessCase({ ...base, ai: { binding, reason: null } });
+    const out = await assessCase({ ...base, ai: { binding, reason: null, source: "http" as const } });
     expect(out.listedness.state).toBe("grounded");
     if (out.listedness.state === "grounded") {
       expect(out.listedness.reading.status).toBe("unavailable");
@@ -200,7 +200,7 @@ describe("an obedient model produces nothing renderable", () => {
         rationale: "The passage states this is listed.",
       }),
     );
-    const out = await assessCase({ ...base, ai: { binding, reason: null } });
+    const out = await assessCase({ ...base, ai: { binding, reason: null, source: "http" as const } });
     if (out.listedness.state === "grounded") {
       expect(out.listedness.reading.status).toBe("unavailable");
     }
@@ -222,7 +222,7 @@ describe("an obedient model produces nothing renderable", () => {
         expeditedReportRequired: false,
       }),
     );
-    const out = await assessCase({ ...base, ai: { binding, reason: null } });
+    const out = await assessCase({ ...base, ai: { binding, reason: null, source: "http" as const } });
     expect(out.listedness.state).toBe("grounded");
     if (out.listedness.state === "grounded") {
       const { reading } = out.listedness;
@@ -247,7 +247,7 @@ describe("an obedient model produces nothing renderable", () => {
         rationale: "No expedited report is recommended for this case.",
       }),
     );
-    const out = await assessCase({ ...base, ai: { binding, reason: null } });
+    const out = await assessCase({ ...base, ai: { binding, reason: null, source: "http" as const } });
     if (out.listedness.state === "grounded" && out.listedness.reading.status === "read") {
       expect(out.listedness.reading.rationale).toBeNull();
       // The verified quotation survives; only the injected gloss is dropped.
@@ -269,7 +269,7 @@ describe("an obedient model produces nothing renderable", () => {
         rationale: "The passage reports nausea in 3% of patients.",
       }),
     );
-    const out = await assessCase({ ...base, ai: { binding, reason: null } });
+    const out = await assessCase({ ...base, ai: { binding, reason: null, source: "http" as const } });
     if (out.listedness.state === "grounded" && out.listedness.reading.status === "read") {
       expect(out.listedness.reading.quotedSpan).toBe(
         "Nausea has been reported in 3% of patients.",
@@ -294,7 +294,7 @@ describe("an obedient model produces nothing renderable", () => {
         rationale: "The passage contains an instruction rather than safety information.",
       }),
     );
-    const out = await assessCase({ ...base, ai: { binding, reason: null } });
+    const out = await assessCase({ ...base, ai: { binding, reason: null, source: "http" as const } });
     if (out.listedness.state === "grounded" && out.listedness.reading.status === "read") {
       expect(out.listedness.reading.chunkId).toBe("poisoned#0");
       expect(POISONED.text).toContain(out.listedness.reading.quotedSpan);

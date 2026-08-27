@@ -195,10 +195,19 @@ cannot become this case's evidence.
 verbatim span — a shape that existed since the schemas were written and that
 nothing at runtime could produce, because a regex has no phrase to point at.
 
-**Not yet wired to a screen.** `assessCase` has no production caller: every
-assessment the reviewer queue renders is still a seeded fixture. The pipeline
-is built, tested and proven degradable, and the call site arrives with the
-Cluster E queue consumer. Nothing on the case screen today is model output.
+**Wired, and it runs.** `assessCase` is called by a server action behind the
+"Assess this case" control on the case screen, and the result is stored and
+rendered in place of the fixture. The public search page asks the same
+question of the public labels and answers it with a verified quotation. Both
+are reviewer/visitor-triggered rather than automatic, because an inference has
+a cost and a button makes it obvious one was spent; the queue consumer that
+does this on arrival is still Cluster E.
+
+**A model is reachable without Workers.** `resolveAiBinding` prefers `env.AI`
+when running on Workers and otherwise builds an HTTP client against the
+Workers AI REST API, so generation runs under `next dev` or any Node host with
+two environment variables — see SETUP.md. Before it was a stub returning null
+whose parameter type could not have held a binding.
 
 **No write path for a verdict either.** Claiming a case, recording a ruling and
 rejecting a seriousness flag are all Cluster D, behind the Durable Object. The
@@ -206,8 +215,9 @@ domain honours all three — `ruledListedness`, `requiresExpeditedReport` and
 `flaggedCriteria` are written and tested against them — but no screen sets
 them yet.
 
-**Still standing in for Cloudflare.** There is no wrangler config, no bindings,
-no D1, no Vectorize, no R2, no Queues in this session. `resolveAiBinding`
+**Still standing in for Cloudflare.** There is no wrangler config, no D1, no
+Vectorize, no R2, no Queues in this session, and retrieval is therefore
+lexical only — the dense half of the hybrid design is the next real work. `resolveAiBinding`
 returns null and every assessment degrades honestly; that degraded path is
 walked end to end in `lib/assess/degraded.test.ts` and was exercised against
 the running app. Stores are in-memory. Each of these is one line to change,

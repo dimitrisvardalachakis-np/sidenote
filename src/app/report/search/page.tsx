@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { lexicalSearch, toCitation } from "@/lib/retrieval/search";
+import { answerPublicQuestion } from "@/lib/assess/answer";
 import { loadCorpus } from "@/lib/store/corpus";
 
 /**
@@ -20,17 +20,23 @@ export default async function SearchPage({
   const query = typeof raw === "string" ? raw.trim() : "";
 
   const { chunks, documents } = await loadCorpus();
-  const hits =
+
+  // Ask, retrieve, read. The answer and the passages it was read from arrive
+  // together, so a claim can never render without the passage behind it.
+  const answer =
     query.length > 1
-      ? lexicalSearch(chunks, query, {
-          sourceType: "public",
-          limit: 8,
-          minScore: 1.0,
-        })
-      : [];
+      ? await answerPublicQuestion(query, chunks)
+      : { citations: [], reading: null, hits: [] };
+  const hits = answer.citations;
 
   const titleFor = (documentId: string) =>
     documents.find((d) => d.id === documentId)?.title ?? "Unknown document";
+
+  const { reading } = answer;
+  const answeredFrom =
+    reading?.status === "read"
+      ? hits.find((c) => c.chunkId === reading.chunkId) ?? null
+      : null;
 
   return (
     <main className="mx-auto w-full max-w-[70ch] px-4 py-8">
@@ -70,8 +76,62 @@ export default async function SearchPage({
           <h2 className="text-micro uppercase tracking-label text-slate">
             {hits.length === 0
               ? "Nothing found"
-              : `${hits.length} passage${hits.length === 1 ? "" : "s"}`}
+              : `${hits.length} passage${hits.length === 1 ? "" : "s"} searched`}
           </h2>
+
+          {/*
+            The answer, when one could be produced. It sits above the passages
+            because it is what was asked for — but it is never shown without
+            them, and it quotes the label rather than paraphrasing it.
+          */}
+          {reading?.status === "read" && (
+            <div className="mt-2 border-l-2 border-steady pl-3">
+              <blockquote className="text-prose">{reading.quotedSpan}</blockquote>
+              {reading.rationale !== null && (
+                <p className="mt-1.5 text-prose text-slate">{reading.rationale}</p>
+              )}
+              {answeredFrom !== null && (
+                <p className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
+                  <span className="normal-case tracking-normal">
+                    {titleFor(answeredFrom.documentId)}
+                  </span>
+                  {answeredFrom.section !== null && (
+                    <span className="normal-case tracking-normal">
+                      {answeredFrom.section}
+                    </span>
+                  )}
+                  <span className="font-mono normal-case tracking-normal">
+                    {answeredFrom.chunkId}
+                  </span>
+                </p>
+              )}
+              <p className="mt-1.5 text-meta text-slate">
+                Quoted from the published label word for word. This is not
+                medical advice and not a decision about your medicine — speak
+                to a doctor or pharmacist.
+              </p>
+            </div>
+          )}
+
+          {reading?.status === "nothing_found" && (
+            <div className="mt-2 border border-rule p-3 rounded-soft">
+              <p className="text-prose">
+                The passages below came up for what you described, but none of
+                them appears to be about it. Read them and judge for yourself —
+                it may be different wording for the same thing.
+              </p>
+            </div>
+          )}
+
+          {reading?.status === "unavailable" && (
+            /* Dashed, not red. Missing information is not a warning. */
+            <div className="mt-2 border border-dashed border-rule p-3 rounded-soft">
+              <p className="text-prose">
+                We found passages that may be relevant but could not summarise
+                them just now, so they are shown below exactly as written.
+              </p>
+            </div>
+          )}
 
           {hits.length === 0 ? (
             <div className="mt-2 border border-rule p-3 rounded-soft">
@@ -92,14 +152,20 @@ export default async function SearchPage({
           ) : (
             <>
               <ul className="mt-2 border-t border-rule">
-                {hits.map((hit) => {
-                  const citation = toCitation(hit);
+                {hits.map((citation) => {
+                  const quoted = citation.chunkId === answeredFrom?.chunkId;
                   return (
                     <li key={citation.chunkId} className="border-b border-rule py-3">
-                      <blockquote className="border-l-2 border-rule pl-3 text-prose">
+                      <blockquote
+                        className={[
+                          "border-l-2 pl-3 text-prose",
+                          quoted ? "border-ink" : "border-rule",
+                        ].join(" ")}
+                      >
                         {citation.quote}
                       </blockquote>
                       <p className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
+                        {quoted && <span className="text-ink">quoted above</span>}
                         <span className="text-steady">{citation.sourceType}</span>
                         <span className="normal-case tracking-normal">
                           {titleFor(citation.documentId)}

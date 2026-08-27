@@ -12,6 +12,7 @@
  * It is parsed with a schema before anything reads it.
  */
 import { z } from "zod";
+import { createHttpAiBinding } from "./http-binding";
 
 /** Cluster C and E both name this model. It is recorded on every reading. */
 export const GENERATION_MODEL = "@cf/meta/llama-3.1-8b-instruct";
@@ -98,10 +99,10 @@ export const MAX_CALLS_PER_ASSESSMENT = 4;
  * `gatewayRequestId: "none"` in that case.
  */
 export function resolveGateway(
-  env: Readonly<Record<string, string | undefined>>,
+  env: Readonly<Record<string, unknown>>,
 ): AiGatewayConfig | null {
   const id = env["SIDENOTE_AI_GATEWAY_ID"];
-  if (id === undefined || id.trim().length === 0) return null;
+  if (typeof id !== "string" || id.trim().length === 0) return null;
   return {
     id: id.trim(),
     cacheTtlSeconds: GATEWAY_CACHE_TTL_SECONDS,
@@ -137,34 +138,103 @@ export interface AiBinding {
 export const AiTextResponse = z.object({ response: z.string() });
 
 /**
- * How the app gets a binding, and why it usually does not have one.
+ * How the app gets a model.
  *
- * There is no Cloudflare runtime in this session — no wrangler config, no
- * `env`, no bindings — so this returns null and every assessment degrades to
- * `unavailable`. That is the honest state, and step 8 is the proof that the
- * rest of the app keeps working in it.
+ * Three outcomes, in preference order, and each one says truthfully what it
+ * is so a degraded panel can explain itself:
  *
- * When the app moves onto Workers this becomes `getCloudflareContext().env.AI`
- * and nothing downstream changes: every function below takes the binding as an
- * argument, so there is exactly one line here to replace.
+ *   1. `env.AI` — the native Workers binding. Fastest, no egress, no token to
+ *      leak. Preferred whenever the app is running on Workers.
+ *   2. An HTTP client against the Workers AI REST API, when an account id and
+ *      token are configured. This is what lets the system run anywhere —
+ *      `next dev`, a container, another host — which is the difference
+ *      between a generation layer that exists and one that runs.
+ *   3. Null, with a reason. Everything degrades honestly; nothing throws.
+ *
+ * The previous version of this function took a string map and returned null
+ * unconditionally. It could not have returned a binding even in principle: an
+ * `AiBinding` is an object with a method, and the parameter type was
+ * `Record<string, string | undefined>`. No amount of configuration would have
+ * changed its behaviour.
  */
 export interface AiAvailability {
   readonly binding: AiBinding | null;
   /** Why there is no binding, in words a reviewer can read. */
   readonly reason: string | null;
+  /** Which of the three outcomes happened. For the audit line and diagnostics. */
+  readonly source: "workers-binding" | "http" | "none";
 }
 
+/** True when a value looks like the Workers AI binding rather than a string. */
+function isAiBinding(value: unknown): value is AiBinding {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { run?: unknown }).run === "function"
+  );
+}
+
+function readString(
+  env: Readonly<Record<string, unknown>>,
+  key: string,
+): string | null {
+  const value = env[key];
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : null;
+}
+
+/**
+ * `env` is `unknown`-valued on purpose: it is handed either `process.env`
+ * (all strings) or a Worker's `env` (strings AND bindings), and narrowing an
+ * external shape at the boundary is the honest way to accept both.
+ */
 export function resolveAiBinding(
-  env: Readonly<Record<string, string | undefined>>,
+  env: Readonly<Record<string, unknown>>,
 ): AiAvailability {
-  // An explicit off switch, so step 8 can disable generation without
-  // uninstalling anything. In the target architecture this is a KV feature
-  // flag; the shape of the answer does not change when it moves.
-  if (env["SIDENOTE_AI_DISABLED"] === "1") {
-    return { binding: null, reason: "generation is disabled by configuration" };
+  // An explicit off switch, checked first so it wins over any credentials
+  // that happen to be present. Step 8's degraded walk depends on this.
+  if (readString(env, "SIDENOTE_AI_DISABLED") === "1") {
+    return {
+      binding: null,
+      reason: "generation is disabled by configuration",
+      source: "none",
+    };
   }
+
+  const native = env["AI"];
+  if (isAiBinding(native)) {
+    return { binding: native, reason: null, source: "workers-binding" };
+  }
+
+  const accountId = readString(env, "CLOUDFLARE_ACCOUNT_ID");
+  const apiToken = readString(env, "CLOUDFLARE_API_TOKEN");
+  if (accountId !== null && apiToken !== null) {
+    const gatewayId = readString(env, "SIDENOTE_AI_GATEWAY_ID");
+    return {
+      binding: createHttpAiBinding({
+        accountId,
+        apiToken,
+        gatewayId,
+        baseUrl: readString(env, "SIDENOTE_AI_BASE_URL") ?? undefined,
+      }),
+      reason: null,
+      source: "http",
+    };
+  }
+
+  // Say which half is missing. "It is not configured" sends somebody to read
+  // the setup guide; "the token is missing" sends them to the right line of it.
+  const missing =
+    accountId === null && apiToken === null
+      ? "CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are not set"
+      : accountId === null
+        ? "CLOUDFLARE_ACCOUNT_ID is not set"
+        : "CLOUDFLARE_API_TOKEN is not set";
+
   return {
     binding: null,
-    reason: "no Workers AI binding is configured in this environment",
+    reason: `no model is configured — ${missing}`,
+    source: "none",
   };
 }
