@@ -452,6 +452,97 @@ describe("a dense failure is a degradation, never a finding", () => {
   });
 });
 
+describe("the audit line says which retrieval actually ran", () => {
+  /*
+    A ruling has to be traceable to the retrieval that informed it, which means
+    this line has to be right about a case nobody looks at twice: `dense` was
+    passed, but the store was disabled, so nothing semantic happened. Deriving
+    "hybrid" from whether `dense` was PASSED said hybrid for exactly that run.
+    Caught by reading the audit output of a live run, not by a test — which is
+    why there is now a test.
+  */
+  function auditLines(fn: () => Promise<unknown>) {
+    const lines: Record<string, unknown>[] = [];
+    const real = console.log;
+    console.log = (...args: unknown[]) => {
+      const first = typeof args[0] === "string" ? args[0] : "";
+      if (first.startsWith("[AUDIT] ")) {
+        lines.push(JSON.parse(first.slice("[AUDIT] ".length)) as Record<string, unknown>);
+      }
+    };
+    return fn().finally(() => {
+      console.log = real;
+    }).then(() => lines);
+  }
+
+  const detailsOf = (lines: Record<string, unknown>[]) =>
+    lines
+      .filter((l) => l["action"] === "generate_reading")
+      .map((l) => l["detail"] as Record<string, unknown>);
+
+  it("says hybrid when the dense half ran", async () => {
+    const { binding } = quotingBinding();
+    const { dense } = fakeDense([matchOf(MYALGIA, 0.8)]);
+    const lines = await auditLines(() =>
+      assessCase({
+        ...base,
+        reactionTerm: REPORTER_WORDS,
+        ai: { binding, reason: null, source: "http" as const },
+        dense,
+      }),
+    );
+    const detail = detailsOf(lines).at(-1);
+    expect(detail?.["retrieval"]).toBe("hybrid");
+    expect(detail?.["denseUnavailable"]).toBe("none");
+  });
+
+  it("says lexical when dense was configured but could not run", async () => {
+    const { binding } = quotingBinding();
+    const lines = await auditLines(() =>
+      assessCase({
+        ...base,
+        reactionTerm: "injection site pain",
+        ai: { binding, reason: null, source: "http" as const },
+        dense: {
+          embedder: null,
+          store: null,
+          reason: "semantic retrieval is disabled by configuration",
+          source: "none",
+        },
+      }),
+    );
+    const detail = detailsOf(lines).at(-1);
+    // Not "hybrid". Nothing semantic happened, and a ruling made on this run
+    // must not look like one made with both halves working.
+    expect(detail?.["retrieval"]).toBe("lexical");
+    expect(detail?.["denseUnavailable"]).toBe(
+      "semantic retrieval is disabled by configuration",
+    );
+  });
+
+  it("says lexical when the store threw mid-run", async () => {
+    const { binding } = quotingBinding();
+    const { dense } = fakeDense([], {
+      store: {
+        kind: "local",
+        upsert: () => Promise.resolve(),
+        query: () => Promise.reject(new Error("522 origin unreachable")),
+      },
+    });
+    const lines = await auditLines(() =>
+      assessCase({
+        ...base,
+        reactionTerm: "injection site pain",
+        ai: { binding, reason: null, source: "http" as const },
+        dense,
+      }),
+    );
+    const detail = detailsOf(lines).at(-1);
+    expect(detail?.["retrieval"]).toBe("lexical");
+    expect(detail?.["denseUnavailable"]).toContain("522");
+  });
+});
+
 describe("the three-state ladder is unchanged", () => {
   it("still says source_unavailable when no document is held, dense hits or not", async () => {
     // Scope with no company document at all. A vector store confidently

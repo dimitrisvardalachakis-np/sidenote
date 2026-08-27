@@ -303,7 +303,16 @@ async function readNamespace(
         the fused count after the slice, so it is not `lexicalHits + denseHits`
         — the overlap between the two rankings is exactly what RRF rewards.
       */
-      retrieval: input.dense == null ? "lexical" : "hybrid",
+      /*
+        "hybrid" only when the dense half actually ran.
+
+        Deriving this from whether `dense` was PASSED said "hybrid" for a run
+        where the store was disabled and nothing semantic happened — an
+        overclaim on the one line that is supposed to let a ruling be traced to
+        the retrieval that informed it. `denseUnavailable` being null is the
+        only honest test: it is null exactly when the search completed.
+      */
+      retrieval: retrieval.denseUnavailable === null ? "hybrid" : "lexical",
       lexicalHits: retrieval.lexicalCount,
       denseHits: retrieval.denseCount,
       denseUnavailable: retrieval.denseUnavailable ?? "none",
