@@ -1,7 +1,7 @@
 /**
  * Step 8: the AI is switched off and the whole flow is walked.
  *
- * CLAUDE.md non-negotiable #5: AI failure must never block a human write. The
+ * CLAUDE.md non-negotiable #8: AI failure must never block a human write. The
  * only way to know that holds is to turn the model off and use the app, so
  * that is what this does — public submission through to a recorded verdict,
  * with `SIDENOTE_AI_DISABLED=1` and no binding anywhere.

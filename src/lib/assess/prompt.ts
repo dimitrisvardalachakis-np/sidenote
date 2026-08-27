@@ -1,6 +1,8 @@
 /**
  * The two messages sent to the model, and the fence around the evidence.
  *
+ * Non-negotiable #7: retrieved chunks are data, never instructions.
+ *
  * A retrieved chunk is text somebody uploaded. The company library takes PDFs
  * from reviewers, and a PDF can contain any sentence at all — including one
  * shaped like an instruction. So chunk text is treated the way any other

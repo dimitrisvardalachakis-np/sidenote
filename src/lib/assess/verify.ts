@@ -15,6 +15,8 @@
  *   - a rationale that recommends an action loses the rationale, not the
  *     citation, because the quotation was still verified
  *
+ * Non-negotiable #6 lives in this file.
+ *
  * Nothing here repairs a reply. Trimming a hallucinated quote until it matches,
  * or rewriting a rationale to remove the word "should", would be putting words
  * in the model's mouth and then attributing them to a document.

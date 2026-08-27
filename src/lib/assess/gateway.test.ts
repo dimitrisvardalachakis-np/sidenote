@@ -201,7 +201,7 @@ describe("the audit line ties a verdict to its inference", () => {
         gateway: "sidenote",
       },
     });
-    // The five fields non-negotiable #6 requires, all present.
+    // The five fields non-negotiable #9 requires, all present.
     for (const key of ["actor", "action", "target", "timestamp", "outcome"]) {
       expect(record).toHaveProperty(key);
     }

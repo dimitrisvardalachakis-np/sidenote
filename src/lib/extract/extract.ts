@@ -5,7 +5,7 @@
  * an extraction call". This is that call. What it does NOT do is delete the
  * deterministic extraction, which stays as the path taken whenever the model
  * is absent, disabled, slow, or returns something that fails validation. That
- * is CLAUDE.md non-negotiable #5 applied to intake: a report must be
+ * is CLAUDE.md non-negotiable #8 applied to intake: a report must be
  * accepted whether or not any model is reachable.
  *
  * The two are not equivalent and are not meant to be. The regex path fills

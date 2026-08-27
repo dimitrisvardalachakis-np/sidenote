@@ -11,13 +11,13 @@
  *   - a `read` reading cannot be constructed without a chunk id and a span
  *
  * A reading is evidence about a document. The verdict is `ReviewerRuling`, and
- * only a human writes one.
+ * only a human writes one. This shape is CLAUDE.md non-negotiable #5.
  *
  * The three states are kept apart for the same reason the retrieval states
  * are. "The model read the passages and none describes this reaction" is a
  * reading a reviewer can weigh. "The model could not be reached" is not, and
  * rendering the second as the first would let an outage look like a finding —
- * the exact failure non-negotiable #5 exists to prevent.
+ * the exact failure non-negotiable #8 exists to prevent.
  */
 import { z } from "zod";
 import { ChunkId, IsoDateTime } from "./primitives";

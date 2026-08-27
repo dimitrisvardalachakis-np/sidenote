@@ -26,7 +26,7 @@ import type { ChatState } from "./chat-state";
  * reporter's prose for fields no pattern list can reach. When the model is
  * absent, disabled, slow, or returns something that fails verification, the
  * deterministic extraction underneath runs exactly as it always has and the
- * report is accepted regardless — non-negotiable #5.
+ * report is accepted regardless — non-negotiable #8.
  */
 export async function sendChatMessage(
   previous: ChatState,

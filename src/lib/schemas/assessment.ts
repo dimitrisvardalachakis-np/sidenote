@@ -62,7 +62,7 @@ export type ExpectednessDetermination = z.output<
  * The last two are different facts and must look different on screen.
  * "Nothing in the CCDS mentions this" is a finding a reviewer can act on;
  * "we could not reach the CCDS" is not. Collapsing them would let an outage
- * masquerade as a clean result — the exact failure non-negotiable #5 is about.
+ * masquerade as a clean result — the exact failure non-negotiable #8 is about.
  *
  * Generation adds a fourth possibility, but not a fourth state: retrieval can
  * succeed while the model fails. That case stays `grounded` — the passages are

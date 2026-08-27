@@ -67,7 +67,7 @@ export class NetworkError extends FetchJsonError {
 /**
  * The server answered with a non-2xx status. Carries the status and the raw
  * body, because an audit line that records only "it failed" is not an audit
- * line (non-negotiable #6).
+ * line (non-negotiable #9).
  */
 export class HttpError extends FetchJsonError {
   readonly status: number;

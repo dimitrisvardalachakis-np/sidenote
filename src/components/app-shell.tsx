@@ -8,7 +8,7 @@ import { Sidebar } from "./sidebar";
  * The banner stays in the content column rather than spanning the whole
  * window, so it scrolls with what it is describing and cannot be mistaken for
  * part of the navigation. It is still on every page, which is what
- * non-negotiable #7 asks for.
+ * non-negotiable #10 asks for.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (

@@ -18,7 +18,7 @@ import type {
  * the CCDS mentions this" is a finding a reviewer can act on. "We could not
  * reach the CCDS" is not — it is an absence of information, and a reviewer who
  * mistakes one for the other can start a 15-day clock on the strength of an
- * outage. CLAUDE.md non-negotiable #5 is precisely this.
+ * outage. CLAUDE.md non-negotiable #8 is precisely this.
  *
  * Nothing here uses --signal. A degraded panel is not a regulatory deadline.
  */

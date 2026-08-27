@@ -122,7 +122,7 @@ export interface AiRunOptions {
  *
  * `aiGatewayLogId` is populated by the runtime after a call routed through a
  * gateway. It is the id that ties a rendered assessment back to one inference,
- * which is what makes non-negotiable #6 mean something for AI output.
+ * which is what makes non-negotiable #9 mean something for AI output.
  */
 export interface AiBinding {
   run(

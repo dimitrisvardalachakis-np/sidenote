@@ -1,5 +1,5 @@
 /**
- * CLAUDE.md non-negotiable #6: every mutation emits a structured audit line —
+ * CLAUDE.md non-negotiable #9: every mutation emits a structured audit line —
  * a single-line JSON with actor, action, target, timestamp, outcome, prefixed
  * [AUDIT].
  *

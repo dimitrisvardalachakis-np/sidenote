@@ -100,7 +100,7 @@ function queryFor(input: AssessInput): string {
  * search, and collapsing the two would tell a reviewer that the Company Core
  * Data Sheet "appears not to describe the reaction" when no CCDS was ever
  * consulted. That is a positive claim of silence about a document nobody
- * opened — the exact failure non-negotiable #5 exists to prevent, and the
+ * opened — the exact failure non-negotiable #8 exists to prevent, and the
  * reason `source_unavailable` is a state.
  */
 function namespaceIsEmpty(
@@ -140,7 +140,7 @@ function retrieve(
  *
  * The audit line carries the model name and the gateway request id, so a
  * verdict a reviewer records later can be traced to the exact inference that
- * was in front of them — non-negotiable #6 applied to AI output rather than
+ * was in front of them — non-negotiable #9 applied to AI output rather than
  * only to human writes.
  */
 async function readNamespace(

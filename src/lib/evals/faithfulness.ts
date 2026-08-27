@@ -3,7 +3,7 @@
  *
  * Two checks, and they are deliberately not the same kind of thing.
  *
- * THE VERBATIM CHECK IS A HARD GATE. A quoted span must occur in the chunk it
+ * THE VERBATIM CHECK IS A HARD GATE, and it is non-negotiable #6. A quoted span must occur in the chunk it
  * cites, character for character. This is not a quality metric with a
  * threshold — a fabricated quotation is not a regression in helpfulness, it is
  * a false statement about what a safety document says, attributed to that
