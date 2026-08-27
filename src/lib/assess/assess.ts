@@ -1,11 +1,21 @@
 /**
- * Retrieve, fuse, read. Two model calls per case, maximum.
+ * Retrieve, fuse, read.
  *
- * Retrieval and fusion are untouched: `lexicalSearch` and `fuseByRank` are
- * called exactly as they already were, and `fuseByRank` is still handed one
- * ranking, which is the no-op it has always been until Vectorize supplies a
- * dense second. Generation attaches strictly after fusion and changes nothing
- * about how a passage is found — only what is said about it.
+ * Retrieval is hybrid here: `lexicalSearch` (BM25) and `denseSearch` (cosine
+ * over embeddings) each produce a ranking, and `fuseByRank` finally gets the
+ * two rankings it was written for. Fusion weights by RANK, never by score,
+ * which is the whole reason RRF was chosen — a BM25 score of 1.9 and a cosine
+ * of 0.72 are not on comparable scales and never will be.
+ *
+ * The dense half is optional and failure-tolerant by construction. Omit
+ * `dense`, disable it, or have it fall over, and this file does exactly what it
+ * did before the ranking existed. What it must never do is turn a dense outage
+ * into a finding, so the outcome carries the reason and the audit line records
+ * it — the same distinction non-negotiable #5 draws for readings, drawn one
+ * layer down for retrieval.
+ *
+ * Generation attaches strictly after fusion and changes nothing about how a
+ * passage is found — only what is said about it.
  *
  * The two namespaces are searched and read separately and never merged. They
  * answer different questions, a citation has to state which document it came
@@ -28,7 +38,9 @@ import type {
   ModelReading,
   SourceType,
 } from "@/lib/schemas";
-import { MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
+import { DENSE_LIMIT, MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
+import { denseSearch } from "@/lib/retrieval/dense";
+import type { DenseAvailability, Vector } from "@/lib/retrieval/vectors";
 import { readPassages } from "./generate";
 import type { AiAvailability, AiGatewayConfig } from "./ai";
 
@@ -66,6 +78,17 @@ export interface AssessInput {
   readonly labelSetId: string | null;
   readonly ai: AiAvailability;
   readonly gateway: AiGatewayConfig | null;
+  /**
+   * The dense half of retrieval. Optional, and that is a decision.
+   *
+   * Optional rather than `DenseAvailability | null` because omitting it has to
+   * be a legitimate way to call this function: every existing caller and test
+   * that asks for a lexical assessment stays correct without being rewritten,
+   * and a new caller that forgets to pass it degrades to what the system did
+   * before rather than crashing. `exactOptionalPropertyTypes` is on, so the
+   * union spells out all three of absent, explicitly null, and present.
+   */
+  readonly dense?: DenseAvailability | null | undefined;
   /** Injected so the result is reproducible in a test. */
   readonly now: string;
   /** Audit fields. Who asked, and which case this was for. */
@@ -127,18 +150,98 @@ function inScope(
   );
 }
 
-function retrieve(
+interface RetrievalOutcome {
+  readonly hits: readonly ScoredChunk[];
+  readonly lexicalCount: number;
+  readonly denseCount: number;
+  /** Null when the dense half ran. A sentence naming why not, otherwise. */
+  readonly denseUnavailable: string | null;
+}
+
+async function retrieve(
   input: AssessInput,
   sourceType: SourceType,
-): readonly ScoredChunk[] {
-  const lexical = lexicalSearch(inScope(input, sourceType), queryFor(input), {
+  queryVector: Vector | null,
+): Promise<RetrievalOutcome> {
+  const scope = inScope(input, sourceType);
+
+  const lexical = lexicalSearch(scope, queryFor(input), {
     sourceType,
     limit: ASSESS_LIMIT,
     minScore: ASSESS_MIN_SCORE,
   });
-  // The RRF seam, called exactly as it already was. One ranking today; when
-  // Vectorize lands, a dense ranking joins the array and nothing else changes.
-  return fuseByRank([lexical]);
+
+  const dense =
+    input.dense == null
+      ? {
+          hits: [] as readonly ScoredChunk[],
+          unavailableReason: "semantic retrieval was not configured for this call",
+        }
+      : await denseSearch({
+          dense: input.dense,
+          chunks: scope,
+          query: queryFor(input),
+          sourceType,
+          documentIds: input.documentIds,
+          limit: DENSE_LIMIT,
+          queryVector,
+        });
+
+  /*
+    The RRF seam, finally given the second ranking it was written for — and
+    the slice that has to come with it.
+
+    `fuseByRank` applies no limit and no threshold: it returns every distinct
+    chunk from every ranking. With one ranking that was invisible, because
+    `lexicalSearch` had already capped itself at ASSESS_LIMIT. With two, a
+    fused list can be twice as long, and every entry of it goes into the
+    prompt as a passage — double the tokens on every namespace of every case.
+    The cap used to be supplied by accident; this line is now the only thing
+    supplying it.
+
+    Lexical goes first. Both rankings hydrate from the same array today so
+    fuseByRank's first-writer-wins is moot, but it stops being moot the moment
+    anything hydrates from elsewhere, and the locally-verified ranking is the
+    right one to trust with the chunk object. Note that array order does NOT
+    break ties — the final sort tie-breaks on chunk id — so this is a
+    convention, not a ranking lever.
+  */
+  return {
+    hits: fuseByRank([lexical, dense.hits]).slice(0, ASSESS_LIMIT),
+    lexicalCount: lexical.length,
+    denseCount: dense.hits.length,
+    denseUnavailable: dense.unavailableReason,
+  };
+}
+
+/**
+ * Embed the query once, for both namespaces.
+ *
+ * The query is the reaction term and it is identical on the company and public
+ * sides, so embedding twice would be one call made twice — and it would double
+ * the latency this adds to a button a reviewer is waiting at.
+ *
+ * It also has to happen BEFORE either `readNamespace`. `aiGatewayLogId` is a
+ * mutable property the binding overwrites per call; an embedding interleaved
+ * between a generation and the read of that field would stamp a reading with
+ * the embedding's id. Retrieval completing entirely before generation begins
+ * is what makes that impossible — the same reason the two reads are already
+ * sequential rather than concurrent.
+ *
+ * Returns null on any failure and never throws. `denseSearch` then embeds for
+ * itself, or reports honestly that it could not.
+ */
+async function embedQueryOnce(
+  input: AssessInput,
+  query: string,
+): Promise<Vector | null> {
+  const dense = input.dense ?? null;
+  if (dense?.embedder == null || query.trim().length === 0) return null;
+  try {
+    return (await dense.embedder.embed([query]))[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -152,8 +255,9 @@ function retrieve(
 async function readNamespace(
   input: AssessInput,
   sourceType: SourceType,
-  hits: readonly ScoredChunk[],
+  retrieval: RetrievalOutcome,
 ): Promise<ModelReading> {
+  const hits = retrieval.hits;
   const { reading, attempts } = await readPassages({
     binding: input.ai.binding,
     unavailableReason:
@@ -189,6 +293,21 @@ async function readNamespace(
       citedChunk: reading.status === "read" ? reading.chunkId : "none",
       passages: hits.length,
       inferences: attempts.length,
+      /*
+        Which half of retrieval found the evidence, and whether both halves ran.
+
+        `denseUnavailable` is the field that matters most here. Without it, a
+        dense outage and a dense search that legitimately matched nothing both
+        write `denseHits: 0`, and a reviewer's ruling can no longer be told
+        apart from one made while half the retrieval was down. `passages` is
+        the fused count after the slice, so it is not `lexicalHits + denseHits`
+        — the overlap between the two rankings is exactly what RRF rewards.
+      */
+      retrieval: input.dense == null ? "lexical" : "hybrid",
+      lexicalHits: retrieval.lexicalCount,
+      denseHits: retrieval.denseCount,
+      denseUnavailable: retrieval.denseUnavailable ?? "none",
+      vectorSource: input.dense?.source ?? "none",
       // Why a reply was refused, when one was. A rejected quotation is the
       // single most important thing this system can notice about a model.
       rejections:
@@ -204,8 +323,17 @@ async function readNamespace(
 
 export async function assessCase(input: AssessInput): Promise<AssessOutput> {
   const query = queryFor(input);
-  const companyHits = retrieve(input, "company");
-  const publicHits = retrieve(input, "public");
+
+  /*
+    One embedding, spent before anything else happens. See embedQueryOnce for
+    why it is here and not inside each retrieve() call: the query is the same
+    on both sides, and it has to land before any generation so it cannot
+    overwrite the gateway id a reading is about to be stamped with.
+  */
+  const queryVector = await embedQueryOnce(input, query);
+
+  const company = await retrieve(input, "company", queryVector);
+  const publicSide = await retrieve(input, "public", queryVector);
 
   /*
     Read one namespace, then the other. Sequentially, and deliberately so.
@@ -222,13 +350,13 @@ export async function assessCase(input: AssessInput): Promise<AssessOutput> {
     the AI being absent entirely. Correct provenance is worth more.
   */
   const companyReading =
-    companyHits.length === 0
+    company.hits.length === 0
       ? null
-      : await readNamespace(input, "company", companyHits);
+      : await readNamespace(input, "company", company);
   const publicReading =
-    publicHits.length === 0
+    publicSide.hits.length === 0
       ? null
-      : await readNamespace(input, "public", publicHits);
+      : await readNamespace(input, "public", publicSide);
 
   const listedness: ListednessFinding =
     namespaceIsEmpty(input, "company")
@@ -239,7 +367,7 @@ export async function assessCase(input: AssessInput): Promise<AssessOutput> {
             "no company safety document is held for this product, so listedness could not be checked",
           attemptedAt: input.now,
         }
-      : companyHits.length === 0 || companyReading === null
+      : company.hits.length === 0 || companyReading === null
       ? {
           state: "no_result",
           documentKind: input.documentKind,
@@ -249,7 +377,7 @@ export async function assessCase(input: AssessInput): Promise<AssessOutput> {
       : {
           state: "grounded",
           documentKind: input.documentKind,
-          citations: companyHits.map(toCitation),
+          citations: company.hits.map(toCitation),
           reading: companyReading,
           retrievedAt: input.now,
         };
@@ -262,11 +390,11 @@ export async function assessCase(input: AssessInput): Promise<AssessOutput> {
             "no public label is held for this product, so expectedness could not be checked",
           attemptedAt: input.now,
         }
-      : publicHits.length === 0 || publicReading === null
+      : publicSide.hits.length === 0 || publicReading === null
       ? { state: "no_result", query, retrievedAt: input.now }
       : {
           state: "grounded",
-          citations: publicHits.map(toCitation),
+          citations: publicSide.hits.map(toCitation),
           reading: publicReading,
           labelSetId: input.labelSetId,
           retrievedAt: input.now,
