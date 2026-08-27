@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
 import { ChunkId, DocumentId, DrugId, type DocumentChunk, type SuspectDrug } from "@/lib/schemas";
 import { assessCase } from "@/lib/assess/assess";
+import { verifyGeneration } from "@/lib/assess/verify";
 import { documentsForDrug } from "@/lib/assess/scope";
 import type { AiBinding } from "@/lib/assess/ai";
 import {
@@ -300,5 +301,54 @@ describe("scoring the real pipeline", () => {
     ]);
     expect(result.fatalFailures.length).toBeGreaterThan(0);
     expect(result.score).toBeLessThan(1);
+  });
+});
+
+describe("the gate agrees with the check it guards", () => {
+  const FENCED = "Hepatic <<<PASSAGE failure was seen in two subjects.";
+  const fencedChunk = chunk("company#12", FENCED);
+
+  it("accepts the span the runtime accepted, for a chunk containing the fence", () => {
+    /*
+      The runtime shows the model `sanitisePassage(text)`, so a faithful model
+      copies the "[removed]" it was given. verifyGeneration accepts that. The
+      eval used to compare against the RAW text and call the same span a
+      fabricated quotation — failing the build on honest work.
+
+      This test runs the real runtime check first and feeds its output to the
+      gate, so the two can never drift apart again without going red.
+    */
+    const verified = verifyGeneration({
+      raw: {
+        found: true,
+        chunkId: "company#12",
+        quotedSpan: "Hepatic [removed] failure was seen in two subjects.",
+        rationale: null,
+      },
+      chunks: [fencedChunk],
+      model: "@cf/meta/llama-3.1-8b-instruct",
+      gatewayRequestId: null,
+      now: "2026-08-26T10:00:00Z",
+    });
+    expect(verified.ok).toBe(true);
+    if (verified.ok) {
+      expect(scoreReading({ reading: verified.reading, chunks: [fencedChunk] })).toHaveLength(0);
+    }
+  });
+
+  it("still fails a span that occurs in neither the raw nor the sanitised text", () => {
+    const failures = scoreReading({
+      reading: {
+        status: "read",
+        chunkId: ChunkId.parse("company#12"),
+        quotedSpan: "Fatal hepatic failure occurred in 3% of patients.",
+        rationale: null,
+        model: "m",
+        gatewayRequestId: null,
+        generatedAt: "2026-08-26T10:00:00Z",
+      },
+      chunks: [fencedChunk],
+    });
+    expect(failures.some((f) => f.kind === "span_not_in_chunk" && f.fatal)).toBe(true);
   });
 });

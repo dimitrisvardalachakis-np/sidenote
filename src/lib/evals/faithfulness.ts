@@ -24,6 +24,7 @@ import {
   isSingleSentence,
   RATIONALE_MAX_CHARS,
 } from "@/lib/schemas/reading";
+import { sanitisePassage } from "@/lib/assess/prompt";
 import type { DocumentChunk, ModelReading } from "@/lib/schemas";
 
 /** Words that would be the model reaching a verdict rather than reading one. */
@@ -143,8 +144,22 @@ export function scoreReading(sample: ScoredReading): readonly FaithfulnessFailur
 
   const failures: FaithfulnessFailure[] = [];
 
-  // THE HARD GATE.
-  if (!cited.text.includes(reading.quotedSpan)) {
+  /*
+    THE HARD GATE — and it must test exactly what the runtime tested.
+
+    `verifyGeneration` compares against `sanitisePassage(cited.text)`, because
+    that is the string the model was actually shown. This compared against the
+    raw text, so the two disagreed about what "verbatim" means: for a chunk
+    containing the passage fence, the model faithfully copies the `[removed]`
+    it was given, the runtime accepts it, and the gate then reports a
+    fabricated quotation and fails the build. A gate that disagrees with the
+    check it is guarding is worse than no gate — it fails honest work and
+    teaches people to distrust it.
+
+    The two strings are identical for every document that does not contain the
+    sentinel, which is all of them today.
+  */
+  if (!sanitisePassage(cited.text).includes(reading.quotedSpan)) {
     failures.push({
       kind: "span_not_in_chunk",
       detail: `quoted span does not occur in ${cited.id}: ${JSON.stringify(reading.quotedSpan.slice(0, 80))}`,
