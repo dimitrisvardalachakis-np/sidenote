@@ -35,7 +35,7 @@ import { DrugId } from "@/lib/schemas";
 import { assessCase } from "./assess";
 import { buildMessages, sanitisePassage } from "./prompt";
 import { documentsForDrug } from "./scope";
-import type { AiBinding } from "./ai";
+import { messagesOf, type AiBinding } from "./ai";
 
 const DOC_ID = DocumentId.parse("0000000f-0000-4000-8000-0000000000ff");
 
@@ -112,7 +112,7 @@ function obedientBinding(reply: string) {
   const prompts: string[] = [];
   const binding: AiBinding = {
     run: (_model, input) => {
-      prompts.push(input.messages.map((m) => `${m.role}: ${m.content}`).join("\n"));
+      prompts.push(messagesOf(input).map((m) => `${m.role}: ${m.content}`).join("\n"));
       return Promise.resolve({ response: reply });
     },
     aiGatewayLogId: "aig-injection",

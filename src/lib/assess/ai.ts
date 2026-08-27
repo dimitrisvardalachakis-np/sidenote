@@ -47,6 +47,62 @@ export interface TextGenerationInput {
   readonly max_tokens: number;
 }
 
+/** The embedding model. 768 dimensions, 512 input tokens, per CLAUDE.md. */
+export const EMBEDDING_MODEL = "@cf/baai/bge-base-en-v1.5";
+export const EMBEDDING_DIMENSIONS = 768;
+
+/**
+ * Workers AI embedding input. The array IS the batch — bge takes many texts
+ * in one call, which is why ingestion does not make one request per chunk.
+ */
+export interface EmbeddingInput {
+  readonly text: readonly string[];
+}
+
+/**
+ * The two shapes `run` accepts.
+ *
+ * A union rather than a second binding, because the real `env.AI.run()` takes
+ * both — one model id, one method, two payload shapes. Widening here means the
+ * embedding path inherits everything the generation path already earned:
+ * gateway routing, the `cf-aig-log-id` capture, the 200-with-`success:false`
+ * case, and the timeout. A parallel client would have had to re-earn all four.
+ */
+export type AiRunInput = TextGenerationInput | EmbeddingInput;
+
+/** True when this input is for a text-generation model rather than an embedder. */
+export function isTextGeneration(
+  input: AiRunInput,
+): input is TextGenerationInput {
+  return "messages" in input;
+}
+
+/**
+ * The chat turns of an input, or none.
+ *
+ * Exists for the test fakes, which inspect the prompt they were handed and
+ * used to reach straight for `input.messages`. Now that the input is a union
+ * that access is unsound, and the honest repair is to narrow rather than to
+ * cast: a fake handed an embedding input gets an empty list and behaves, where
+ * a cast would have crashed on `.find`.
+ */
+export function messagesOf(input: AiRunInput): readonly ChatTurn[] {
+  return isTextGeneration(input) ? input.messages : [];
+}
+
+/**
+ * The embedding reply, after the binding has unwrapped `result`.
+ *
+ * Workers AI returns `{shape: [n, 768], data: [[...], ...]}`. `shape` is
+ * dropped deliberately: it is redundant with `data.length`, and a second source
+ * of truth about a count is a second thing to get wrong. The per-row length
+ * check is the one that earns its place — it is what catches a silently swapped
+ * model returning 384 dimensions into an index built for 768.
+ */
+export const AiEmbeddingResponse = z.object({
+  data: z.array(z.array(z.number()).length(EMBEDDING_DIMENSIONS)).min(1),
+});
+
 /**
  * AI Gateway routing.
  *
@@ -128,7 +184,7 @@ export interface AiRunOptions {
 export interface AiBinding {
   run(
     model: string,
-    input: TextGenerationInput,
+    input: AiRunInput,
     options?: AiRunOptions,
   ): Promise<unknown>;
   readonly aiGatewayLogId?: string | null | undefined;

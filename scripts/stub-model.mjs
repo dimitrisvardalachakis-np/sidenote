@@ -105,6 +105,48 @@ function reply(messages) {
   });
 }
 
+/**
+ * A deterministic stand-in for bge-base-en-v1.5.
+ *
+ * BE CLEAR ABOUT WHAT THIS IS: lexical matching in disguise. Each content word
+ * is hashed into one of 768 buckets and the vector is L2-normalised, so texts
+ * sharing words score high cosine and texts sharing none score near zero. That
+ * is enough to prove the whole chain — embed, upsert, query, hydrate, fuse,
+ * prompt — end to end with no Cloudflare account, and enough for a test to
+ * assert a ranking.
+ *
+ * It is NOT enough to demonstrate the thing the dense half exists for. "pins
+ * and needles" and "paraesthesia" share no words, so this returns near-zero
+ * cosine for them where real bge returns a strong match. Only the real model
+ * shows semantic recall. This proves the plumbing; it cannot prove the meaning.
+ */
+const EMBED_DIMENSIONS = 768;
+
+function embed(text) {
+  const values = new Array(EMBED_DIMENSIONS).fill(0);
+  const words = String(text)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 2);
+
+  for (const word of words) {
+    // FNV-1a, so the same word always lands in the same bucket across runs
+    // and across processes — a random projection would make every restart a
+    // different index.
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < word.length; i += 1) {
+      hash ^= word.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    values[hash % EMBED_DIMENSIONS] += 1;
+  }
+
+  const norm = Math.sqrt(values.reduce((sum, v) => sum + v * v, 0));
+  // An all-stopword input has no direction. Return the zero vector rather than
+  // dividing by zero; cosine against it is 0, which is the honest answer.
+  return norm === 0 ? values : values.map((v) => v / norm);
+}
+
 createServer((req, res) => {
   let body = "";
   req.on("data", (c) => { body += c; });
@@ -114,20 +156,32 @@ createServer((req, res) => {
       res.end(JSON.stringify({ success: false, result: null, errors: [{ message: "missing token" }] }));
       return;
     }
-    let response;
+
+    let result;
     try {
-      response = reply(JSON.parse(body).messages ?? []);
+      const parsed = JSON.parse(body);
+      // The embedding models take `text`; the instruct models take `messages`.
+      // Dispatching on the body rather than the URL means this works whether
+      // the caller went direct or through a gateway path.
+      if (parsed.text !== undefined) {
+        const texts = Array.isArray(parsed.text) ? parsed.text : [parsed.text];
+        const data = texts.map(embed);
+        result = { shape: [data.length, EMBED_DIMENSIONS], data };
+      } else {
+        result = { response: reply(parsed.messages ?? []) };
+      }
     } catch {
       res.writeHead(400, { "content-type": "application/json" });
       res.end(JSON.stringify({ success: false, result: null, errors: [{ message: "bad request" }] }));
       return;
     }
+
     res.writeHead(200, {
       "content-type": "application/json",
       // AI Gateway returns this; the binding reads it for the audit line.
       "cf-aig-log-id": `stub-${Date.now().toString(36)}`,
     });
-    res.end(JSON.stringify({ success: true, result: { response }, errors: [] }));
+    res.end(JSON.stringify({ success: true, result, errors: [] }));
   });
 }).listen(port, () => {
   process.stdout.write(`stub model listening on http://localhost:${port}\n`);

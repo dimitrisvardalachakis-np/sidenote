@@ -11,7 +11,7 @@ import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
 import { DrugId, type SuspectDrug } from "@/lib/schemas";
 import { assessCase } from "./assess";
 import { documentsForDrug } from "./scope";
-import type { AiBinding } from "./ai";
+import { messagesOf, type AiBinding } from "./ai";
 
 const drug = (reportedName: string, activeSubstance: string | null): SuspectDrug => ({
   id: DrugId.parse("00000002-0000-4000-8000-000000000001"),
@@ -42,7 +42,7 @@ function quotingBinding() {
   const prompts: string[] = [];
   const binding: AiBinding = {
     run: (_model, input) => {
-      const user = input.messages.find((m) => m.role === "user")?.content ?? "";
+      const user = messagesOf(input).find((m) => m.role === "user")?.content ?? "";
       prompts.push(user);
       const match = /<<<PASSAGE id="([^"]+)"[^\n]*\n([\s\S]*?)\nPASSAGE>>>/.exec(user);
       if (match?.[1] === undefined || match[2] === undefined) {

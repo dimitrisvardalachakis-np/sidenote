@@ -25,7 +25,7 @@
  */
 import { z } from "zod";
 import { fetchJsonWithHeaders, FetchJsonError } from "@/lib/fetch";
-import type { AiBinding, AiRunOptions, TextGenerationInput } from "./ai";
+import { isTextGeneration, type AiBinding, type AiRunInput, type AiRunOptions } from "./ai";
 
 /**
  * The REST envelope. Cloudflare returns 200 with `success: false` for some
@@ -94,7 +94,7 @@ class HttpAiBinding implements AiBinding {
 
   async run(
     model: string,
-    input: TextGenerationInput,
+    input: AiRunInput,
     options?: AiRunOptions,
   ): Promise<unknown> {
     this.#lastLogId = null;
@@ -120,11 +120,22 @@ class HttpAiBinding implements AiBinding {
         {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            messages: input.messages,
-            temperature: input.temperature,
-            max_tokens: input.max_tokens,
-          }),
+          /*
+            The whole difference between a generation and an embedding, on the
+            wire. Everything else in this method — the URL, the gateway route,
+            the envelope unwrap, the log-id header, the timeout, the
+            FetchJsonError conversion — is identical for both, which is why
+            this is a branch rather than a second client.
+          */
+          body: JSON.stringify(
+            isTextGeneration(input)
+              ? {
+                  messages: input.messages,
+                  temperature: input.temperature,
+                  max_tokens: input.max_tokens,
+                }
+              : { text: input.text },
+          ),
           signal: AbortSignal.timeout(this.#config.timeoutMs ?? HTTP_TIMEOUT_MS),
         },
       );

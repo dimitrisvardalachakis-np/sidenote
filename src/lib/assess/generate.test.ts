@@ -9,7 +9,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 import { ChunkId, DocumentId, type DocumentChunk } from "@/lib/schemas";
-import { GENERATION_MODEL, type AiBinding } from "./ai";
+import { GENERATION_MODEL, messagesOf, type AiBinding } from "./ai";
 import { readPassages } from "./generate";
 
 const DOC = DocumentId.parse("00000001-0000-4000-8000-000000000001");
@@ -51,8 +51,8 @@ function fakeBinding(replies: readonly string[], logId: string | null = "aig-1")
   let n = 0;
   const binding: AiBinding = {
     run: (model, input) => {
-      const system = input.messages.find((m) => m.role === "system")?.content ?? "";
-      const user = input.messages.find((m) => m.role === "user")?.content ?? "";
+      const system = messagesOf(input).find((m) => m.role === "system")?.content ?? "";
+      const user = messagesOf(input).find((m) => m.role === "user")?.content ?? "";
       calls.push({ model, system, user });
       const reply = replies[n] ?? replies[replies.length - 1] ?? "";
       n += 1;

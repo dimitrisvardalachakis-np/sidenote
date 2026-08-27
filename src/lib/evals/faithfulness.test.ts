@@ -18,7 +18,7 @@ import { ChunkId, DocumentId, DrugId, type DocumentChunk, type SuspectDrug } fro
 import { assessCase } from "@/lib/assess/assess";
 import { verifyGeneration } from "@/lib/assess/verify";
 import { documentsForDrug } from "@/lib/assess/scope";
-import type { AiBinding } from "@/lib/assess/ai";
+import { messagesOf, type AiBinding } from "@/lib/assess/ai";
 import {
   scoreFaithfulness,
   scoreReading,
@@ -188,7 +188,7 @@ const HEPALEX: SuspectDrug = {
 function faithfulBinding(): AiBinding {
   return {
     run: (_m, input) => {
-      const user = input.messages.find((x) => x.role === "user")?.content ?? "";
+      const user = messagesOf(input).find((x) => x.role === "user")?.content ?? "";
       const match = /<<<PASSAGE id="([^"]+)"[^\n]*\n([\s\S]*?)\nPASSAGE>>>/.exec(user);
       const sentence = /^[^.]+\./.exec(match?.[2] ?? "")?.[0] ?? "";
       if (match?.[1] === undefined || sentence === "") {
@@ -213,7 +213,7 @@ function faithfulBinding(): AiBinding {
 function fabricatingBinding(): AiBinding {
   return {
     run: (_m, input) => {
-      const user = input.messages.find((x) => x.role === "user")?.content ?? "";
+      const user = messagesOf(input).find((x) => x.role === "user")?.content ?? "";
       const id = /<<<PASSAGE id="([^"]+)"/.exec(user)?.[1] ?? "unknown";
       return Promise.resolve({
         response: JSON.stringify({

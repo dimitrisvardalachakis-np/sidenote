@@ -12,7 +12,7 @@ import {
 } from "@/lib/schemas";
 import { EMPTY_SLOTS, advance, startConversation } from "@/lib/intake/conversation";
 import { intakeToCase } from "@/lib/intake/to-case";
-import type { AiBinding } from "@/lib/assess/ai";
+import { messagesOf, type AiBinding } from "@/lib/assess/ai";
 import { extractReport } from "./extract";
 import { verifyExtraction, parseExtraction } from "./verify";
 import type { RawExtraction } from "./schema";
@@ -41,7 +41,7 @@ function binding(replies: readonly string[]) {
   let n = 0;
   const b: AiBinding = {
     run: (_m, input) => {
-      calls.push(input.messages.map((x) => x.content).join("\n"));
+      calls.push(messagesOf(input).map((x) => x.content).join("\n"));
       const r = replies[n] ?? replies[replies.length - 1] ?? "";
       n += 1;
       return Promise.resolve({ response: r });
