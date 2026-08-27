@@ -5,11 +5,13 @@ import { CaseList, clockLabel } from "@/components/case-list";
 import { CompanyEvidence, PublicEvidence } from "@/components/evidence";
 import { findQueueEntry, loadQueue } from "@/lib/queue/entries";
 import {
+  documentStance,
   expeditedClock,
   isSerious,
-  sourcesDisagree,
+  readingsDiverge,
   ruledExpectedness,
   ruledListedness,
+  sourcesDisagree,
   type IsoDate,
 } from "@/lib/schemas";
 
@@ -39,6 +41,17 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
       ? null
       : expeditedClock(record, listed === "unlisted", today);
   const disagrees = assessment !== null && sourcesDisagree(assessment);
+  // The pre-ruling headline: what the two documents were observed to say.
+  // Only shown when one side actually has a citation, so an absence the model
+  // reported without evidence cannot become the case's headline on its own.
+  const diverges =
+    assessment !== null &&
+    !disagrees &&
+    readingsDiverge(assessment) &&
+    (documentStance(assessment.listedness) === "describes" ||
+      documentStance(assessment.expectedness) === "describes");
+  const companyDescribes =
+    assessment !== null && documentStance(assessment.listedness) === "describes";
   const serious = record.reactions.some((r) => isSerious(r.seriousness));
   const all = await loadQueue(today);
 
@@ -98,12 +111,30 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
 
             {disagrees && (
               <div className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2">
-                <p className="text-base font-medium">The two sources disagree.</p>
+                <p className="text-base font-medium">
+                  Your ruling splits the two sources.
+                </p>
                 <p className="mt-0.5 text-meta text-slate">
-                  The company document says <strong>{listed}</strong>; the FDA
-                  label says <strong>{expected}</strong>. The company document
-                  is usually updated first. Read both passages below before
-                  ruling.
+                  You recorded <strong>{listed}</strong> against the company
+                  document and <strong>{expected}</strong> against the FDA
+                  label. The company document is usually updated first, so this
+                  is the expected shape of a label that has not caught up — not
+                  an error.
+                </p>
+              </div>
+            )}
+
+            {diverges && (
+              <div className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2">
+                <p className="text-base font-medium">
+                  The two documents read differently.
+                </p>
+                <p className="mt-0.5 text-meta text-slate">
+                  {companyDescribes
+                    ? "A passage in the company document was identified as describing this reaction; no passage in the FDA label was."
+                    : "A passage in the FDA label was identified as describing this reaction; no passage in the company document was."}{" "}
+                  That is a reading of two documents, not a determination about
+                  the drug. Read both passages below and record your ruling.
                 </p>
               </div>
             )}
@@ -126,8 +157,8 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                 Evidence
               </h2>
               <p className="text-meta text-slate">
-                Model output. No claim is shown without the passage it came
-                from.
+                Retrieved passages, and what a model read in them. No claim is
+                shown without the passage it came from.
               </p>
             </div>
 
@@ -182,7 +213,8 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
             {assessment?.ruling == null ? (
               <p className="mt-1 text-base">
                 No ruling yet. Nothing above counts as a decision until a
-                reviewer records one here.
+                reviewer records one here — the panels above quote documents,
+                they do not decide listedness.
               </p>
             ) : (
               <p className="mt-1 text-base">

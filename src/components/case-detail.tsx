@@ -144,17 +144,31 @@ function SeriousnessList({ record }: { record: Case }) {
           return (
             <li key={criterion} className="border-b border-rule py-1.5">
               <div className="flex items-baseline justify-between gap-3">
-                <span className="text-base">
+                <span
+                  className={[
+                    "text-base",
+                    flag.rejectedByReviewer ? "text-slate line-through" : "",
+                  ].join(" ")}
+                >
                   {SERIOUSNESS_LABELS[criterion]}
                   {"kind" in flag && (
                     <span className="text-slate"> ({flag.kind})</span>
                   )}
                 </span>
                 <span className="shrink-0 text-micro uppercase tracking-label text-slate">
-                  {flag.confirmedByReviewer ? (
+                  {/*
+                    Three states, not two. A rejected flag is kept on the
+                    record and shown as rejected rather than removed: it no
+                    longer counts towards seriousness or the expedited clock,
+                    but a flag that vanishes when a reviewer overrules it
+                    destroys the audit trail of the overruling.
+                  */}
+                  {flag.rejectedByReviewer ? (
+                    "rejected"
+                  ) : flag.confirmedByReviewer ? (
                     <span className="text-steady">confirmed</span>
                   ) : (
-                    "suggested"
+                    `suggested by ${flag.assertedBy}`
                   )}
                 </span>
               </div>
@@ -182,7 +196,10 @@ export function CaseDetail({ record }: { record: Case }) {
   const marks: Marked[] = record.reactions.flatMap((reaction) =>
     SERIOUSNESS_CRITERIA.flatMap((criterion) => {
       const flag = reaction.seriousness[criterion];
-      return flag !== null && flag.trigger !== null
+      // A rejected flag keeps its row but loses its highlight: marking the
+      // narrative for a criterion a reviewer has struck down would keep
+      // asserting it in the one place the reviewer reads most closely.
+      return flag !== null && flag.trigger !== null && !flag.rejectedByReviewer
         ? [{ span: flag.trigger, criterion }]
         : [];
     }),

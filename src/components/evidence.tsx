@@ -23,14 +23,32 @@ import type {
  * Nothing here uses --signal. A degraded panel is not a regulatory deadline.
  */
 
-function CitationBlock({ citation }: { citation: Citation }) {
+function CitationBlock({
+  citation,
+  cited,
+}: {
+  citation: Citation;
+  /** True when this is the passage the model's reading quotes from. */
+  cited: boolean;
+}) {
   return (
     <li className="border-t border-rule py-2 first:border-t-0">
-      {/* The quoted span, which is the claim. Everything else is provenance. */}
-      <blockquote className="border-l-2 border-rule pl-3 text-prose">
+      {/*
+        The retrieved passage. Marked when it is the one the reading quotes, so
+        a reviewer can get from the quotation above to its source without
+        comparing chunk ids by eye. Marked with a rule, not a colour: --steady
+        would read as "resolved" and --signal is reserved for the clock.
+      */}
+      <blockquote
+        className={[
+          "border-l-2 pl-3 text-prose",
+          cited ? "border-ink" : "border-rule",
+        ].join(" ")}
+      >
         {citation.quote}
       </blockquote>
       <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-micro uppercase tracking-label text-slate">
+        {cited && <span className="text-ink">quoted above</span>}
         {/* "Every retrieval result must state which" — company or public. */}
         <span
           className={
@@ -79,17 +97,23 @@ function PanelShell({
  * size, with a caption explaining it was only a suggestion. The caption was
  * true and the word was still the largest thing in the panel, which is how a
  * suggestion becomes a decision in practice. There is no determination here
- * any more; there is a quotation and a sentence about it.
+ * any more; there is a quotation, a sentence about it, and where it came from.
  *
  * The three states are visually distinct for the same reason the retrieval
- * states are. "The model read these and none describes the reaction" is a
- * reading a reviewer can weigh. "No reading could be produced" is not, and it
- * must never be mistaken for the first.
+ * states are. "The model read these and identified none" is a reading a
+ * reviewer can weigh. "No reading could be produced" is not, and it must never
+ * be mistaken for the first.
  */
-function Reading({ reading }: { reading: ModelReading }) {
+function Reading({
+  reading,
+  citations,
+}: {
+  reading: ModelReading;
+  citations: readonly Citation[];
+}) {
   if (reading.status === "unavailable") {
     return (
-      /* Dashed, never --signal. A missing reading is not a deadline. */
+      /* Dashed, never --signal. A missing reading is not a regulatory deadline. */
       <div className="border border-dashed border-rule px-3 py-2 rounded-soft">
         <p className="text-base font-medium">Assessment unavailable</p>
         <p className="mt-1 text-meta text-slate">
@@ -106,15 +130,18 @@ function Reading({ reading }: { reading: ModelReading }) {
     return (
       <div className="border-b border-rule pb-2">
         <p className="text-base font-medium">
-          No passage below describes this reaction
+          No passage identified as describing this reaction
         </p>
         <p className="mt-0.5 text-meta text-slate">
-          The retrieved passages were read and none was identified as
-          describing it. The passages are shown so you can check that reading.
+          The model read the passages below and identified none of them as
+          describing it. They are shown so you can check that reading — it is
+          the reading that found nothing, not the document that says nothing.
         </p>
       </div>
     );
   }
+
+  const source = citations.find((c) => c.chunkId === reading.chunkId);
 
   return (
     <div className="border-b border-rule pb-2">
@@ -125,19 +152,26 @@ function Reading({ reading }: { reading: ModelReading }) {
       {reading.rationale !== null && (
         <p className="mt-1.5 text-meta text-ink">{reading.rationale}</p>
       )}
-      <p className="mt-1 text-micro uppercase tracking-label text-slate">
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-micro uppercase tracking-label text-slate">
+        {source !== undefined && (
+          <span className={source.sourceType === "company" ? "text-steady" : "text-slate"}>
+            {source.sourceType}
+          </span>
+        )}
+        {source?.section != null && (
+          <span className="normal-case tracking-normal">{source.section}</span>
+        )}
         <span className="font-mono normal-case tracking-normal">
           {reading.chunkId}
         </span>
-        {" · read by "}
-        <span className="font-mono normal-case tracking-normal">
-          {reading.model}
+        <span className="normal-case tracking-normal">
+          read by <span className="font-mono">{reading.model}</span>
         </span>
-      </p>
+      </div>
       <p className="mt-1 text-meta text-slate">
-        Checked to occur word for word in the source passage, of which an
-        extract is shown below — so the quotation above may sit outside the
-        extract. Not a determination: listedness is yours to record below.
+        Quoted word for word from the passage marked below, checked against the
+        whole passage — of which an extract is shown, so these words may sit
+        outside it. Not a determination: listedness is yours to record.
       </p>
     </div>
   );
@@ -146,10 +180,11 @@ function Reading({ reading }: { reading: ModelReading }) {
 function NoResult({ query, at }: { query: string; at: string }) {
   return (
     <div className="border border-rule px-3 py-3 rounded-soft">
-      <p className="text-base font-medium">Nothing found</p>
+      <p className="text-base font-medium">No matching passage</p>
       <p className="mt-1 text-meta text-slate">
-        The search ran and matched no passage. That is a finding: this document
-        appears not to describe the reaction.
+        The search ran against this product&rsquo;s documents and matched no
+        passage. That is a finding a reviewer can weigh — but it is a finding
+        about a search, not a statement that the document is silent.
       </p>
       <p className="mt-2 font-mono text-meta text-slate">{query}</p>
       <p className="mt-0.5 text-micro uppercase tracking-label text-slate">
@@ -186,10 +221,17 @@ export function CompanyEvidence({ finding }: { finding: ListednessFinding }) {
     <PanelShell heading="Company documents" note={`${documentLabel} · confidential`}>
       {finding.state === "grounded" && (
         <>
-          <Reading reading={finding.reading} />
+          <Reading reading={finding.reading} citations={finding.citations} />
           <ul className="mt-2">
             {finding.citations.map((citation) => (
-              <CitationBlock key={citation.chunkId} citation={citation} />
+              <CitationBlock
+                key={citation.chunkId}
+                citation={citation}
+                cited={
+                  finding.reading.status === "read" &&
+                  finding.reading.chunkId === citation.chunkId
+                }
+              />
             ))}
           </ul>
         </>
@@ -209,10 +251,17 @@ export function PublicEvidence({ finding }: { finding: ExpectednessFinding }) {
     <PanelShell heading="FDA label" note="public">
       {finding.state === "grounded" && (
         <>
-          <Reading reading={finding.reading} />
+          <Reading reading={finding.reading} citations={finding.citations} />
           <ul className="mt-2">
             {finding.citations.map((citation) => (
-              <CitationBlock key={citation.chunkId} citation={citation} />
+              <CitationBlock
+                key={citation.chunkId}
+                citation={citation}
+                cited={
+                  finding.reading.status === "read" &&
+                  finding.reading.chunkId === citation.chunkId
+                }
+              />
             ))}
           </ul>
           {finding.labelSetId !== null && (
