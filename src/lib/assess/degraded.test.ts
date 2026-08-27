@@ -159,16 +159,33 @@ describe("the evidence panes degrade honestly", () => {
     }
   });
 
-  it("never renders as 'no evidence found'", async () => {
+  it("never turns a retrieved passage into a silence", async () => {
+    /*
+      The invariant, stated precisely.
+
+      An earlier version of this test asserted no finding was ever
+      `no_result` with the model off, which was too broad and failed for the
+      right reason: the Hepalex FDA label genuinely does not mention yellowing,
+      so `no_result` there is a true finding of the deterministic search and
+      has nothing to do with the model being down.
+
+      What must never happen is the model's absence CONVERTING evidence into
+      an absence. So: wherever retrieval found passages, the reading is
+      `unavailable` and the stance is `unknown` — never `nothing_found`, never
+      `silent`.
+    */
     const out = await assess();
-    // The three ways this could have gone wrong, all excluded.
+    let grounded = 0;
     for (const finding of [out.listedness, out.expectedness]) {
-      expect(finding.state).not.toBe("no_result");
-      if (finding.state === "grounded") {
-        expect(finding.reading.status).not.toBe("nothing_found");
-      }
+      if (finding.state !== "grounded") continue;
+      grounded += 1;
+      expect(finding.reading.status).toBe("unavailable");
+      expect(finding.reading.status).not.toBe("nothing_found");
       expect(documentStance(finding)).toBe("unknown");
+      expect(documentStance(finding)).not.toBe("silent");
     }
+    // The test is only meaningful if something was actually retrieved.
+    expect(grounded).toBeGreaterThan(0);
   });
 });
 

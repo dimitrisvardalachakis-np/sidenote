@@ -89,17 +89,21 @@ describe("two calls per case, maximum", () => {
   });
 
   it("puts every retrieved passage for a namespace into one prompt", async () => {
+    // Covaxil/rash matches two passages in the public label, which is what
+    // makes this test meaningful — a query matching one passage could not
+    // tell one-prompt-per-namespace from one-prompt-per-chunk apart.
     const { binding, prompts } = quotingBinding();
     await assessCase({
       ...base,
-      reactionTerm: "liver failure, died",
-      drugName: "Hepalex",
+      documentIds: documentsForDrug(SEED_DOCUMENTS, COVAXIL),
+      reactionTerm: "rash",
+      drugName: "Covaxil",
       ai: { binding, reason: null },
     });
-    // The company prompt carried more than one passage; had this been called
-    // per chunk there would be one passage per prompt and four prompts.
     const passages = prompts.map((p) => p.split("<<<PASSAGE").length - 1);
     expect(Math.max(...passages)).toBeGreaterThan(1);
+    // Still one prompt per namespace, not one per passage.
+    expect(prompts.length).toBeLessThanOrEqual(2);
   });
 });
 
@@ -280,5 +284,36 @@ describe("retrieval never leaves this case's own documents", () => {
     });
     expect(out.listedness.state).toBe("source_unavailable");
     expect(out.expectedness.state).toBe("source_unavailable");
+  });
+});
+
+describe("the query is the reaction, not the reaction plus the drug", () => {
+  it("reports no_result for a reaction the product's documents never mention", async () => {
+    // With the drug name in the query, every chunk in an already-scoped corpus
+    // matched, so this came back `grounded` with a citation — the CCDS cover
+    // page offered as evidence about a symptom it never mentions. That also
+    // made no_result almost unreachable, deleting a state the design needs.
+    const { binding, prompts } = quotingBinding();
+    const out = await assessCase({
+      ...base,
+      reactionTerm: "zzzz unrelated symptom",
+      drugName: "Hepalex",
+      ai: { binding, reason: null },
+    });
+    expect(out.listedness.state).toBe("no_result");
+    expect(out.expectedness.state).toBe("no_result");
+    // And no inference is spent asking about passages that do not exist.
+    expect(prompts).toHaveLength(0);
+  });
+
+  it("still finds the passage when the reaction really is described", async () => {
+    const { binding } = quotingBinding();
+    const out = await assessCase({
+      ...base,
+      reactionTerm: "liver failure, died",
+      drugName: "Hepalex",
+      ai: { binding, reason: null },
+    });
+    expect(out.listedness.state).toBe("grounded");
   });
 });

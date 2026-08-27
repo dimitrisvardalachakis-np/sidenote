@@ -254,3 +254,28 @@ describe("holes found by review", () => {
     if (r.ok) expect(ModelReading.safeParse(r.reading).success).toBe(true);
   });
 });
+
+describe("holes found by the final review", () => {
+  it("refuses a span made only of zero-width characters", () => {
+    // trim() strips the Unicode whitespace class, which does not include
+    // U+200B — "​".trim().length is 1, so the old blank check passed it.
+    const r = verify({ quotedSpan: "​​" });
+    expect(r.ok).toBe(false);
+  });
+
+  it("refuses a span of punctuation with no words in it", () => {
+    expect(verify({ quotedSpan: " ... " }).ok).toBe(false);
+  });
+
+  it("still accepts a span carrying digits, which are content", () => {
+    // "2.1%" is a real thing to quote out of a safety document.
+    const r = verifyGeneration({
+      raw: raw({ quotedSpan: "approximately 2.1% of patients" }),
+      chunks: CHUNKS,
+      model: "m",
+      gatewayRequestId: null,
+      now: "2026-08-26T10:00:00Z",
+    });
+    expect(r.ok).toBe(true);
+  });
+});

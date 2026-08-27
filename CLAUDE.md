@@ -55,10 +55,18 @@ demo.
 3. **Every AI output carries citations** — a chunk id and the quoted span.
    No citation, no claim rendered. This rule has no exceptions.
 4. **The model never decides.** It does not rule on listedness, expectedness,
-   seriousness, or expedited status. A determination exists in exactly one
-   place — `ReviewerRuling` — and only a human writes one. No model output has
-   a field in which a verdict could be recorded, and the 15-day clock keys off
-   the ruling and nothing else. Every screen must make that obvious.
+   or expedited status. A determination exists in exactly one place —
+   `ReviewerRuling` — and only a human writes one. No reading has a field in
+   which a determination could be recorded.
+
+   Seriousness is the honest exception and is worth stating rather than
+   glossing: the model *may raise* a seriousness criterion, because spotting
+   "kept in overnight" in a narrative is the job it is best at. It raises it
+   as a suggestion carrying the verbatim phrase, never as a conclusion — the
+   flag records `assertedBy`, a reviewer can confirm or reject it, and a
+   rejected flag stops counting. So the 15-day clock keys off a human ruling
+   for listedness, and off a seriousness flag no human has struck down. Every
+   screen must make that obvious.
 5. **The model generates only readings of retrieved passages.** It *does*
    generate: it reads a passage and reports what that passage says, with a
    citation. That is a reading, not a verdict — the reviewer reads it and
@@ -175,7 +183,8 @@ chunker, the schemas, `caseValidity` and `expeditedClock` are pure functions
 over their inputs, with the clock and the date passed in rather than read.
 
 **Generated, and fenced in.** Two model calls per case, one per source
-namespace, after fusion (`lib/assess/`). One call per public report, on the
+namespace, after fusion, plus at most one retry each — so four inferences is
+the real ceiling, not two (`lib/assess/`). One call per public report, on the
 reporter's own account (`lib/extract/`). Both return strict JSON, are
 zod-validated, retry once against a stricter instruction naming the failed
 check, and degrade to an explicit unavailable state rather than a finding.
@@ -185,6 +194,17 @@ cannot become this case's evidence.
 **What the model earned.** `basis: "narrative"` seriousness flags with a
 verbatim span — a shape that existed since the schemas were written and that
 nothing at runtime could produce, because a regex has no phrase to point at.
+
+**Not yet wired to a screen.** `assessCase` has no production caller: every
+assessment the reviewer queue renders is still a seeded fixture. The pipeline
+is built, tested and proven degradable, and the call site arrives with the
+Cluster E queue consumer. Nothing on the case screen today is model output.
+
+**No write path for a verdict either.** Claiming a case, recording a ruling and
+rejecting a seriousness flag are all Cluster D, behind the Durable Object. The
+domain honours all three — `ruledListedness`, `requiresExpeditedReport` and
+`flaggedCriteria` are written and tested against them — but no screen sets
+them yet.
 
 **Still standing in for Cloudflare.** There is no wrangler config, no bindings,
 no D1, no Vectorize, no R2, no Queues in this session. `resolveAiBinding`

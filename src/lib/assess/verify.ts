@@ -55,7 +55,11 @@ export const RawGeneration = z.object({
  * "checked to occur in it word for word".
  */
 function isEmptySpan(span: string): boolean {
-  return span.trim().length === 0;
+  // `trim()` strips the Unicode whitespace class, which does NOT include
+  // zero-width characters — "\u200b".trim().length is 1. Requiring a letter or
+  // a digit is both simpler and stricter: a quotation with no alphanumeric
+  // content is not a quotation, whatever invisible characters it contains.
+  return !/[\p{L}\p{N}]/u.test(span);
 }
 export type RawGeneration = z.output<typeof RawGeneration>;
 

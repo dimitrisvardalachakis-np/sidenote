@@ -1,12 +1,16 @@
 /**
  * Turn a completed conversation into a Case the reviewer queue can show.
  *
- * This is the bridge step 5 deferred and step 8 built the schema for. The
- * seriousness flags produced here are `declared`, not `narrative`: the
- * reporter said "he went into hospital", and there is no character span in a
- * spoken answer to point at. The schema refuses to let a declared flag claim a
- * phrase it does not have, so this cannot quietly invent evidence even if
- * someone later edits it carelessly.
+ * This is the bridge step 5 deferred and step 8 built the schema for.
+ *
+ * It produces BOTH bases now, and the header used to say otherwise — it
+ * claimed every flag here was `declared`, which stopped being true the moment
+ * intake extraction landed. A reporter answering "yes, they went into
+ * hospital" has declared it and there is no character span in an answer to a
+ * direct question. A criterion a model read out of the narrative carries the
+ * exact words that carried it, so it is a `narrative` flag with a span the
+ * case screen highlights. The schema refuses to let a declared flag claim a
+ * phrase it does not have, so neither kind can quietly invent evidence.
  */
 import {
   Case,

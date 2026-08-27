@@ -258,3 +258,24 @@ describe("the fixture timeline is coherent", () => {
     }
   });
 });
+
+describe("the reading's own timestamp moves with the case", () => {
+  it("stamps the nested reading, not only the finding around it", () => {
+    // stampFinding did a shallow copy, so the reading kept the pinned
+    // constant — reintroducing one level down the exact defect the function
+    // was written to fix.
+    for (const seeded of cases) {
+      for (const finding of [
+        seeded.assessment.listedness,
+        seeded.assessment.expectedness,
+      ]) {
+        if (finding.state !== "grounded") continue;
+        const stamp =
+          finding.reading.status === "unavailable"
+            ? finding.reading.attemptedAt
+            : finding.reading.generatedAt;
+        expect(stamp.slice(0, 10)).toBe(seeded.record.receivedAt);
+      }
+    }
+  });
+});

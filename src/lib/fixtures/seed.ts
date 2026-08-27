@@ -935,9 +935,17 @@ function stampFinding<T extends { readonly state: string }>(
   receivedAt: IsoDate,
 ): T {
   const at = `${receivedAt}T09:05:00Z`;
-  return "retrievedAt" in finding
-    ? { ...finding, retrievedAt: at }
-    : { ...finding, attemptedAt: at };
+  const stamped =
+    "retrievedAt" in finding
+      ? { ...finding, retrievedAt: at }
+      : { ...finding, attemptedAt: at };
+
+  // The reading carries its own timestamp, and stamping only the outer one
+  // left it pinned — reintroducing, one level down, exactly the defect the
+  // comment above says this function fixes. A shallow copy is not a deep one.
+  return "reading" in stamped && stamped.reading !== null
+    ? { ...stamped, reading: { ...stamped.reading, attemptedAt: at } }
+    : stamped;
 }
 
 function buildCase(spec: CaseSpec, today: IsoDate): SeededCase {

@@ -88,8 +88,24 @@ export interface AssessOutput {
   readonly expectedness: ExpectednessFinding;
 }
 
+/**
+ * The query is the reaction, and only the reaction.
+ *
+ * The drug name used to be appended, from when retrieval searched the whole
+ * corpus and needed some pull towards the right product. Scoping made that
+ * redundant, and then worse than redundant: inside a corpus that is already
+ * only this product's documents, the drug name matches nearly every chunk. It
+ * stopped being a relevance signal and became a guaranteed floor, so a
+ * reaction with no overlap at all still came back `grounded` with a citation
+ * — the CCDS cover page, offered as evidence about a symptom it never
+ * mentions. That also made `no_result` almost unreachable, quietly deleting a
+ * state the whole design depends on being distinguishable.
+ *
+ * Scope answers "which product". The query answers "which passage". Keeping
+ * those separate is what lets "no passage matched" mean something again.
+ */
 function queryFor(input: AssessInput): string {
-  return [input.reactionTerm, input.drugName].filter((s) => s.length > 0).join(" ");
+  return input.reactionTerm;
 }
 
 /**
