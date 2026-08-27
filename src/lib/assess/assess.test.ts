@@ -7,9 +7,29 @@
  * per chunk.
  */
 import { describe, expect, it } from "vitest";
-import { SEED_CHUNKS } from "@/lib/fixtures/documents";
+import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
+import { DrugId, type SuspectDrug } from "@/lib/schemas";
 import { assessCase } from "./assess";
+import { documentsForDrug } from "./scope";
 import type { AiBinding } from "./ai";
+
+const drug = (reportedName: string, activeSubstance: string | null): SuspectDrug => ({
+  id: DrugId.parse("00000002-0000-4000-8000-000000000001"),
+  reportedName,
+  activeSubstance,
+  role: "suspect",
+  marketingStatus: "marketed",
+  dose: null,
+  route: null,
+  indication: null,
+  therapyStart: null,
+  therapyEnd: null,
+  dechallenge: null,
+  rechallenge: null,
+});
+
+const HEPALEX = drug("Hepalex", "hepalexin");
+const COVAXIL = drug("Covaxil", "covaxilin");
 
 /**
  * A binding that answers honestly: it reads the passages out of the prompt it
@@ -47,6 +67,7 @@ function quotingBinding() {
 
 const base = {
   chunks: SEED_CHUNKS,
+  documentIds: documentsForDrug(SEED_DOCUMENTS, HEPALEX),
   documentKind: "ccds" as const,
   labelSetId: "spl-1",
   gateway: null,
@@ -208,5 +229,56 @@ describe("holes found by review", () => {
     });
     // Never two in flight at once.
     expect(order.every((o) => o === "start:1")).toBe(true);
+  });
+});
+
+describe("retrieval never leaves this case's own documents", () => {
+  it("does not quote another product's CCDS as this case's company evidence", async () => {
+    // The bug this pins: the corpus was filtered by sourceType alone and the
+    // drug name was merely a BM25 term, so a Covaxil case reporting jaundice
+    // pulled in the HEPALEX Core Data Sheet — where the word "jaundice" lives.
+    // The model quoted it correctly and verbatim, every check in verify.ts
+    // passed, and the reviewer read another drug's confidential document as
+    // this one's listedness evidence.
+    const { binding } = quotingBinding();
+    const out = await assessCase({
+      ...base,
+      documentIds: documentsForDrug(SEED_DOCUMENTS, COVAXIL),
+      reactionTerm: "jaundice",
+      drugName: "Covaxil",
+      ai: { binding, reason: null },
+    });
+
+    const covaxilDocs = documentsForDrug(SEED_DOCUMENTS, COVAXIL);
+    if (out.listedness.state === "grounded") {
+      for (const citation of out.listedness.citations) {
+        expect(covaxilDocs.has(citation.documentId)).toBe(true);
+      }
+    }
+    if (out.expectedness.state === "grounded") {
+      for (const citation of out.expectedness.citations) {
+        expect(covaxilDocs.has(citation.documentId)).toBe(true);
+      }
+    }
+  });
+
+  it("proves the Hepalex CCDS really would have been retrieved without the scope", () => {
+    // Guards against the test above passing because the query simply misses.
+    const unscoped = SEED_CHUNKS.filter((c) => c.sourceType === "company");
+    const hepalexDocs = documentsForDrug(SEED_DOCUMENTS, HEPALEX);
+    const leaks = unscoped.some((c) => hepalexDocs.has(c.documentId));
+    expect(leaks).toBe(true);
+  });
+
+  it("says no document is held when the product has none, rather than staying silent", async () => {
+    const out = await assessCase({
+      ...base,
+      documentIds: documentsForDrug(SEED_DOCUMENTS, drug("Unknownium", "unobtainium")),
+      reactionTerm: "jaundice",
+      drugName: "Unknownium",
+      ai: { binding: null, reason: "no binding" },
+    });
+    expect(out.listedness.state).toBe("source_unavailable");
+    expect(out.expectedness.state).toBe("source_unavailable");
   });
 });

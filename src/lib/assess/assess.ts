@@ -21,6 +21,7 @@ import {
 } from "@/lib/retrieval/search";
 import type {
   DocumentChunk,
+  DocumentId,
   ExpectednessFinding,
   GoverningDocumentKind,
   ListednessFinding,
@@ -36,15 +37,39 @@ import type { AiAvailability, AiGatewayConfig } from "./ai";
  * Five passages rather than the two the public chat uses: the reviewer screen
  * is the place where missing the right paragraph is expensive, and the model
  * is being asked which passage is the relevant one, which is a question that
- * needs alternatives to be a question at all. The floor is above the default
- * because a barely-matching passage is not worth an inference.
+ * needs alternatives to be a question at all.
  */
 export const ASSESS_LIMIT = 5;
-export const ASSESS_MIN_SCORE = 1.0;
+
+/**
+ * Just above zero, and that is a deliberate change of job.
+ *
+ * The threshold used to be 1.0, tuned against the whole 14-chunk corpus, where
+ * it was doing two jobs at once: dropping passages that matched nothing, and
+ * — badly — keeping other products' documents out. Scoping now does the second
+ * job structurally, and it also shrinks the corpus to one product's handful of
+ * chunks. BM25 idf falls as the corpus shrinks, so the same genuine hit that
+ * scored 1.91 across every company document scores 0.91 within Hepalex's own
+ * two, and an absolute threshold calibrated on the larger corpus silently
+ * discards it. Measured, not guessed: a real hit in a scoped namespace scores
+ * 0.56 to 3.50, and a passage matching no query term scores exactly 0.
+ *
+ * So the floor now means only "at least one query term matched". Product
+ * relevance is the scope's job, and which passage actually describes the
+ * reaction is the model's — it has `found: false` for precisely that, and a
+ * passage wrongly kept costs a sentence of prompt, while one wrongly dropped
+ * cannot be cited at all.
+ */
+export const ASSESS_MIN_SCORE = 0.01;
 
 export interface AssessInput {
   /** The whole corpus. Namespaces are separated here, not by the caller. */
   readonly chunks: readonly DocumentChunk[];
+  /**
+   * The documents held for THIS case's product. Retrieval never leaves this
+   * set — see scope.ts for why this is a filter and not a ranking signal.
+   */
+  readonly documentIds: ReadonlySet<DocumentId>;
   readonly reactionTerm: string;
   readonly drugName: string;
   readonly documentKind: GoverningDocumentKind;
@@ -82,14 +107,25 @@ function namespaceIsEmpty(
   input: AssessInput,
   sourceType: SourceType,
 ): boolean {
-  return !input.chunks.some((chunk) => chunk.sourceType === sourceType);
+  return inScope(input, sourceType).length === 0;
+}
+
+/** This case's own documents, in one namespace. The only citable set. */
+function inScope(
+  input: AssessInput,
+  sourceType: SourceType,
+): readonly DocumentChunk[] {
+  return input.chunks.filter(
+    (chunk) =>
+      chunk.sourceType === sourceType && input.documentIds.has(chunk.documentId),
+  );
 }
 
 function retrieve(
   input: AssessInput,
   sourceType: SourceType,
 ): readonly ScoredChunk[] {
-  const lexical = lexicalSearch(input.chunks, queryFor(input), {
+  const lexical = lexicalSearch(inScope(input, sourceType), queryFor(input), {
     sourceType,
     limit: ASSESS_LIMIT,
     minScore: ASSESS_MIN_SCORE,

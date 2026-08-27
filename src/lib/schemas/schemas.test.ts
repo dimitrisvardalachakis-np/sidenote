@@ -25,6 +25,7 @@ import {
   flaggedCriteria,
   isSerious,
   readingsDiverge,
+  assertedCriteria,
   ruledListedness,
   sourcesDisagree,
   spanMatchesNarrative,
@@ -32,6 +33,14 @@ import {
   type Reaction,
   type SuspectDrug,
 } from "./index";
+
+type SeriousnessAssertionShape = {
+  basis: "narrative" | "declared";
+  trigger: { quote: string; start: number; end: number } | null;
+  assertedBy: "model" | "reporter" | "reviewer";
+  confirmedByReviewer: boolean;
+  rejectedByReviewer: boolean;
+};
 
 const uuid = (n: number) => `0000000${n}-0000-4000-8000-000000000000`.slice(-36);
 
@@ -653,5 +662,59 @@ describe("identifiers", () => {
 
   it("requires chunk ids to be non-empty", () => {
     expect(ChunkId.safeParse("").success).toBe(false);
+  });
+});
+
+describe("a reviewer can put down a seriousness flag the model raised", () => {
+  const withFlag = (over: Partial<SeriousnessAssertionShape>): SeriousnessFlags =>
+    SeriousnessFlags.parse({
+      ...NO_SERIOUSNESS_FLAGS,
+      life_threatening: {
+        basis: "narrative",
+        trigger: { quote: "difficulty breathing", start: 0, end: 20 },
+        assertedBy: "model",
+        confirmedByReviewer: false,
+        rejectedByReviewer: false,
+        ...over,
+      },
+    });
+
+  it("counts an unconfirmed flag, so a possibly-serious case surfaces at once", () => {
+    expect(isSerious(withFlag({}))).toBe(true);
+  });
+
+  it("does not count a flag a reviewer has explicitly rejected", () => {
+    // The bug: rejecting every flag left isSerious true, so the 15-day clock
+    // kept running on a seriousness the reviewer had overruled. Seriousness
+    // was the last input to that clock a model could assert unchallenged.
+    expect(isSerious(withFlag({ rejectedByReviewer: true }))).toBe(false);
+  });
+
+  it("stops the expedited clock when the flag behind it is rejected", () => {
+    const reaction = (flags: SeriousnessFlags): Reaction => ({
+      ...seriousReaction,
+      seriousness: flags,
+    });
+    const running = expeditedClock(
+      { receivedAt: "2026-08-10", reactions: [reaction(withFlag({}))] },
+      true,
+      "2026-08-24",
+    );
+    const rejected = expeditedClock(
+      {
+        receivedAt: "2026-08-10",
+        reactions: [reaction(withFlag({ rejectedByReviewer: true }))],
+      },
+      true,
+      "2026-08-24",
+    );
+    expect(running.state).toBe("running");
+    expect(rejected.state).toBe("not_applicable");
+  });
+
+  it("still shows a rejected flag on the record, so the overruling is auditable", () => {
+    const flags = withFlag({ rejectedByReviewer: true });
+    expect(flaggedCriteria(flags)).toEqual([]);
+    expect(assertedCriteria(flags)).toEqual(["life_threatening"]);
   });
 });

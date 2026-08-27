@@ -144,12 +144,41 @@ export const NO_SERIOUSNESS_FLAGS: SeriousnessFlags = {
 /**
  * Which criteria are raised, in canonical order.
  *
- * Note this counts a flag whether or not a reviewer has confirmed it, because
- * the queue has to surface a *possibly* serious case immediately — waiting for
+ * This counts a flag whether or not a reviewer has confirmed it, because the
+ * queue has to surface a *possibly* serious case immediately — waiting for
  * confirmation before showing it would defeat the point of the clock. Callers
- * that need only confirmed flags filter on `confirmedByReviewer`.
+ * that need only confirmed flags use `isConfirmedSerious`.
+ *
+ * It does NOT count a flag a reviewer has explicitly rejected, and the
+ * difference between those two is the whole of this function's judgement.
+ * "Nobody has confirmed this yet" and "a human looked at this and said no" are
+ * not the same state. Treating them the same meant a reviewer could reject
+ * every seriousness flag on a case and still watch the 15-day expedited clock
+ * run: `isSerious` stayed true, the queue row kept its red, and the reviewer's
+ * decision had no effect on the one thing it was about.
+ *
+ * With listedness now reviewer-only, seriousness was the last input to the
+ * clock a model could still assert unchallenged. It can still raise a flag —
+ * that is a suggestion, and suggestions are allowed to be loud — but a human
+ * can now put it down.
  */
 export function flaggedCriteria(
+  flags: SeriousnessFlags,
+): readonly SeriousnessCriterion[] {
+  return SERIOUSNESS_CRITERIA.filter((c) => {
+    const assertion = flags[c];
+    return assertion !== null && !assertion.rejectedByReviewer;
+  });
+}
+
+/**
+ * Every criterion on the record, including any a reviewer has rejected.
+ *
+ * The case screen still has to show a rejected flag — struck through, with who
+ * rejected it — because a flag that silently vanishes when it is overruled
+ * destroys the audit trail of the overruling.
+ */
+export function assertedCriteria(
   flags: SeriousnessFlags,
 ): readonly SeriousnessCriterion[] {
   return SERIOUSNESS_CRITERIA.filter((c) => flags[c] !== null);
