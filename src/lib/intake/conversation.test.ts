@@ -52,6 +52,17 @@ const step = (state: IntakeState, reply: string) =>
 const lastAssistant = (state: IntakeState) =>
   [...state.messages].reverse().find((m) => m.role === "assistant")?.text ?? "";
 
+/** The model-only slots, empty. The fallback path leaves every one of these. */
+const EMPTY_SLOTS_EXTRAS = {
+  dose: null,
+  route: null,
+  outcome: null,
+  therapyStart: null,
+  therapyEnd: null,
+  reactionOnset: null,
+  seriousnessEvidence: [],
+} as const;
+
 describe("extraction", () => {
   it("reads ages the way people write them", () => {
     expect(extractAge("she is 45 years old")).toBe(45);
@@ -173,6 +184,7 @@ describe("the grounded verdict", () => {
     seriousness: [],
     reporterName: "Dr A Weber",
     reporterContact: "a.weber@example.org",
+    ...EMPTY_SLOTS_EXTRAS,
   };
 
   it("finds a reaction the documents do describe, and cites it", () => {

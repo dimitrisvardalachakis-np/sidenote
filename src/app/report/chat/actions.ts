@@ -6,6 +6,8 @@ import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { guardPublicConversation } from "@/lib/protection/guard";
+import { resolveAiBinding } from "@/lib/assess/ai";
+import { extractReport } from "@/lib/extract/extract";
 import type { ChatState } from "./chat-state";
 
 /**
@@ -19,8 +21,12 @@ import type { ChatState } from "./chat-state";
  * client cannot inject company-confidential text into its own transcript and
  * cannot cause any to be retrieved.
  *
- * The conversation is a state machine, not a model. See conversation.ts for
- * what that means and where a model would attach.
+ * The conversation is a state machine with a model layered over it. The state
+ * machine decides which question comes next and is pure; the model reads the
+ * reporter's prose for fields no pattern list can reach. When the model is
+ * absent, disabled, slow, or returns something that fails verification, the
+ * deterministic extraction underneath runs exactly as it always has and the
+ * report is accepted regardless — non-negotiable #5.
  */
 export async function sendChatMessage(
   previous: ChatState,
@@ -41,6 +47,31 @@ export async function sendChatMessage(
 
   const { chunks, products } = await loadCorpus();
 
+  /*
+    Extraction runs only on the reporter's opening account. That is the text
+    `Case.narrative` stores, and seriousness spans index into it — running the
+    model over a one-word answer to "how old are they?" would produce offsets
+    into a string nothing keeps.
+
+    Failure is not handled here because there is nothing to handle: a null
+    extraction is what `advance` already expects, and the regex path is what
+    runs. The report is accepted either way.
+  */
+  const ai = resolveAiBinding(process.env);
+  const extraction =
+    previous.intake.pending === "narrative"
+      ? (
+          await extractReport({
+            binding: ai.binding,
+            unavailableReason: ai.reason ?? "no model configured",
+            gateway: null,
+            sourceText: reply,
+            knownProducts: products,
+            now: new Date().toISOString(),
+          })
+        ).extraction
+      : null;
+
   const intake: IntakeState = advance({
     state: previous.intake,
     reply,
@@ -48,6 +79,7 @@ export async function sendChatMessage(
     knownProducts: products,
     // The public chat. Company documents are never searched or quoted here.
     audience: "public",
+    extraction,
   });
 
   if (intake.phase !== "complete") {
@@ -84,6 +116,10 @@ export async function sendChatMessage(
         alreadyDescribed: intake.verdict?.alreadyDescribed ?? false,
         seriousFlags: intake.slots.seriousness?.length ?? 0,
         turns: intake.messages.filter((m) => m.role === "reporter").length,
+        // Which path structured this report, so a case can be traced to the
+        // thing that read it.
+        extractedBy: extraction === null ? "patterns" : extraction.model,
+        evidencedFlags: intake.slots.seriousnessEvidence.length,
       },
     });
 

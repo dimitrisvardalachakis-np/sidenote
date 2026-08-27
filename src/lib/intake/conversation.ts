@@ -28,6 +28,7 @@
 import type { Citation, DocumentChunk, SeriousnessCriterion } from "@/lib/schemas";
 import { SERIOUSNESS_CRITERIA } from "@/lib/schemas";
 import { lexicalSearch, toCitation } from "@/lib/retrieval/search";
+import type { Extraction, SeriousnessEvidence } from "@/lib/extract/schema";
 
 export type IntakeSlot =
   | "narrative"
@@ -48,6 +49,23 @@ export interface IntakeSlots {
   readonly seriousness: readonly SeriousnessCriterion[] | null;
   readonly reporterName: string | null;
   readonly reporterContact: string | null;
+  /**
+   * Fields only a model reads, and the phrases behind any seriousness it
+   * raised. Empty on the fallback path, which is why every one of these is
+   * nullable and nothing downstream may require them.
+   */
+  readonly dose: string | null;
+  readonly route: string | null;
+  readonly outcome: string | null;
+  readonly therapyStart: string | null;
+  readonly therapyEnd: string | null;
+  readonly reactionOnset: string | null;
+  /**
+   * The exact words in the narrative that carried each seriousness criterion.
+   * This is what a regex cannot produce, and what turns a `declared` flag into
+   * a `narrative` one with a span a reviewer can see highlighted.
+   */
+  readonly seriousnessEvidence: readonly SeriousnessEvidence[];
 }
 
 export const EMPTY_SLOTS: IntakeSlots = {
@@ -59,6 +77,13 @@ export const EMPTY_SLOTS: IntakeSlots = {
   seriousness: null,
   reporterName: null,
   reporterContact: null,
+  dose: null,
+  route: null,
+  outcome: null,
+  therapyStart: null,
+  therapyEnd: null,
+  reactionOnset: null,
+  seriousnessEvidence: [],
 };
 
 export interface IntakeMessage {
@@ -207,16 +232,54 @@ export function extractSeriousness(
   );
 }
 
-/** Everything we can pull from one free-text message. */
+/**
+ * Everything we can pull from one free-text message.
+ *
+ * The deterministic half is unchanged and is the floor: whatever the model
+ * does or does not manage, these three still run. `extraction` is layered on
+ * top when a model produced a verified one, and is simply absent otherwise —
+ * which is the whole of the fallback. There is no third code path to keep in
+ * step, and no partially-merged record that neither path is responsible for.
+ *
+ * The model wins where both have an opinion. It has read the whole sentence;
+ * the regexes have matched a token. Where the model returned null the regex
+ * value stands, so a model that fills nothing costs nothing.
+ */
 function interpret(
   text: string,
   slots: IntakeSlots,
   knownProducts: readonly string[],
+  extraction: Extraction | null,
 ): IntakeSlots {
-  const drug = slots.drug ?? extractDrug(text, knownProducts);
-  const age = slots.age ?? extractAge(text);
-  const sex = slots.sex ?? extractSex(text);
-  return { ...slots, drug, age, sex };
+  const withPatterns: IntakeSlots = {
+    ...slots,
+    drug: slots.drug ?? extractDrug(text, knownProducts),
+    age: slots.age ?? extractAge(text),
+    sex: slots.sex ?? extractSex(text),
+  };
+
+  if (extraction === null) return withPatterns;
+
+  return {
+    ...withPatterns,
+    drug: extraction.suspectDrug ?? withPatterns.drug,
+    reaction: withPatterns.reaction ?? extraction.reaction,
+    age: extraction.patientAgeYears ?? withPatterns.age,
+    sex: extraction.patientSex ?? withPatterns.sex,
+    dose: extraction.dose ?? withPatterns.dose,
+    route: extraction.route ?? withPatterns.route,
+    outcome: extraction.outcome ?? withPatterns.outcome,
+    therapyStart: extraction.therapyStart ?? withPatterns.therapyStart,
+    therapyEnd: extraction.therapyEnd ?? withPatterns.therapyEnd,
+    reactionOnset: extraction.reactionOnset ?? withPatterns.reactionOnset,
+    // Only ever added to, never used to clear a criterion the reporter
+    // answered directly. A model that reads no hospitalisation into a
+    // narrative has not contradicted a reporter who ticked the box.
+    seriousnessEvidence:
+      extraction.seriousness.length > 0
+        ? extraction.seriousness
+        : withPatterns.seriousnessEvidence,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +420,14 @@ export interface AdvanceInput {
   readonly knownProducts: readonly string[];
   /** Who is reading. Decides whether confidential documents may be quoted. */
   readonly audience: Audience;
+  /**
+   * A verified model extraction of this message, when one was produced.
+   *
+   * Passed in rather than fetched, so `advance` stays pure and the whole
+   * conversation remains testable without a network. Null is the ordinary
+   * case, not an error case: it is what every fallback path supplies.
+   */
+  readonly extraction?: Extraction | null | undefined;
 }
 
 /**
@@ -408,7 +479,7 @@ export function advance(input: AdvanceInput): IntakeState {
     case null:
       break;
   }
-  slots = interpret(trimmed, slots, knownProducts);
+  slots = interpret(trimmed, slots, knownProducts, input.extraction ?? null);
 
   // An unparseable answer to a specific question must not be silently dropped;
   // ask again rather than moving on with a null.
