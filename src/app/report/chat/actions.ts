@@ -6,7 +6,7 @@ import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { guardPublicConversation } from "@/lib/protection/guard";
-import { resolveAiBinding } from "@/lib/assess/ai";
+import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
 import { extractReport } from "@/lib/extract/extract";
 import type { ChatState } from "./chat-state";
 
@@ -64,7 +64,7 @@ export async function sendChatMessage(
           await extractReport({
             binding: ai.binding,
             unavailableReason: ai.reason ?? "no model configured",
-            gateway: null,
+            gateway: resolveGateway(process.env),
             sourceText: reply,
             knownProducts: products,
             now: new Date().toISOString(),

@@ -167,16 +167,29 @@ async function readNamespace(
     detail: {
       sourceType,
       status: reading.status,
+      /*
+        The two fields that make a verdict traceable.
+
+        A reviewer rules on what was in front of them. Six months later, when
+        somebody asks why a case was called unlisted, "the model said so" is
+        not an answer — the question is which model, on which inference, over
+        which passages. `model` and `gatewayRequestId` are how that inference
+        is found again in the gateway's log, and `citedChunk` is the passage
+        the reading actually quoted.
+      */
       model: reading.model ?? "none",
       gatewayRequestId: reading.gatewayRequestId ?? "none",
+      gateway: input.gateway?.id ?? "none",
+      citedChunk: reading.status === "read" ? reading.chunkId : "none",
       passages: hits.length,
       inferences: attempts.length,
       // Why a reply was refused, when one was. A rejected quotation is the
       // single most important thing this system can notice about a model.
-      rejections: attempts
-        .map((a) => a.rejection?.kind)
-        .filter((k): k is NonNullable<typeof k> => k !== undefined)
-        .join(",") || "none",
+      rejections:
+        attempts
+          .map((a) => a.rejection?.kind)
+          .filter((k): k is NonNullable<typeof k> => k !== undefined)
+          .join(",") || "none",
     },
   });
 

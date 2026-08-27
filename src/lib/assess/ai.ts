@@ -46,11 +46,67 @@ export interface TextGenerationInput {
   readonly max_tokens: number;
 }
 
-/** AI Gateway routing. Step 9 fills in the id and the spend cap. */
+/**
+ * AI Gateway routing.
+ *
+ * Every model call in this project goes through a gateway, for three reasons
+ * CLAUDE.md names together in one row: caching, logging, and a spend cap.
+ *
+ * Caching is not a micro-optimisation here. The same case re-opened by a
+ * second reviewer asks the same question of the same passages, and a cached
+ * answer is not merely cheaper — it is the SAME answer, which matters when two
+ * reviewers are comparing notes on one case. That is the central conflict this
+ * app exists to resolve, so a cache that made them see different readings
+ * would be actively harmful.
+ */
 export interface AiGatewayConfig {
   readonly id: string;
   readonly cacheTtlSeconds: number;
   readonly skipCache: boolean;
+}
+
+/**
+ * One hour.
+ *
+ * Long enough that a case worked over a morning gives every reviewer the same
+ * reading, short enough that re-ingesting a document is reflected the same day.
+ * The cache key is the prompt, so an edited document changes the passages and
+ * therefore the key — a stale reading cannot survive a re-chunk.
+ */
+export const GATEWAY_CACHE_TTL_SECONDS = 3600;
+
+/**
+ * The spend cap, as a per-request ceiling this code can actually enforce.
+ *
+ * AI Gateway's own budget limit is set in the dashboard and is the real cap;
+ * it is not something a Worker can assert at call time. What this side can do
+ * is bound the request: `MAX_OUTPUT_TOKENS` per call, at most two calls per
+ * namespace and two namespaces per case, so one assessment cannot cost more
+ * than four short completions no matter how badly the model behaves. A runaway
+ * loop is the failure mode a dashboard budget catches late and a bounded retry
+ * count prevents outright.
+ */
+export const MAX_CALLS_PER_ASSESSMENT = 4;
+
+/**
+ * Read the gateway configuration from the environment.
+ *
+ * Returns null when no gateway is configured, and null means the call is made
+ * directly rather than not at all — a missing gateway must not take generation
+ * down with it. It does mean no cache, no gateway log id, and no spend
+ * ceiling, so it is worth being loud about in the audit line, which records
+ * `gatewayRequestId: "none"` in that case.
+ */
+export function resolveGateway(
+  env: Readonly<Record<string, string | undefined>>,
+): AiGatewayConfig | null {
+  const id = env["SIDENOTE_AI_GATEWAY_ID"];
+  if (id === undefined || id.trim().length === 0) return null;
+  return {
+    id: id.trim(),
+    cacheTtlSeconds: GATEWAY_CACHE_TTL_SECONDS,
+    skipCache: env["SIDENOTE_AI_GATEWAY_SKIP_CACHE"] === "1",
+  };
 }
 
 export interface AiRunOptions {
