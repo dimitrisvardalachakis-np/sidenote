@@ -20,7 +20,20 @@
  * matches, the answer is "no document is held for this product" — which is a
  * `source_unavailable`, not a silence.
  */
-import type { DocumentId, SafetyDocument, SuspectDrug } from "@/lib/schemas";
+import type { DocumentId, SafetyDocument } from "@/lib/schemas";
+
+/**
+ * The two fields scoping is computed from, and nothing else.
+ *
+ * Structural rather than `SuspectDrug`, for the reason `ValidityInput` is
+ * structural in case.ts: the public intake needs to scope retrieval before a
+ * SuspectDrug exists — there is no id, no role, no marketing status yet, only
+ * a name the reporter typed. A SuspectDrug satisfies this automatically.
+ */
+export interface DrugIdentity {
+  readonly reportedName: string;
+  readonly activeSubstance: string | null;
+}
 
 /** Case-insensitive, punctuation-tolerant comparison of product wording. */
 function normalise(text: string): string {
@@ -43,7 +56,7 @@ function normalise(text: string): string {
  */
 export function documentGovernsDrug(
   document: SafetyDocument,
-  drug: SuspectDrug,
+  drug: DrugIdentity,
 ): boolean {
   const substance = normalise(document.activeSubstance);
 
@@ -70,7 +83,7 @@ export function documentGovernsDrug(
  */
 export function documentsForDrug(
   documents: readonly SafetyDocument[],
-  drug: SuspectDrug,
+  drug: DrugIdentity,
 ): ReadonlySet<DocumentId> {
   return new Set(
     documents

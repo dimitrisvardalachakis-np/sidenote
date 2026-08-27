@@ -369,3 +369,70 @@ describe("step 7: the model fills fields, caseValidity decides", () => {
     expect(validity.missing).toContain("reporter");
   });
 });
+
+describe("who gets the credit when both the reporter and the model said it", () => {
+  it("keeps the reporter as the asserter, and adds the model's phrase", () => {
+    // `declare` overwrites, so a criterion the reporter declared AND the model
+    // read was being re-stamped assertedBy:"model" — quietly taking the
+    // assertion away from the person who actually made it.
+    const record = intakeToCase({
+      slots: {
+        ...EMPTY_SLOTS,
+        narrative: REPORT,
+        drug: "Hepalex",
+        reaction: "went very yellow",
+        seriousness: ["hospitalisation"],
+        seriousnessEvidence: [
+          {
+            criterion: "hospitalisation",
+            phrase: "was kept in overnight",
+            start: REPORT.indexOf("was kept in overnight"),
+            end: REPORT.indexOf("was kept in overnight") + "was kept in overnight".length,
+          },
+        ],
+      },
+      reference: CaseReference.parse("SN-2026-000510"),
+      receivedAt: "2026-08-26",
+      now: "2026-08-26T10:00:00Z",
+      ids: {
+        caseId: "00000005-0000-4000-8000-000000000041",
+        drugId: "00000005-0000-4000-8000-000000000042",
+        reactionId: "00000005-0000-4000-8000-000000000043",
+      },
+    });
+    const flag = record.reactions[0]?.seriousness.hospitalisation;
+    expect(flag?.assertedBy).toBe("reporter");
+    // The phrase is still kept: it is strictly more than a bare declaration.
+    expect(flag?.basis).toBe("narrative");
+    expect(flag?.trigger?.quote).toBe("was kept in overnight");
+  });
+
+  it("still attributes a criterion only the model found to the model", () => {
+    const record = intakeToCase({
+      slots: {
+        ...EMPTY_SLOTS,
+        narrative: REPORT,
+        drug: "Hepalex",
+        reaction: "went very yellow",
+        seriousness: [],
+        seriousnessEvidence: [
+          {
+            criterion: "hospitalisation",
+            phrase: "was kept in overnight",
+            start: REPORT.indexOf("was kept in overnight"),
+            end: REPORT.indexOf("was kept in overnight") + "was kept in overnight".length,
+          },
+        ],
+      },
+      reference: CaseReference.parse("SN-2026-000511"),
+      receivedAt: "2026-08-26",
+      now: "2026-08-26T10:00:00Z",
+      ids: {
+        caseId: "00000005-0000-4000-8000-000000000051",
+        drugId: "00000005-0000-4000-8000-000000000052",
+        reactionId: "00000005-0000-4000-8000-000000000053",
+      },
+    });
+    expect(record.reactions[0]?.seriousness.hospitalisation?.assertedBy).toBe("model");
+  });
+});

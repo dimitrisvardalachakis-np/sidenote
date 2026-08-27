@@ -1,7 +1,12 @@
 "use server";
 
 import { audit } from "@/lib/audit";
-import { advance, type IntakeState } from "@/lib/intake/conversation";
+import {
+  advance,
+  extractDrug as intakeDrug,
+  type IntakeState,
+} from "@/lib/intake/conversation";
+import { documentsForDrug } from "@/lib/assess/scope";
 import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
@@ -45,7 +50,7 @@ export async function sendChatMessage(
     return { ...previous, error: guard.message };
   }
 
-  const { chunks, products } = await loadCorpus();
+  const { chunks, documents, products } = await loadCorpus();
 
   /*
     Extraction runs only on the reporter's opening account. That is the text
@@ -80,6 +85,22 @@ export async function sendChatMessage(
     // The public chat. Company documents are never searched or quoted here.
     audience: "public",
     extraction,
+    /*
+      Scope retrieval to documents held for the medicine the reporter named.
+
+      Without this the chat could tell somebody their novel reaction "does
+      appear in the published information" on the strength of a different
+      product's label. That is the answer most likely to make a person decide
+      not to bother reporting, so it is the one that must not be wrong.
+    */
+    scope:
+      previous.intake.slots.drug === null && intakeDrug(reply, products) === null
+        ? null
+        : documentsForDrug(documents, {
+            reportedName:
+              previous.intake.slots.drug ?? intakeDrug(reply, products) ?? "",
+            activeSubstance: null,
+          }),
   });
 
   if (intake.phase !== "complete") {

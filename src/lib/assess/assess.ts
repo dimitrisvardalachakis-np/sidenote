@@ -28,6 +28,7 @@ import type {
   ModelReading,
   SourceType,
 } from "@/lib/schemas";
+import { MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
 import { readPassages } from "./generate";
 import type { AiAvailability, AiGatewayConfig } from "./ai";
 
@@ -42,25 +43,14 @@ import type { AiAvailability, AiGatewayConfig } from "./ai";
 export const ASSESS_LIMIT = 5;
 
 /**
- * Just above zero, and that is a deliberate change of job.
+ * The relevance floor, named once in the retrieval module.
  *
- * The threshold used to be 1.0, tuned against the whole 14-chunk corpus, where
- * it was doing two jobs at once: dropping passages that matched nothing, and
- * — badly — keeping other products' documents out. Scoping now does the second
- * job structurally, and it also shrinks the corpus to one product's handful of
- * chunks. BM25 idf falls as the corpus shrinks, so the same genuine hit that
- * scored 1.91 across every company document scores 0.91 within Hepalex's own
- * two, and an absolute threshold calibrated on the larger corpus silently
- * discards it. Measured, not guessed: a real hit in a scoped namespace scores
- * 0.56 to 3.50, and a passage matching no query term scores exactly 0.
- *
- * So the floor now means only "at least one query term matched". Product
- * relevance is the scope's job, and which passage actually describes the
- * reaction is the model's — it has `found: false` for precisely that, and a
- * passage wrongly kept costs a sentence of prompt, while one wrongly dropped
- * cannot be cited at all.
+ * It used to be 1.0, tuned against the whole 14-chunk corpus, where it was
+ * also doing the product-relevance job badly. Scoping does that structurally
+ * now, and shrinks the corpus enough that an absolute floor from the larger
+ * one discards real hits — see thresholds.ts.
  */
-export const ASSESS_MIN_SCORE = 0.01;
+export const ASSESS_MIN_SCORE = MATCHED_ANY_TERM;
 
 export interface AssessInput {
   /** The whole corpus. Namespaces are separated here, not by the caller. */

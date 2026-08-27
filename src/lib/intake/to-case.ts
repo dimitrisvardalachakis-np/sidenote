@@ -80,6 +80,18 @@ function seriousnessFlags(slots: IntakeSlots, narrative: string): SeriousnessFla
 
   for (const evidence of slots.seriousnessEvidence) {
     /*
+      Who gets the credit when both said it.
+
+      `declare` overwrites, so a criterion the reporter declared AND the model
+      read was being re-stamped `assertedBy: "model"` — losing the fact that
+      the reporter said it themselves. The phrase is still worth keeping (it is
+      strictly more information than a bare declaration), but the reporter
+      asserted the flag and the record has to keep saying so.
+    */
+    const declaredByReporter = (slots.seriousness ?? []).includes(
+      evidence.criterion,
+    );
+    /*
       The offsets were computed against the text the model was given. They are
       only usable if that text is the narrative that will actually be stored —
       the model may have read a later message, and a span pointing into a
@@ -99,14 +111,18 @@ function seriousnessFlags(slots: IntakeSlots, narrative: string): SeriousnessFla
                 start: evidence.start,
                 end: evidence.end,
               },
-              assertedBy: "model" as const,
+              assertedBy: declaredByReporter
+                ? ("reporter" as const)
+                : ("model" as const),
               confirmedByReviewer: false,
               rejectedByReviewer: false,
             }
           : {
               basis: "declared" as const,
               trigger: null,
-              assertedBy: "model" as const,
+              assertedBy: declaredByReporter
+                ? ("reporter" as const)
+                : ("model" as const),
               confirmedByReviewer: false,
               rejectedByReviewer: false,
             },

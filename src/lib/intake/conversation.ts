@@ -25,9 +25,15 @@
  * retrieval found. The only difference a "known" verdict makes is what the
  * reporter is told while they wait.
  */
-import type { Citation, DocumentChunk, SeriousnessCriterion } from "@/lib/schemas";
+import type {
+  Citation,
+  DocumentChunk,
+  DocumentId,
+  SeriousnessCriterion,
+} from "@/lib/schemas";
 import { SERIOUSNESS_CRITERIA } from "@/lib/schemas";
 import { lexicalSearch, toCitation } from "@/lib/retrieval/search";
+import { MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
 import type { Extraction, SeriousnessEvidence } from "@/lib/extract/schema";
 
 export type IntakeSlot =
@@ -354,12 +360,42 @@ export function assessAgainstDocuments(
   slots: IntakeSlots,
   corpus: readonly DocumentChunk[],
   audience: Audience,
+  /**
+   * Documents held for the medicine the reporter named. Retrieval never leaves
+   * this set; an empty set means nothing is quoted.
+   */
+  scope: ReadonlySet<DocumentId> | null = null,
 ): IntakeVerdict {
-  const query = [slots.reaction, slots.drug].filter(Boolean).join(" ");
-  const options = { limit: 2, minScore: 1.5 } as const;
+  /*
+    The query is the reaction, and the corpus is scoped to the product.
+
+    Both halves used to be wrong together and the effect was worse than either.
+    The drug name went into the query as a term, so a chunk matching only the
+    medicine's own name scored a hit; and the corpus was every document in the
+    library, so that hit could come from a different product entirely. A
+    reporter describing a novel reaction to Covaxil could therefore be told
+    their reaction "does appear in the published information" — on the strength
+    of a Hepalex label passage that matched the word "Covaxil" nowhere and
+    their symptom nowhere either.
+
+    Telling a member of the public their reaction is already known is the one
+    thing this screen must not get wrong: it is the answer most likely to make
+    somebody decide not to bother.
+  */
+  const query = slots.reaction ?? "";
+  if (query.trim().length === 0) {
+    return { alreadyDescribed: false, companyCitations: [], publicCitations: [] };
+  }
+
+  const inScope =
+    scope === null ? corpus : corpus.filter((c) => scope.has(c.documentId));
+  // Same floor, same reasoning, one definition — see thresholds.ts. The
+  // safeguard on this path is not the threshold: it is that the reporter is
+  // shown the passage and can see for themselves what it says.
+  const options = { limit: 2, minScore: MATCHED_ANY_TERM } as const;
 
   // The public namespace is readable by anyone; the FDA label is on the web.
-  const publicHits = lexicalSearch(corpus, query, {
+  const publicHits = lexicalSearch(inScope, query, {
     ...options,
     sourceType: "public",
   });
@@ -367,7 +403,7 @@ export function assessAgainstDocuments(
   // The company namespace is searched ONLY for a signed-in reviewer.
   const company =
     audience === "reviewer"
-      ? lexicalSearch(corpus, query, { ...options, sourceType: "company" })
+      ? lexicalSearch(inScope, query, { ...options, sourceType: "company" })
       : [];
 
   return {
@@ -418,6 +454,8 @@ export interface AdvanceInput {
   readonly corpus: readonly DocumentChunk[];
   /** Substance and brand names already in the library, for drug matching. */
   readonly knownProducts: readonly string[];
+  /** Documents held for the named medicine. Null means the whole corpus. */
+  readonly scope?: ReadonlySet<DocumentId> | null | undefined;
   /** Who is reading. Decides whether confidential documents may be quoted. */
   readonly audience: Audience;
   /**
@@ -513,7 +551,12 @@ export function advance(input: AdvanceInput): IntakeState {
     };
   }
 
-  const verdict = assessAgainstDocuments(slots, corpus, audience);
+  const verdict = assessAgainstDocuments(
+    slots,
+    corpus,
+    audience,
+    input.scope ?? null,
+  );
   return {
     slots,
     pending: null,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ChunkId, DocumentId, type DocumentChunk } from "@/lib/schemas";
 import {
+  EMPTY_SLOTS,
   advance,
   assessAgainstDocuments,
   extractAge,
@@ -266,5 +267,43 @@ describe("the grounded verdict", () => {
     state = step(state, "T Cole");
     state = step(state, "t@example.org");
     expect(lastAssistant(state)).toMatch(/submitting it for review/i);
+  });
+});
+
+describe("what the public chat is allowed to tell a reporter", () => {
+  const say = (reaction: string, drug: string, scope?: ReadonlySet<string> | null) =>
+    assessAgainstDocuments(
+      { ...EMPTY_SLOTS_EXTRAS, ...EMPTY_SLOTS, reaction, drug, seriousness: [] },
+      CORPUS,
+      "public",
+      (scope ?? null) as never,
+    );
+
+  it("does not call a reaction described on the strength of the drug name alone", () => {
+    /*
+      The bug: the query was `[reaction, drug].join(" ")`, so a chunk that
+      mentioned only the medicine's own name scored a hit and the reporter was
+      told their reaction "does appear in the published information". Telling
+      somebody their novel reaction is already known is the answer most likely
+      to make them decide not to bother reporting it.
+    */
+    const verdict = say("hair turned bright green", "Covaxil");
+    expect(verdict.alreadyDescribed).toBe(false);
+    expect(verdict.publicCitations).toHaveLength(0);
+  });
+
+  it("still says so when the reaction really is described", () => {
+    const verdict = say("rash", "Covaxil");
+    expect(verdict.alreadyDescribed).toBe(true);
+  });
+
+  it("never quotes a company document to an anonymous reporter", () => {
+    const verdict = say("rash", "Covaxil");
+    expect(verdict.companyCitations).toHaveLength(0);
+  });
+
+  it("says nothing at all when no reaction has been given yet", () => {
+    const verdict = say("", "Covaxil");
+    expect(verdict.alreadyDescribed).toBe(false);
   });
 });

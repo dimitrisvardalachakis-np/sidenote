@@ -174,7 +174,23 @@ which passage describes the reaction belongs to the model, which has
 
 **Worth remembering**: an absolute BM25 threshold is a property of the corpus
 it was tuned on. Change the corpus size and the number silently changes
-meaning.
+meaning. It bit twice — once when scoping shrank the reviewer corpus, and
+again in a three-chunk test fixture where a real synonym hit scored 0.29. The
+floor now has one name (`MATCHED_ANY_TERM`) and one meaning: at least one
+query term matched.
+
+The query itself turned out to be half the problem. It was
+`[reaction, drug].join(" ")` on both paths, which made sense when retrieval
+searched everything and needed pull towards the right product. Once the corpus
+was scoped, the drug name matched nearly every chunk in it — so it stopped
+being a signal and became a guaranteed floor. On the reviewer path that meant
+an unrelated reaction came back `grounded`, citing the CCDS cover page. On the
+public path it was worse: a reporter describing a novel reaction could be told
+it "does appear in the published information" on the strength of a passage
+that matched neither their symptom nor even their medicine. Telling somebody
+their reaction is already known is the answer most likely to make them decide
+not to bother, so that is the one that must not be wrong. Scope answers "which
+product"; the query answers "which passage".
 
 ---
 
