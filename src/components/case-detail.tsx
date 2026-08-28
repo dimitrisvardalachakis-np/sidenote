@@ -215,6 +215,16 @@ export function CaseDetail({ record }: { record: Case }) {
         <Fact label="Substance">{drug?.activeSubstance ?? "—"}</Fact>
         <Fact label="Reaction">{reaction?.verbatimTerm ?? "—"}</Fact>
         <Fact label="Coded as">{reaction?.meddraPreferredTerm ?? "not coded"}</Fact>
+        <Fact label="Patient">
+          {[
+            record.patient?.ageYears !== null && record.patient?.ageYears !== undefined
+              ? `${record.patient.ageYears}y`
+              : (record.patient?.ageGroup ?? null),
+            record.patient?.sex ?? null,
+          ]
+            .filter((part): part is string => part !== null && part !== "unknown")
+            .join(", ") || "not stated"}
+        </Fact>
         <Fact label="Day 0">{record.receivedAt}</Fact>
         <Fact label="Origin">{record.origin.replace("_", " ")}</Fact>
         <Fact label="Outcome">
@@ -235,6 +245,8 @@ export function CaseDetail({ record }: { record: Case }) {
           <HighlightedNarrative text={record.narrative} marks={marks} />
         </div>
       </section>
+
+      <ReporterPanel record={record} />
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
         <SeriousnessList record={record} />
@@ -258,5 +270,61 @@ function Fact({
       </dt>
       <dd className="mt-0.5 text-base">{children}</dd>
     </div>
+  );
+}
+
+/**
+ * Who reported this, and how to reach them.
+ *
+ * THE GAP THIS FILLS. The minimum-criteria list told a reviewer "an
+ * identifiable reporter — present" and the screen then showed neither the name
+ * nor any way to contact them. The record has carried both the whole time;
+ * nothing rendered them.
+ *
+ * For this app that is not a missing nicety. Follow-up is most of
+ * pharmacovigilance — a case is usually incomplete on arrival, and the single
+ * most common next action a reviewer takes is asking the reporter one more
+ * question. A screen that asserts the reporter is identifiable while hiding
+ * who they are makes the criterion decorative.
+ *
+ * `contactPermitted` is shown as prominently as the address, because contacting
+ * someone who declined is a different kind of mistake from not contacting them.
+ */
+function ReporterPanel({ record }: { record: Case }) {
+  const reporter = record.reporter;
+
+  return (
+    <section aria-label="Reporter" className="mt-5 border-t border-rule pt-3">
+      <h3 className="text-micro uppercase tracking-label text-slate">
+        Reporter
+      </h3>
+
+      {reporter === null ? (
+        <p className="mt-1 text-base text-slate">
+          No reporter was recorded. Without one the report cannot be a valid
+          case — see the minimum criteria above.
+        </p>
+      ) : (
+        <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+          <Fact label="Name">{reporter.name ?? "not stated"}</Fact>
+          <Fact label="Email">{reporter.email ?? "—"}</Fact>
+          <Fact label="Phone">{reporter.phone ?? "—"}</Fact>
+          <Fact label="Contact">
+            {reporter.contactPermitted ? "permitted" : "declined"}
+          </Fact>
+          {reporter.qualification !== null && (
+            <Fact label="Qualification">
+              {reporter.qualification.replaceAll("_", " ")}
+            </Fact>
+          )}
+          {reporter.organisation !== null && (
+            <Fact label="Organisation">{reporter.organisation}</Fact>
+          )}
+          {reporter.country !== null && (
+            <Fact label="Country">{reporter.country}</Fact>
+          )}
+        </dl>
+      )}
+    </section>
   );
 }

@@ -478,8 +478,8 @@ function composeVerdict(verdict: IntakeVerdict, slots: IntakeSlots): IntakeMessa
         role: "assistant",
         citations: [],
         text:
-          `Thank you. I do not hold the published information for ${slots.drug ?? "this medicine"}, so I could not check it — that is a gap on our side, not a finding about your report. ` +
-          "Vaccines in particular are not in the label database we search. A safety reviewer will read what you have written and can check the sources we do not have. I am submitting it for review now.",
+          `Thank you. I looked for the published information for ${slots.drug ?? "this medicine"} and could not find any, so there was nothing for me to check your report against. ` +
+          "That is a gap in what I can see, not a finding about what happened to you — a safety reviewer will read this and can check sources I do not have. I am submitting it for review now.",
       },
     ];
   }
