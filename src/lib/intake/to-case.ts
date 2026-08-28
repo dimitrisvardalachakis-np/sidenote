@@ -132,16 +132,56 @@ function seriousnessFlags(slots: IntakeSlots, narrative: string): SeriousnessFla
   return flags as SeriousnessFlags;
 }
 
-/** An email if it looks like one, otherwise treat it as a phone number. */
+/** An email anywhere in the answer, and a phone number anywhere in the rest. */
+const EMAIL_ANYWHERE = /[^\s@,;<>()]+@[^\s@,;<>()]+\.[a-z]{2,}/i;
+const PHONE_ANYWHERE = /\+?\d[\d\s().-]{5,}\d/;
+
+/**
+ * Pull an email and a phone number out of one free-text answer.
+ *
+ * THE BUG THIS FIXES, and it destroyed reports. The test used to be anchored —
+ * `/^…@…$/` — so the whole answer had to BE an email and nothing else. The
+ * question asks for "an email address or phone number", and a real reporter
+ * answered with both:
+ *
+ *   "dimitrisvard@hotmaill.com and +306970077401"
+ *
+ * Forty-three characters, none of it matching the anchored test, so the entire
+ * string went into `phone`, which the schema caps at forty. Validation failed
+ * at the last step of an eight-question conversation, the report was thrown
+ * away, and the reporter was told to "press send again" — which failed
+ * identically, every time, forever.
+ *
+ * So: find an email anywhere, then look for a phone in what remains. Searching
+ * the remainder matters — an email address contains digits often enough that
+ * scanning the whole string would read part of one as a phone number.
+ */
 function splitContact(contact: string | null): {
   email: string | null;
   phone: string | null;
 } {
   if (contact === null) return { email: null, phone: null };
   const trimmed = contact.trim();
-  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(trimmed)
-    ? { email: trimmed, phone: null }
-    : { email: null, phone: trimmed };
+  if (trimmed.length === 0) return { email: null, phone: null };
+
+  const email = EMAIL_ANYWHERE.exec(trimmed)?.[0] ?? null;
+  const rest = email === null ? trimmed : trimmed.replace(email, " ");
+
+  const found = PHONE_ANYWHERE.exec(rest)?.[0]?.trim() ?? null;
+  /*
+    The fallback keeps the report alive.
+
+    When neither pattern matches, the reporter still typed something they meant
+    as a way to reach them, and `caseValidity` needs an identifiable reporter.
+    Recording the first forty characters is worse than recording all of it and
+    better than recording nothing — and "nothing" here means the whole report
+    is refused. A reviewer reads the narrative anyway.
+  */
+  const phone = found ?? (email === null ? trimmed : null);
+  const clamped =
+    phone === null || phone.length < 3 ? null : phone.slice(0, 40);
+
+  return { email, phone: clamped };
 }
 
 /**

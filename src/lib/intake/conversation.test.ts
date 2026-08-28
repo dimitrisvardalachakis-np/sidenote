@@ -307,3 +307,104 @@ describe("what the public chat is allowed to tell a reporter", () => {
     expect(verdict.alreadyDescribed).toBe(false);
   });
 });
+
+
+describe("the third state: nothing was consulted", () => {
+  /*
+    A real reporter hit this. They described dizziness after a Moderna COVID
+    vaccine; openFDA's drug label dataset holds no vaccines at all, so nothing
+    was fetched and nothing was in scope. The chat told them their reaction was
+    not in the published information for that medicine — an assertion about a
+    document nobody opened.
+  */
+  it("says the label was not held, not that the reaction is absent from it", () => {
+    const verdict = assessAgainstDocuments(
+      { ...EMPTY_SLOTS, drug: "moderna", reaction: "dizziness" },
+      // Nothing in scope: no label is held for this medicine.
+      [],
+      "public",
+      new Set(),
+    );
+    expect(verdict.consulted).toBe(false);
+    expect(verdict.alreadyDescribed).toBe(false);
+  });
+
+  it("marks a real search as consulted even when it matches nothing", () => {
+    // The distinction that matters: this one DID open the document.
+    const verdict = assessAgainstDocuments(
+      { ...EMPTY_SLOTS, drug: "Covaxil", reaction: "tachycardia" },
+      [chunk("Jaundice has been reported rarely.", "public")],
+      "public",
+      new Set([DOC]),
+    );
+    expect(verdict.consulted).toBe(true);
+    expect(verdict.alreadyDescribed).toBe(false);
+  });
+});
+
+
+describe("the reporter's answer always beats the model's", () => {
+  /*
+    A real report was filed against the wrong drug by this. The reporter wrote
+    about a coronavirus injection and typed "moderna coronovirus injection"
+    when asked which medicine; the extraction model — whose prompt lists the
+    products this library holds — answered "Covaxil", the nearest-sounding demo
+    product, and won. A Moderna report was recorded against an unrelated
+    medicine.
+  */
+  const extraction = {
+    suspectDrug: "Covaxil",
+    reaction: "rash",
+    patientAgeYears: 99,
+    patientSex: "female" as const,
+    dose: null,
+    route: null,
+    outcome: null,
+    therapyStart: null,
+    therapyEnd: null,
+    reactionOnset: null,
+    seriousness: [],
+    seriousnessEvidence: [],
+    model: "test-model",
+    gatewayRequestId: null,
+    generatedAt: "2026-08-28T00:00:00.000Z",
+  };
+
+  it("keeps the medicine the reporter named", () => {
+    const state = advance({
+      state: { ...startConversation(), pending: "drug" as const },
+      reply: "moderna coronovirus injection",
+      corpus: [],
+      knownProducts: PRODUCTS,
+      audience: "public",
+      extraction,
+    });
+    expect(state.slots.drug).toBe("moderna coronovirus injection");
+    expect(state.slots.drug).not.toBe("Covaxil");
+  });
+
+  it("keeps the age and sex the reporter gave", () => {
+    const aged = advance({
+      state: { ...startConversation(), pending: "age" as const },
+      reply: "37",
+      corpus: [],
+      knownProducts: PRODUCTS,
+      audience: "public",
+      extraction,
+    });
+    expect(aged.slots.age).toBe(37);
+  });
+
+  it("still lets the model fill a gap the reporter left", () => {
+    // Suggesting into an empty slot is the job. Overwriting an answer is not.
+    const state = advance({
+      state: { ...startConversation(), pending: "narrative" as const },
+      reply: "I took something and came out in a rash",
+      corpus: [],
+      knownProducts: PRODUCTS,
+      audience: "public",
+      extraction,
+    });
+    expect(state.slots.drug).toBe("Covaxil");
+  });
+});

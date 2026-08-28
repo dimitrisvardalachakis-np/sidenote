@@ -483,6 +483,70 @@ five are requested and the first usable one is taken.
 **The through-line**: every one of these was invisible against fixtures I wrote
 myself. Fixtures agree with you. Real data does not, and that is the whole of
 its value.
+## One real reporter, six bugs
+
+A person used the intake chat for real: dizziness after a Moderna COVID
+vaccine. Nothing about it worked, and each failure was a different kind.
+
+**The report was destroyed at the last step.** `splitContact` tested whether
+the whole answer *was* an email — anchored, `/^…@…$/`. The question asks for
+"an email address or phone number" and they answered with both:
+`dimitrisvard@hotmaill.com and +306970077401`. Forty-three characters, no
+match, so all of it went into `phone`, which the schema caps at forty.
+Validation failed after eight questions and the report was thrown away.
+
+**And then they could not retry.** The message said "press send again". The
+button was `disabled={pending || done}` — the conversation was complete, so
+`done` was true, so the control directly beneath that sentence was dead. The
+one moment a retry was needed was the one moment it was impossible.
+
+**The failure said nothing about itself.** A bare `catch {}` wrote
+`outcome: "failure"` with no detail, on the most consequential failure this app
+has. Diagnosing it meant reproducing it. It records why now.
+
+**The model filed the report against the wrong medicine.** This one appeared
+only *because* I had just fixed the response-shape bug — extraction had never
+run before, so it had never been wrong before. The prompt lists the products
+the library holds; handed "after i had my coronovirus injection i feel dizzy"
+the model answered `suspectDrug: "Covaxil"`, the nearest-sounding demo product,
+and the case was filed under it.
+
+Two defects underneath. `interpret` read
+`extraction.suspectDrug ?? withPatterns.drug` — model first, person second —
+while `reaction` alone read the other way round, so a reporter's typed answer
+could be overwritten. And `suspectDrug` was **the one model-written field with
+no grounding check at all**: seriousness phrases must occur verbatim in the
+reporter's text, quoted spans must occur verbatim in the chunk they cite, and
+the field deciding which product the whole case is about was passed through on
+a `.trim()`. It is checked against the reporter's own words now, like
+everything else the model writes.
+
+**It told them something untrue about a label it never opened.** openFDA's drug
+label dataset holds no vaccines — the product types are OTC, prescription and
+cellular therapy, and Spikevax and Comirnaty are simply absent. So nothing was
+fetched, nothing was in scope, and the chat said "I could not find dizziness in
+the published information for moderna coronovirus injection".
+
+That is exactly the two-state collapse recorded above under "the surface that
+should not get the better retriever" — predicted there, and hit here by a real
+person within days. `IntakeVerdict` carries `consulted` now, and that state
+says the label is not held rather than that the reaction is absent from it.
+
+**And the form fought them.** The send button sat below a three-row textarea,
+so each of eight answers meant looking down the page for it; and the scroll
+target sat between the messages and the form, so every new question scrolled
+into view with the box to answer it left below the fold.
+
+**What I take from this.** Five of the six were invisible to 500 passing tests,
+because every one lives in the gap between what the code does and what a person
+actually types. The contact answer that broke it is the obvious way to answer
+that question. The retry button was dead in precisely the state that needed it.
+And the wrong-drug bug was *created* by fixing another bug — the extraction
+model could not be wrong while it was never running.
+
+---
+
+
 
 ## The injection test (Cluster F security story)
 

@@ -102,6 +102,24 @@ export interface IntakeMessage {
 export interface IntakeVerdict {
   /** True when retrieval found the reaction described in a safety document. */
   readonly alreadyDescribed: boolean;
+  /**
+   * False when there was no document to search at all.
+   *
+   * THE THIRD STATE, and it exists because its absence told a real reporter
+   * something untrue. They reported dizziness after a Moderna COVID vaccine.
+   * openFDA's drug label dataset holds no vaccines — only OTC drugs,
+   * prescription drugs and cellular therapies — so nothing was fetched and
+   * nothing was in scope. The chat replied: "I could not find dizziness in the
+   * published information for moderna coronovirus injection."
+   *
+   * That is an assertion about a document nobody opened. The two-state boolean
+   * could not tell "searched the label and it is not there" from "there was no
+   * label to search", so it said the first while the second was true. It is
+   * the same collapse `source_unavailable` exists to prevent on the reviewer
+   * side, and it leaned the safe way — over-encouraging a report — which is
+   * exactly why it survived so long unnoticed.
+   */
+  readonly consulted: boolean;
   readonly companyCitations: readonly Citation[];
   readonly publicCitations: readonly Citation[];
 }
@@ -266,12 +284,32 @@ function interpret(
 
   if (extraction === null) return withPatterns;
 
+  /*
+    THE REPORTER'S OWN WORDS WIN. Every time, on every field.
+
+    `drug`, `age` and `sex` used to read `extraction.x ?? withPatterns.x` — the
+    model first, the person second — while `reaction` alone read the other way
+    round. That inversion filed a real report against the wrong medicine.
+
+    A reporter wrote "after i had my coronovirus injection i feel dizzy" and
+    later typed "moderna coronovirus injection" when asked which medicine. The
+    model, whose prompt lists the products this library holds, answered
+    `suspectDrug: "Covaxil"` — the nearest-sounding demo product, and not a
+    medicine the reporter had ever mentioned. Because the model went first,
+    that is what the case was filed under: a Moderna vaccine report recorded
+    against an unrelated drug, corrupting the safety signal for both.
+
+    This is non-negotiable #4 at its plainest. The model may fill a gap the
+    reporter left; it may never overwrite an answer the reporter gave. `??`
+    with the person on the left says exactly that, and it is the same shape
+    `reaction` always had.
+  */
   return {
     ...withPatterns,
-    drug: extraction.suspectDrug ?? withPatterns.drug,
+    drug: withPatterns.drug ?? extraction.suspectDrug,
     reaction: withPatterns.reaction ?? extraction.reaction,
-    age: extraction.patientAgeYears ?? withPatterns.age,
-    sex: extraction.patientSex ?? withPatterns.sex,
+    age: withPatterns.age ?? extraction.patientAgeYears,
+    sex: withPatterns.sex ?? extraction.patientSex,
     dose: extraction.dose ?? withPatterns.dose,
     route: extraction.route ?? withPatterns.route,
     outcome: extraction.outcome ?? withPatterns.outcome,
@@ -384,7 +422,12 @@ export function assessAgainstDocuments(
   */
   const query = slots.reaction ?? "";
   if (query.trim().length === 0) {
-    return { alreadyDescribed: false, companyCitations: [], publicCitations: [] };
+    return {
+      alreadyDescribed: false,
+      consulted: false,
+      companyCitations: [],
+      publicCitations: [],
+    };
   }
 
   const inScope =
@@ -408,6 +451,9 @@ export function assessAgainstDocuments(
 
   return {
     alreadyDescribed: company.length > 0 || publicHits.length > 0,
+    // Whether any document was available to search, which is a different
+    // question from whether the search matched.
+    consulted: inScope.length > 0,
     companyCitations: company.map(toCitation),
     publicCitations: publicHits.map(toCitation),
   };
@@ -415,6 +461,28 @@ export function assessAgainstDocuments(
 
 function composeVerdict(verdict: IntakeVerdict, slots: IntakeSlots): IntakeMessage[] {
   const citations = [...verdict.companyCitations, ...verdict.publicCitations];
+
+  /*
+    Nothing was consulted, so nothing may be claimed about what a label says.
+
+    Not published information "we searched and it is silent" — we hold no
+    published information for this medicine at all. Vaccines are the case that
+    made this visible: openFDA's drug label dataset carries none of them, so a
+    reporter naming a COVID vaccine was told their reaction is not in the
+    published information for it, on the strength of a search over an empty
+    set.
+  */
+  if (!verdict.consulted) {
+    return [
+      {
+        role: "assistant",
+        citations: [],
+        text:
+          `Thank you. I do not hold the published information for ${slots.drug ?? "this medicine"}, so I could not check it — that is a gap on our side, not a finding about your report. ` +
+          "Vaccines in particular are not in the label database we search. A safety reviewer will read what you have written and can check the sources we do not have. I am submitting it for review now.",
+      },
+    ];
+  }
 
   if (!verdict.alreadyDescribed) {
     return [

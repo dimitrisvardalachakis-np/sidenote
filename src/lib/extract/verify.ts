@@ -166,6 +166,38 @@ function resolveSeriousness(
   return { ok: true, found };
 }
 
+/**
+ * A value the model reports is kept only if the reporter actually wrote it.
+ *
+ * THE FABRICATION THIS STOPS, which happened to a real report. A reporter
+ * wrote "after i had my coronovirus injection i feel dizzy". The extraction
+ * prompt lists the products this library holds, and the model answered
+ * `suspectDrug: "Covaxil"` — a demo product the reporter had never mentioned,
+ * picked presumably for sounding like the words that were there. The case was
+ * filed under it, attributing a coronavirus-vaccine report to an unrelated
+ * medicine.
+ *
+ * `suspectDrug` was the one model-written field with no grounding check at
+ * all. Seriousness phrases are already required to occur verbatim in the
+ * reporter's text, and a quoted span is required to occur verbatim in the
+ * chunk it cites — this is the same rule applied to the field that decides
+ * which product the whole case is about, which is the field where inventing
+ * one does the most damage.
+ *
+ * Case and surrounding whitespace are normalised, because a model rewriting
+ * "covaxil" as "Covaxil" is reporting the reporter's own word back. Nothing
+ * else is: the value must appear in what the person wrote.
+ */
+function groundedIn(value: string | null, sourceText: string): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  const haystack = sourceText.toLowerCase().replace(/\s+/g, " ");
+  return haystack.includes(trimmed.toLowerCase().replace(/\s+/g, " "))
+    ? trimmed
+    : null;
+}
+
 export function verifyExtraction(input: VerifyExtractionInput): ExtractResult {
   const { raw, sourceText, model, gatewayRequestId, now } = input;
 
@@ -178,8 +210,10 @@ export function verifyExtraction(input: VerifyExtractionInput): ExtractResult {
   }
 
   const candidate = {
-    suspectDrug: raw.suspectDrug?.trim() || null,
-    reaction: raw.reaction?.trim() || null,
+    // Both are checked against the reporter's own words. A drug or a reaction
+    // the person never wrote is a fabrication, however plausible it reads.
+    suspectDrug: groundedIn(raw.suspectDrug ?? null, sourceText),
+    reaction: groundedIn(raw.reaction ?? null, sourceText),
     dose: raw.dose?.trim() || null,
     route: oneOf(ROUTES, raw.route),
     patientAgeYears: boundedAge(raw.patientAgeYears),

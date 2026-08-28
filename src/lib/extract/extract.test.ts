@@ -436,3 +436,63 @@ describe("who gets the credit when both the reporter and the model said it", () 
     expect(record.reactions[0]?.seriousness.hospitalisation?.assertedBy).toBe("model");
   });
 });
+
+
+describe("a drug the reporter never wrote is a fabrication", () => {
+  /*
+    This filed a real report against the wrong medicine. The reporter wrote
+    "after i had my coronovirus injection i feel dizzy"; the extraction
+    prompt lists the products this library holds, and the model answered
+    "Covaxil" — a demo product the reporter never mentioned. `suspectDrug` was
+    the one model-written field with no grounding check, and it is the field
+    that decides which product the entire case is about.
+  */
+  const verify = (over: Partial<RawExtraction>, sourceText: string) =>
+    verifyExtraction({
+      raw: { ...(JSON.parse(GOOD) as RawExtraction), seriousness: [], ...over },
+      sourceText,
+      model: "test-model",
+      gatewayRequestId: null,
+      now: "2026-08-28T00:00:00.000Z",
+    });
+
+  it("drops a suspect drug that does not appear in the reporter's words", () => {
+    const out = verify(
+      { suspectDrug: "Covaxil", reaction: null },
+      "after i had my coronovirus injection i feel dizzy",
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.extraction.suspectDrug).toBeNull();
+  });
+
+  it("keeps a drug the reporter did write, whatever the casing", () => {
+    const out = verify(
+      { suspectDrug: "Moderna", reaction: null },
+      "i had the moderna injection and felt dizzy",
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.extraction.suspectDrug).toBe("Moderna");
+  });
+
+  it("drops a reaction the reporter never described", () => {
+    const out = verify(
+      { suspectDrug: null, reaction: "anaphylaxis" },
+      "i felt a bit dizzy afterwards",
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.extraction.reaction).toBeNull();
+  });
+
+  it("keeps a reaction the reporter did describe", () => {
+    const out = verify(
+      { suspectDrug: null, reaction: "dizzy" },
+      "i felt a bit dizzy afterwards",
+    );
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.extraction.reaction).toBe("dizzy");
+  });
+});

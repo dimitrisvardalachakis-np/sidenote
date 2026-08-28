@@ -81,11 +81,10 @@ export function ChatPanel() {
   // rejected empty submit.
   useEffect(() => {
     formRef.current?.reset();
-    endRef.current?.scrollIntoView({ block: "end" });
+    endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [count]);
 
   const outstanding = remainingSlots(state.intake.slots);
-  const done = state.intake.phase === "complete";
 
   return (
     <div>
@@ -94,8 +93,6 @@ export function ChatPanel() {
           <Message key={`${index}-${message.role}`} message={message} />
         ))}
       </ul>
-      <div ref={endRef} />
-
       {state.error !== null && (
         <p className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2 text-base">
           {state.error}
@@ -131,30 +128,60 @@ export function ChatPanel() {
           <label htmlFor="message" className="text-base font-medium">
             Your reply
           </label>
-          <textarea
-            id="message"
-            name="message"
-            rows={3}
-            autoComplete="off"
-            placeholder="Type here…"
-            className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1.5 text-prose focus:outline-2 focus:outline-offset-1 focus:outline-steady"
-          />
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+          {/*
+            The button sits beside the box, not beneath it.
+
+            Underneath, every answer meant looking down the page for Send —
+            eight times over. Next to the field it is where the eye already is
+            when the typing stops. It wraps below on a narrow screen, which is
+            the one case where stacking is the better arrangement.
+          */}
+          <div className="mt-1 flex flex-wrap items-start gap-2">
+            <textarea
+              id="message"
+              name="message"
+              rows={2}
+              autoComplete="off"
+              placeholder="Type here…"
+              className="min-w-0 flex-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-prose focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+            />
             <button
               type="submit"
-              disabled={pending || done}
+              /*
+                NOT disabled on `done`.
+
+                When the conversation finished but the save failed, `done` was
+                true and `submitted` was null — so this form rendered with the
+                button permanently disabled, directly beneath a message telling
+                the reporter to press send again. They could not. The one
+                moment a retry is needed was the one moment the control was
+                dead.
+              */
+              disabled={pending}
               className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-wait disabled:opacity-60"
             >
               {pending ? "Sending…" : "Send"}
             </button>
-            {outstanding.length > 0 && (
-              <p className="text-meta text-slate">
-                Still needed: {outstanding.map((s) => SLOT_LABELS[s] ?? s).join(", ")}
-              </p>
-            )}
           </div>
+          {outstanding.length > 0 && (
+            <p className="mt-2 text-meta text-slate">
+              Still needed: {outstanding.map((s) => SLOT_LABELS[s] ?? s).join(", ")}
+            </p>
+          )}
         </form>
       )}
+
+      {/*
+        The scroll target sits AFTER the form, not after the message list.
+
+        It used to sit between them, so each new question scrolled the last
+        message into view and left the reply box below the fold — on a phone
+        the reporter had to scroll down to answer, every single turn. Scrolling
+        to the end of everything puts the new question and the box to answer it
+        on screen together, which is the only arrangement that lets someone
+        work through eight questions without fighting the page.
+      */}
+      <div ref={endRef} />
     </div>
   );
 }

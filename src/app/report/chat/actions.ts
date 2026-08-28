@@ -179,12 +179,26 @@ export async function sendChatMessage(
       submitted: { reference, caseId: record.id },
       error: null,
     };
-  } catch {
+  } catch (cause) {
+    /*
+      Record WHY, not just that.
+
+      This was a bare `catch {}` writing `outcome: "failure"` with no detail,
+      so a reporter saw "we could not save your report" and the operator saw a
+      failure line with nothing on it. Every other failure path in this
+      codebase names its reason; this one — the single most consequential
+      failure the app has, a safety report not being written — named nothing,
+      and diagnosing it meant reproducing it.
+    */
     audit({
       actor: "public",
       action: "submit_report_chat",
       target: "intake_chat",
       outcome: "failure",
+      detail: {
+        reason:
+          cause instanceof Error ? cause.message : "unknown failure while saving",
+      },
     });
     // The conversation is preserved so nothing the reporter typed is lost.
     return {
