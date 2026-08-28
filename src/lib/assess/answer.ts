@@ -111,9 +111,33 @@ export async function answerPublicQuestion(
   question: string,
   corpus: readonly DocumentChunk[],
   deps?: AnswerDeps,
+  /**
+   * The documents this question may be answered from. Null searches every
+   * public label, which is only correct when no medicine was named.
+   *
+   * WHY THIS EXISTS. Retrieval used to run across every public document, which
+   * was harmless while the corpus was two synthetic labels and a visitor was
+   * browsing. Once a reporter names a medicine and its real FDA label is
+   * fetched, it stops being harmless: a live search for "my muscles ached all
+   * over" with atorvastatin named returned a passage from the *Covaxil*
+   * fixture — another product's label, offered as the answer about theirs.
+   * That is the Covaxil/Hepalex incident again, on the one surface where the
+   * reader is a member of the public with no expertise to catch it.
+   *
+   * So scope is a filter applied before the search, exactly as `assessCase`
+   * applies it: a wrong-product citation is not a worse hit, it is a different
+   * document.
+   */
+  scope?: ReadonlySet<DocumentId> | null,
 ): Promise<PublicAnswer> {
   const query = question.trim();
   if (query.length < 2) return { citations: [], reading: null, hits: [] };
+
+  const searchable =
+    scope == null
+      ? corpus
+      : corpus.filter((chunk) => scope.has(chunk.documentId));
+  if (searchable.length === 0) return { citations: [], reading: null, hits: [] };
 
   /*
     Resolved before retrieval now, not after it.
@@ -129,7 +153,7 @@ export async function answerPublicQuestion(
   const resolved = deps ?? (await resolveFromEnv());
   const { ai, dense } = resolved;
 
-  const lexical = lexicalSearch(corpus, query, {
+  const lexical = lexicalSearch(searchable, query, {
     sourceType: "public",
     limit: ANSWER_LIMIT,
     minScore: MATCHED_ANY_TERM,
@@ -145,10 +169,10 @@ export async function answerPublicQuestion(
         }
       : await denseSearch({
           dense,
-          chunks: corpus,
+          chunks: searchable,
           query,
           sourceType: "public",
-          documentIds: publicDocumentIds(corpus),
+          documentIds: publicDocumentIds(searchable),
           // The same depth as the lexical ranking, deliberately: RRF weights
           // by rank, so a deeper ranking would get more chances to contribute
           // and quietly outweigh the shallower one for no reason anybody chose.

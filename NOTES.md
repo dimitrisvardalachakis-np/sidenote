@@ -404,6 +404,86 @@ problem on that path.
 
 ---
 
+## The stub agreed with the schema, and both were wrong
+
+The public half of the corpus was two products I invented. The library screen
+said "FDA labels, fetched from openFDA" the whole time — a claim about
+provenance that nothing in the code supported, and the same shape of fiction as
+a fixture marked `suggestedBy: "model"` for a model that had never run. Wiring
+openFDA up was meant to make that sentence true. It did, and it also found two
+defects that had nothing to do with FDA.
+
+### The one that matters: generation had never worked
+
+Fetching a real label and watching a real inference run over it returned
+`unavailable`, twice, with the rejection *"the runtime returned no text
+response"*. The system degraded exactly as designed, about a failure that was
+entirely its own.
+
+`AiTextResponse` was `z.object({ response: z.string() })`. Workers AI answers
+`@cf/meta/llama-3.1-8b-instruct` in the OpenAI-compatible shape:
+
+```json
+{ "result": { "choices": [ { "message": { "content": "…" } } ] } }
+```
+
+So the schema could not read one word from the real service. Every test passed,
+`npm run evals` passed, the whole chain "worked" — because
+`scripts/stub-model.mjs` emitted `{ response }`, the one shape the schema
+accepted. **The fake was easier to satisfy than the real thing, so it hid the
+difference it existed to expose.** Nothing that ran offline could have caught
+it; it took a real fetch, a real embedding and a real inference in the same
+request.
+
+The schema now accepts both — the native `env.AI` binding does still answer the
+old way, and reading only the most recently observed shape is precisely how
+this happened. The stub emits the OpenAI shape now, for the same reason.
+
+Both drugs read correctly afterwards, against the real model and a real label:
+"my muscles ached all over" against atorvastatin quoted `myalgia (0.7%),`, and
+"I bruised badly" against warfarin quoted the sentence about fatal and nonfatal
+haemorrhage. First time the system has produced a verified citation from a
+document it did not ship with.
+
+### The one the feature caused: a wrong-product answer to a member of the public
+
+`answerPublicQuestion` searched every public document, which was harmless while
+the corpus was two fixtures and a visitor was browsing. The first live search —
+"my muscles ached all over", medicine named as atorvastatin, real label already
+fetched — answered with a passage from the **Covaxil** fixture. Another
+product's label, offered to a member of the public as the answer about theirs.
+
+That is the Covaxil/Hepalex incident again, on the one surface where the reader
+has no expertise to catch it, and the fix is the one `scope.ts` already made on
+the reviewer path: filter before the search, because a wrong-product citation
+is not a worse hit, it is a different document. The scope is null only when no
+medicine was named.
+
+### Three things real labels broke that fixtures never would
+
+openFDA returns each section as one run-on line with the newlines stripped, and
+the chunker reads headings line by line. Handed `"6 ADVERSE REACTIONS The
+following important…"` it classified eight thousand characters as one heading
+and emitted no body — the entire adverse-reactions section would have vanished
+with nothing reporting a failure.
+
+Inserting a newline before each section marker fixed that and created a
+subtler bug: the incidence tables are flattened into the same run of text, so
+`"6.8 Pain in extremity 5.9 8.5 3.7 9.3 3.1"` looks exactly like a subsection.
+It became the section path printed under a citation. What separates a real
+heading from a table row is what follows the number — alphabetic words then a
+sentence, versus alphabetic words then a figure — so the title may contain no
+digits and a capital must follow it. Across seven real labels: 155 chunks, no
+bad section paths, no missing sections.
+
+And `lisinopril` — an ordinary drug — failed outright, because hundreds of
+repackager labels match the name and the first one carried no SPL set id. Now
+five are requested and the first usable one is taken.
+
+**The through-line**: every one of these was invisible against fixtures I wrote
+myself. Fixtures agree with you. Real data does not, and that is the whole of
+its value.
+
 ## The injection test (Cluster F security story)
 
 The company library holds documents reviewers upload. A PDF can contain any

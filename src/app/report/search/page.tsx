@@ -1,5 +1,10 @@
 import Link from "next/link";
 import { answerPublicQuestion } from "@/lib/assess/answer";
+import { resolveAiBinding } from "@/lib/assess/ai";
+import { aiEnv } from "@/lib/assess/env";
+import { documentsForDrug } from "@/lib/assess/scope";
+import { ensurePublicLabel } from "@/lib/labels/acquire";
+import { resolveDenseFor } from "@/lib/retrieval/resolve";
 import { loadCorpus } from "@/lib/store/corpus";
 
 /**
@@ -18,14 +23,58 @@ export default async function SearchPage({
   const params = await searchParams;
   const raw = params["q"];
   const query = typeof raw === "string" ? raw.trim() : "";
+  const rawDrug = params["drug"];
+  const drug = typeof rawDrug === "string" ? rawDrug.trim() : "";
 
+  /*
+    The medicine is its own field, and that is a design decision rather than a
+    form-layout preference.
+
+    It used to be one box — "rash on both hands, Covaxil" — which was fine when
+    the corpus was two invented products baked into the build. Now the medicine
+    name decides which real FDA label gets fetched from openFDA, and guessing
+    which word of a free-text sentence is a drug is the kind of extraction that
+    fails quietly and fetches the wrong label. Asking is more honest than
+    inferring, and it costs the reporter one field.
+  */
+  let acquisition = null;
+  if (drug.length > 2) {
+    const env = await aiEnv();
+    const held = (await loadCorpus()).documents;
+    acquisition = await ensurePublicLabel({
+      drugName: drug,
+      held,
+      dense: resolveDenseFor(env, resolveAiBinding(env)),
+      actor: "public",
+    });
+  }
+
+  // Loaded AFTER the fetch, so a label acquired a moment ago is searchable on
+  // this same request rather than only on the next one.
   const { chunks, documents } = await loadCorpus();
 
   // Ask, retrieve, read. The answer and the passages it was read from arrive
   // together, so a claim can never render without the passage behind it.
+  /*
+    Scope the answer to the medicine the reporter named.
+
+    Null only when they named none, in which case every public label is fair
+    game because no product has been claimed. The moment a medicine IS named,
+    answering from a different product's label would be the same wrong-product
+    citation `scope.ts` exists to prevent — and here the reader is a member of
+    the public, with no expertise to notice.
+  */
+  const scope =
+    drug.length > 2
+      ? documentsForDrug(documents, {
+          reportedName: drug,
+          activeSubstance: null,
+        })
+      : null;
+
   const answer =
     query.length > 1
-      ? await answerPublicQuestion(query, chunks)
+      ? await answerPublicQuestion(query, chunks, undefined, scope)
       : { citations: [], reading: null, hits: [] };
   const hits = answer.citations;
 
@@ -47,8 +96,20 @@ export default async function SearchPage({
       </p>
 
       <form method="get" className="mt-5">
-        <label htmlFor="q" className="text-base font-medium">
-          What happened, and to which medicine?
+        <label htmlFor="drug" className="text-base font-medium">
+          Which medicine?
+        </label>
+        <input
+          id="drug"
+          name="drug"
+          type="search"
+          defaultValue={drug}
+          placeholder="atorvastatin"
+          className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+        />
+
+        <label htmlFor="q" className="mt-4 block text-base font-medium">
+          What happened?
         </label>
         <div className="mt-1 flex gap-2">
           <input
@@ -56,7 +117,7 @@ export default async function SearchPage({
             name="q"
             type="search"
             defaultValue={query}
-            placeholder="rash on both hands, Covaxil"
+            placeholder="my muscles ached all over"
             className="min-w-0 flex-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
           />
           <button
@@ -67,9 +128,20 @@ export default async function SearchPage({
           </button>
         </div>
         <p className="mt-1 text-meta text-slate">
-          Only publicly available labels are searched.
+          Only publicly available labels are searched. Naming the medicine lets
+          us fetch its FDA label if we do not already hold it.
         </p>
       </form>
+
+      {acquisition !== null && acquisition.status !== "held" && (
+        <p className="mt-3 border-l-2 border-rule pl-3 text-meta text-slate">
+          {acquisition.status === "acquired"
+            ? `Fetched ${acquisition.title} from openFDA — ${acquisition.chunks} passages${acquisition.embedded ? ", indexed for semantic search" : ", keyword search only"}.`
+            : acquisition.status === "not_found"
+              ? `${acquisition.reason}. Searching the labels already held.`
+              : `The FDA label service could not be reached, so only labels already held were searched.`}
+        </p>
+      )}
 
       {query.length > 1 && (
         <section aria-label="Results" className="mt-6">

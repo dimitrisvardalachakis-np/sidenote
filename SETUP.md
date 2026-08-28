@@ -290,8 +290,15 @@ access generation does.
 
 Being clear about the ceiling, because there is still a real one.
 
-**The intake chat is lexical-only, and that is now a refusal rather than a
-gap.** It still relies on literal overlap plus the 24-entry synonym table, so
+**FDA labels need no setup at all.** openFDA is open — no key, no account.
+Name a medicine on `/report/search`, in the intake chat, or on a case, and its
+real FDA label is fetched, chunked, embedded and cited. The library mirror is
+the cache, so each label is fetched once. `OPENFDA_API_KEY` is not read by
+anything; a key would only raise the rate limit, and the cache is what keeps
+this inside the unauthenticated one.
+
+**The intake chat's retrieval is lexical-only, and that is now a refusal
+rather than a gap.** It still relies on literal overlap plus the 24-entry synonym table, so
 measured against the seeded corpus all three of these return nothing:
 
 - "my face puffed up" → *angioedema* — **missed**. The table has a `swelling`

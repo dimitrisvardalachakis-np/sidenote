@@ -12,6 +12,8 @@ import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { guardPublicConversation } from "@/lib/protection/guard";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
+import { ensurePublicLabel } from "@/lib/labels/acquire";
+import { resolveDenseFor } from "@/lib/retrieval/resolve";
 import { aiEnv } from "@/lib/assess/env";
 import { extractReport } from "@/lib/extract/extract";
 import type { ChatState } from "./chat-state";
@@ -51,7 +53,34 @@ export async function sendChatMessage(
     return { ...previous, error: guard.message };
   }
 
-  const { chunks, documents, products } = await loadCorpus();
+  let { chunks, documents, products } = await loadCorpus();
+
+  /*
+    Fetch the reporter's medicine from openFDA the moment they name it.
+
+    Without this the chat could only answer for the products baked into the
+    fixtures, so a reporter naming any real medicine was told their reaction is
+    not in the published information — an assertion about a label nobody held.
+    That is the false-negative half of the same two-state collapse NOTES.md
+    records for this path, and fetching the label is what removes it.
+
+    It never blocks the conversation: a failure leaves the corpus untouched and
+    the reply is exactly what it would have been before.
+  */
+  const namedDrug =
+    previous.intake.slots.drug ?? intakeDrug(reply, products) ?? null;
+  if (namedDrug !== null) {
+    const env = await aiEnv();
+    const fetched = await ensurePublicLabel({
+      drugName: namedDrug,
+      held: documents,
+      dense: resolveDenseFor(env, resolveAiBinding(env)),
+      actor: "public",
+    });
+    if (fetched.status === "acquired") {
+      ({ chunks, documents, products } = await loadCorpus());
+    }
+  }
 
   /*
     Extraction runs only on the reporter's opening account. That is the text

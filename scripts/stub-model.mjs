@@ -168,7 +168,21 @@ createServer((req, res) => {
         const data = texts.map(embed);
         result = { shape: [data.length, EMBED_DIMENSIONS], data };
       } else {
-        result = { response: reply(parsed.messages ?? []) };
+        /*
+          The OpenAI-compatible shape, because that is what Workers AI really
+          returns for @cf/meta/llama-3.1-8b-instruct:
+
+            { result: { choices: [ { message: { content } } ] } }
+
+          This stub used to emit the older { response } shape, and the schema
+          in ai.ts accepted only that — so every test, every eval and every
+          local run passed while the code could not read one word from the
+          actual service. A stub easier to satisfy than the thing it stands in
+          for hides precisely the bug it exists to catch.
+        */
+        result = {
+          choices: [{ message: { content: reply(parsed.messages ?? []) } }],
+        };
       }
     } catch {
       res.writeHead(400, { "content-type": "application/json" });

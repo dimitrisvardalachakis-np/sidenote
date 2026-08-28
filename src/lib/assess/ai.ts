@@ -209,7 +209,45 @@ export interface AiBinding {
 }
 
 /** Workers AI text-generation returns `{ response }`. Verified, not asserted. */
-export const AiTextResponse = z.object({ response: z.string() });
+/**
+ * A model's reply, in either shape Workers AI returns.
+ *
+ * THIS WAS A REAL BUG, and an invisible one. The schema accepted only
+ * `{ response }`, which is the shape `scripts/stub-model.mjs` emits — so every
+ * test, every eval and every local run passed while the code could not read a
+ * single word from the actual service. Workers AI answers
+ * `@cf/meta/llama-3.1-8b-instruct` in the OpenAI-compatible shape:
+ *
+ *   { "result": { "choices": [ { "message": { "content": "…" } } ] } }
+ *
+ * Against the real model every reading came back `unavailable` with the
+ * rejection "the runtime returned no text response" — the system degrading
+ * honestly, exactly as designed, about a failure that was entirely its own.
+ * It took fetching a real FDA label and watching a real inference fail to
+ * find it, because the stub had been agreeing with the schema all along.
+ *
+ * The lesson is the one this project keeps relearning: a fake that is easier
+ * to satisfy than the real thing is a fake that hides the difference. The stub
+ * now emits the OpenAI shape for that reason.
+ *
+ * Both are accepted rather than the new one alone. The native `env.AI` binding
+ * and some models still return `{ response }`, and a client that reads only
+ * the shape it saw most recently is how this happened in the first place.
+ */
+const LegacyTextResponse = z.object({ response: z.string() });
+
+const ChatTextResponse = z
+  .object({
+    choices: z
+      .array(z.object({ message: z.object({ content: z.string() }) }))
+      .min(1),
+  })
+  .transform((value) => {
+    const first = value.choices[0];
+    return { response: first === undefined ? "" : first.message.content };
+  });
+
+export const AiTextResponse = z.union([LegacyTextResponse, ChatTextResponse]);
 
 /**
  * How the app gets a model.

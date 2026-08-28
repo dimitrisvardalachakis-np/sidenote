@@ -45,7 +45,7 @@ export default async function LibraryPage() {
         />
         <DocumentColumn
           heading="Public labels"
-          note="FDA labels, fetched from openFDA."
+          note="Fetched from openFDA when a medicine is named. Covaxil and Hepalex are demo fixtures."
           documents={publicDocs}
         />
       </div>

@@ -187,6 +187,59 @@ describe("the confidentiality boundary", () => {
   });
 });
 
+describe("scope: another product's label is never the answer", () => {
+  /*
+    Found live, not imagined. A reporter searched "my muscles ached all over"
+    having named atorvastatin; the real FDA label had just been fetched, and
+    the answer came back citing the *Covaxil* fixture — a different product's
+    label offered as the answer about theirs.
+
+    Retrieval across every public document was harmless while the corpus was
+    two synthetic labels. It stopped being harmless the moment real labels
+    started arriving, and this surface has no expert reading it.
+  */
+  const OTHER_DOC = DocumentId.parse("0000000f-0000-4000-8000-00000000000c");
+  const OTHER = chunk(0, "Myalgia was reported in 37% of subjects.", OTHER_DOC);
+
+  it("cites only the named medicine, even when another label matches better", async () => {
+    const { binding } = quotingBinding();
+    const answer = await answerPublicQuestion(
+      "muscle aches",
+      [...CORPUS, OTHER],
+      deps(binding, fakeDense([matchOf(OTHER.id, 0.99, OTHER_DOC)])),
+      // Scoped to PUBLIC_DOC only.
+      new Set([PUBLIC_DOC]),
+    );
+    expect(answer.citations.map((c) => c.chunkId)).not.toContain(OTHER.id);
+    expect(answer.hits.every((h) => h.documentId === PUBLIC_DOC)).toBe(true);
+  });
+
+  it("answers nothing rather than reaching outside the scope", async () => {
+    const { binding } = quotingBinding();
+    const answer = await answerPublicQuestion(
+      "muscle aches",
+      [...CORPUS, OTHER],
+      deps(binding, fakeDense([matchOf(OTHER.id, 0.99, OTHER_DOC)])),
+      // A medicine we hold nothing for.
+      new Set([DocumentId.parse("0000000f-0000-4000-8000-00000000000d")]),
+    );
+    expect(answer.citations).toHaveLength(0);
+    expect(answer.reading).toBeNull();
+  });
+
+  it("searches every public label when no medicine was named", async () => {
+    // Null scope is the browse case, and must stay permissive.
+    const { binding } = quotingBinding();
+    const answer = await answerPublicQuestion(
+      "injection site pain",
+      CORPUS,
+      deps(binding, null),
+      null,
+    );
+    expect(answer.citations.length).toBeGreaterThan(0);
+  });
+});
+
 describe("the dense half earns its place", () => {
   it("rescues a question the lexical half cannot answer", async () => {
     // "muscle aches" shares no token with "Myalgia was reported…" — this is a

@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { createHttpAiBinding, endpointFor, HTTP_TIMEOUT_MS } from "./http-binding";
-import { resolveAiBinding, resolveGateway } from "./ai";
+import { AiTextResponse, resolveAiBinding, resolveGateway } from "./ai";
 
 const CONFIG = {
   accountId: "acct-1",
@@ -205,5 +205,42 @@ describe("choosing a model", () => {
 
   it("reads the gateway id from the same environment", () => {
     expect(resolveGateway({ SIDENOTE_AI_GATEWAY_ID: "sidenote" })?.id).toBe("sidenote");
+  });
+});
+
+
+describe("both reply shapes Workers AI returns", () => {
+  /*
+    THE REGRESSION THIS GUARDS. The schema accepted only `{ response }` — the
+    shape the stub emitted — while Workers AI answers
+    @cf/meta/llama-3.1-8b-instruct in the OpenAI-compatible shape. Every test
+    passed; every real inference came back "the runtime returned no text
+    response" and every reading degraded to `unavailable`. The system reported
+    the failure honestly and the failure was its own.
+
+    Found only by fetching a real FDA label and watching a real call fail,
+    because the fake had been agreeing with the schema the whole time.
+  */
+  it("reads the OpenAI-compatible shape the REST API returns", () => {
+    const parsed = AiTextResponse.safeParse({
+      choices: [{ message: { content: '{"found":false}' } }],
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.response).toBe('{"found":false}');
+  });
+
+  it("still reads the legacy shape the native binding returns", () => {
+    // Kept, not replaced: env.AI and some models still answer this way, and
+    // reading only the most recently observed shape is how this happened.
+    const parsed = AiTextResponse.safeParse({ response: "hello" });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.response).toBe("hello");
+  });
+
+  it("rejects a reply carrying neither", () => {
+    expect(AiTextResponse.safeParse({ choices: [] }).success).toBe(false);
+    expect(AiTextResponse.safeParse({ text: "nope" }).success).toBe(false);
   });
 });

@@ -7,6 +7,7 @@ import { requireSession } from "@/lib/auth";
 import { assessCase } from "@/lib/assess/assess";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
 import { resolveDenseFor } from "@/lib/retrieval/resolve";
+import { ensurePublicLabel } from "@/lib/labels/acquire";
 import { aiEnv } from "@/lib/assess/env";
 import { documentsForDrug } from "@/lib/assess/scope";
 import { findQueueEntry } from "@/lib/queue/entries";
@@ -52,19 +53,57 @@ export async function runAssessment(caseId: string): Promise<void> {
     return;
   }
 
-  const { chunks, documents } = await loadCorpus();
   const env = await aiEnv();
   const ai = resolveAiBinding(env);
   const dense = resolveDenseFor(env, ai);
 
+  /*
+    Fetch the public FDA label for this drug before assessing, if we do not
+    already hold one.
+
+    Expectedness is a question about the public label, and until now it could
+    only be answered for the two products baked into the fixtures — every real
+    drug returned `source_unavailable`, which is honest but useless. This is
+    what makes the company-versus-public comparison possible for a real
+    medicine. It never blocks: a failure leaves the corpus as it was and the
+    finding degrades exactly as it did before.
+  */
+  const beforeFetch = await loadCorpus();
+  const label = await ensurePublicLabel({
+    drugName: drug.activeSubstance ?? drug.reportedName,
+    held: beforeFetch.documents,
+    dense,
+    actor: session.reviewerId,
+  });
+
+  // Reloaded after the fetch so a label acquired just now is in scope for this
+  // assessment rather than only the next one.
+  const { chunks, documents } =
+    label.status === "acquired" ? await loadCorpus() : beforeFetch;
+
+  const inScope = documentsForDrug(documents, drug);
+
+  /*
+    The SPL set id of the public label this assessment actually read.
+
+    It was hardcoded null, because there was no real label to identify. Now the
+    document id IS the SPL set id, so the expectedness finding can carry the
+    exact FDA record it came from — which is what the evidence panel prints
+    under the quote and what lets anyone verify the citation against
+    openFDA independently.
+  */
+  const publicDoc = documents.find(
+    (d) => d.sourceType === "public" && inScope.has(d.id),
+  );
+
   const findings = await assessCase({
     chunks,
-    documentIds: documentsForDrug(documents, drug),
+    documentIds: inScope,
     reactionTerm: reaction.verbatimTerm,
     drugName: drug.reportedName,
     documentKind:
       drug.marketingStatus === "marketed" ? "ccds" : "investigators_brochure",
-    labelSetId: null,
+    labelSetId: publicDoc?.id ?? null,
     ai,
     dense,
     gateway: resolveGateway(env),
@@ -110,6 +149,8 @@ export async function runAssessment(caseId: string): Promise<void> {
       // the per-namespace detail; this is the one line that says whether the
       // dense half was available for this run at all.
       retrieval: dense.store === null ? "lexical" : `hybrid:${dense.source}`,
+      // Where the public half of the evidence came from.
+      publicLabel: label.status,
       listedness: findings.listedness.state,
       expectedness: findings.expectedness.state,
     },

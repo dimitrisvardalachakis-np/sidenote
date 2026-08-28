@@ -191,7 +191,9 @@ search works with nothing but the credentials generation already needs, and
 Cloudflare Vectorize when `SIDENOTE_VECTORIZE_INDEX` is set. Every match is
 hydrated from the library mirror and any match the mirror does not confirm is
 dropped — the store contributes an id and a rank, never text, never a citation,
-never scope. The public search answer (`lib/assess/answer.ts`) is hybrid too.
+never scope. The public search answer (`lib/assess/answer.ts`) is hybrid too,
+and scoped to the medicine the reporter names — unscoped, it answered an
+atorvastatin question from the Covaxil fixture.
 **The intake chat is not, and deliberately so** — it is the one surface that
 asserts what a document says with no model reading the passage, so a better
 retriever there would only make it more confident. That is a shape problem to
@@ -210,6 +212,16 @@ cannot become this case's evidence.
 **What the model earned.** `basis: "narrative"` seriousness flags with a
 verbatim span — a shape that existed since the schemas were written and that
 nothing at runtime could produce, because a regex has no phrase to point at.
+
+**Public labels are real.** `lib/labels/` fetches an FDA label from openFDA the
+moment a medicine is named — on the public search, in the intake chat, and
+before a reviewer's assessment — then chunks, embeds, mirrors and cites it
+through the identical pipeline an upload uses. No API key: openFDA is open, and
+a key only raises the rate limit. The library mirror is the cache, so a label
+is fetched once. `spl_set_id` is used directly as the document id, so a
+citation traces to a public FDA record anyone can check. The two seeded
+products stay as fixtures, because the divergence they demonstrate — company
+document and public label disagreeing — is the case the demo exists to show.
 
 **Wired, and it runs.** `assessCase` is called by a server action behind the
 "Assess this case" control on the case screen, and the result is stored and
