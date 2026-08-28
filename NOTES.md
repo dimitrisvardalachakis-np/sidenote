@@ -593,8 +593,14 @@ partially-merged record that neither path is responsible for.
   should not get the better retriever" below. `IntakeVerdict` needs a third
   state and the assertion needs a model behind it before a better ranking is an
   improvement rather than a louder guess.
-- **The cosine floor is a guess.** `DENSE_MIN_COSINE = 0.55` comes from the
-  model's typical distribution, not from a measurement on this corpus. Earning
-  a real number needs a labelled query-to-chunk set, which does not exist.
-  Unlike the BM25 floor it will not drift with corpus size, but it *will* drift
-  with the model, and the constant says so.
+- **The cosine floor is doing less work than hoped, now measured.** Against the
+  real model on the seeded corpus: a true positive ("my muscles ached all over"
+  → the *myalgia* chunk) scores **0.604**, and an unrelated passage ("heart was
+  racing" → a hypersensitivity paragraph, when tachycardia is nowhere in the
+  corpus) scores **0.570**. `DENSE_MIN_COSINE` is 0.55, so both clear it, and
+  the gap is too small for any threshold to separate cleanly. Five queries is
+  not a basis for retuning a constant — fitting one to two data points is the
+  mistake the BM25 floor already taught — so the number stays and this is
+  written down instead. The consequence matters more than the number: **the
+  model gate, not the floor, is what protects quality**, which is precisely why
+  the dense half went into `answer.ts` and not the intake chat.
