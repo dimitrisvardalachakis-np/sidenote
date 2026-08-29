@@ -341,6 +341,13 @@ const ORDER: readonly IntakeSlot[] = [
   "reporterContact",
 ];
 
+/**
+ * How many questions the intake asks: the opening narrative, plus one per slot
+ * in ORDER. Derived rather than typed, so a slot added above cannot leave the
+ * progress readout quietly counting to the wrong number.
+ */
+export const INTAKE_QUESTION_COUNT = ORDER.length + 1;
+
 const QUESTIONS: Readonly<Record<IntakeSlot, string>> = {
   narrative: OPENING,
   drug:

@@ -39,6 +39,24 @@ function score(question, passage) {
   return hits;
 }
 
+/**
+ * The sentence that actually mentions what was asked, copied exactly.
+ *
+ * Split on ". " rather than "." so a section number like "6.1" or a figure
+ * like "2.1%" does not end a sentence — the same trap `isSingleSentence` has
+ * downstream.
+ */
+function bestSentence(question, text) {
+  const sentences = text
+    .split(/(?<=\.)\s+(?=[A-Z])/)
+    .filter((x) => x.trim().length > 0);
+  return (
+    sentences.find((sentence) => score(question, sentence) > 0)?.trim() ??
+    sentences[0]?.trim() ??
+    text.slice(0, 160)
+  );
+}
+
 function reply(messages) {
   const user = messages.find((m) => m.role === "user")?.content ?? "";
   const system = messages.find((m) => m.role === "system")?.content ?? "";
@@ -74,11 +92,43 @@ function reply(messages) {
   }
 
   const found = passages(user);
+  const question = /^REACTION: (.*)$/m.exec(user)?.[1] ?? "";
+
+  /*
+    The narrative contract asks for "points"; the reading contract does not.
+
+    Answering with the reading shape here would make every local narrative run
+    take the `wrong_shape` branch, so the stub would be exercising the
+    rejection path while looking like it exercised the happy one — the exact
+    failure this file's header warns about. So it speaks both contracts, and it
+    speaks the narrative one the same faithful way: real sentences copied out
+    of real passages, character for character, so the verbatim gate downstream
+    is genuinely satisfied rather than bypassed.
+  */
+  if (system.includes('"points"')) {
+    const ranked = [...found]
+      .filter((p) => score(question, p.text) > 0)
+      .sort((a, b) => score(question, b.text) - score(question, a.text))
+      .slice(0, 2);
+    return JSON.stringify({
+      points: ranked.map((passage) => ({
+        chunkId: passage.id,
+        quotedSpan: bestSentence(question, passage.text),
+        /*
+          Deliberately dull, and it has to be. The sentence gate rejects a
+          recommendation or a determination, and the faithfulness eval flags
+          content words the passage does not contain — so a stub that wrote
+          anything colourful here would fail its own build.
+        */
+        sentence: "The passage describes what was asked about.",
+      })),
+    });
+  }
+
   if (found.length === 0) {
     return JSON.stringify({ found: false, chunkId: null, quotedSpan: null, rationale: null });
   }
 
-  const question = /^REACTION: (.*)$/m.exec(user)?.[1] ?? "";
   const ranked = [...found].sort((a, b) => score(question, b.text) - score(question, a.text));
   const best = ranked[0];
 
@@ -92,11 +142,7 @@ function reply(messages) {
     or a figure like "2.1%" does not end a sentence — the same trap
     isSingleSentence has downstream.
   */
-  const sentences = best.text.split(/(?<=\.)\s+(?=[A-Z])/).filter((x) => x.trim().length > 0);
-  const span =
-    sentences.find((sentence) => score(question, sentence) > 0)?.trim() ??
-    sentences[0]?.trim() ??
-    best.text.slice(0, 160);
+  const span = bestSentence(question, best.text);
   return JSON.stringify({
     found: true,
     chunkId: best.id,

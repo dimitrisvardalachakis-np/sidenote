@@ -31,6 +31,7 @@ import {
   ReactionId,
   ReviewerId,
 } from "./primitives";
+import { GroundedNarrative } from "./narrative";
 import { ModelReading } from "./reading";
 
 /** Is the reaction described in the company's core safety document? */
@@ -109,6 +110,44 @@ const CITED_CHUNK_RULE = {
 };
 
 /**
+ * The same lock, for the narrative's points.
+ *
+ * A second rule rather than a generalisation of the first. `readingCitesRetrievedChunk`
+ * describes itself as "the second of two locks on the same door", and its
+ * `path: ["reading", "chunkId"]` is what makes a violation legible in the
+ * error. One combined predicate would report two structurally different
+ * failures with one message, so the message could no longer say which. Eight
+ * lines is a cheap price for leaving the existing lock exactly as strict as it
+ * was, with exactly the message its tests assert on.
+ */
+function narrativeCitesRetrievedChunks(finding: {
+  readonly citations: readonly { readonly chunkId: string }[];
+  readonly narrative: GroundedNarrative | null;
+}): boolean {
+  const { narrative } = finding;
+  if (narrative === null || narrative.status !== "narrated") return true;
+  const retrieved = new Set(finding.citations.map((c) => c.chunkId));
+  return narrative.points.every((point) => retrieved.has(point.chunkId));
+}
+
+const NARRATIVE_CHUNK_RULE = {
+  message: "Every narrative point must cite one of the passages retrieved with it",
+  path: ["narrative", "points"],
+};
+
+/**
+ * The narrative field, declared once and used on both grounded findings.
+ *
+ * `.default(null)` is load-bearing rather than tidy. `LocalFileAssessmentStore.get`
+ * runs `Assessment.safeParse` over stored JSON and returns null on failure, so
+ * a required key would make every assessment written before this feature fail
+ * to parse — and the case screen would silently fall back to "Not assessed
+ * yet". A stored assessment disappearing is not an acceptable price for an
+ * additive feature.
+ */
+const narrativeField = GroundedNarrative.nullable().default(null);
+
+/**
  * A `grounded` finding is "we retrieved these passages, and here is the
  * model's reading of them". It is not a conclusion, and there is no field in
  * which it could become one.
@@ -124,13 +163,15 @@ export const ListednessFinding = z.discriminatedUnion("state", [
       documentKind: GoverningDocumentKind,
       citations: z.array(Citation).min(1),
       reading: ModelReading,
+      narrative: narrativeField,
       retrievedAt: IsoDateTime,
     })
     .refine((f) => f.citations.every((c) => c.sourceType === "company"), {
       message: "Listedness may only cite company documents",
       path: ["citations"],
     })
-    .refine(readingCitesRetrievedChunk, CITED_CHUNK_RULE),
+    .refine(readingCitesRetrievedChunk, CITED_CHUNK_RULE)
+    .refine(narrativeCitesRetrievedChunks, NARRATIVE_CHUNK_RULE),
   z.object({
     state: z.literal("no_result"),
     documentKind: GoverningDocumentKind,
@@ -154,6 +195,7 @@ export const ExpectednessFinding = z.discriminatedUnion("state", [
       state: z.literal("grounded"),
       citations: z.array(Citation).min(1),
       reading: ModelReading,
+      narrative: narrativeField,
       /** openFDA SPL set id the label came from. */
       labelSetId: z.string().min(1).nullable(),
       retrievedAt: IsoDateTime,
@@ -162,7 +204,8 @@ export const ExpectednessFinding = z.discriminatedUnion("state", [
       message: "Expectedness may only cite public labels",
       path: ["citations"],
     })
-    .refine(readingCitesRetrievedChunk, CITED_CHUNK_RULE),
+    .refine(readingCitesRetrievedChunk, CITED_CHUNK_RULE)
+    .refine(narrativeCitesRetrievedChunks, NARRATIVE_CHUNK_RULE),
   z.object({
     state: z.literal("no_result"),
     query: z.string().min(1),
@@ -207,6 +250,13 @@ export type Assessment = z.output<typeof Assessment>;
 
 // ---------------------------------------------------------------------------
 // Pure readings of an assessment
+//
+// NONE of these may consult `finding.narrative`, now or later. The narrative
+// is generated last, from values that are already final, and nothing reads it
+// back. That one-way dependency is what makes non-negotiable #8 true in
+// mechanism rather than in intention: if `documentStance` looked at a
+// narrative, a failed second inference would change what a document is
+// recorded as saying, and an outage would start blocking a reviewer.
 // ---------------------------------------------------------------------------
 
 /**

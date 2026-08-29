@@ -1,6 +1,7 @@
 "use client";
 
 import { ChoiceQuestion, DateQuestion, TextQuestion } from "./questions";
+import { HowBadDidItGet } from "./how-bad";
 import { pronounsFor } from "@/lib/schemas/pronouns";
 import { isAnswered } from "@/lib/schemas/answer";
 import {
@@ -9,7 +10,14 @@ import {
   type ReportDraft,
 } from "@/lib/schemas/report";
 
-/** Step 2. What went wrong, when it started, and how things are now. */
+/**
+ * What went wrong, when it started, how things are now — and how bad it got.
+ *
+ * The six seriousness questions used to be their own step called "Hospital and
+ * emergencies", which asked the reporter to describe the same event twice
+ * under two headings. They are folded in here, after the narrative and the
+ * outcome, which is the order somebody tells it in.
+ */
 export function StepWhatHappened({
   draft,
   update,
@@ -56,6 +64,10 @@ export function StepWhatHappened({
         value={draft.currentState}
         onChange={(next) => update({ currentState: next })}
       />
+
+      <div className="mt-6 border-t border-rule pt-4">
+        <HowBadDidItGet draft={draft} update={update} />
+      </div>
     </div>
   );
 }

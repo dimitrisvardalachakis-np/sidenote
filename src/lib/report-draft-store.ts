@@ -1,11 +1,24 @@
 "use client";
 
 /**
- * The in-progress report, held in sessionStorage.
+ * The in-progress report, held in localStorage with a 24-hour expiry.
  *
- * sessionStorage rather than localStorage on purpose: a half-written report
- * about someone's health should not still be sitting in the browser next week,
- * and on a shared or library computer that matters. Closing the tab clears it.
+ * It was sessionStorage, on the reasoning that a half-written report about
+ * someone's health should not still be sitting in the browser next week — and
+ * on a shared or library computer that matters. The instinct was right and the
+ * absence of a middle option was not: on a phone, a five-minute form and one
+ * incoming call is a lost report.
+ *
+ * So: localStorage, expiring a day after it was last touched, said plainly to
+ * the reporter on the page, with a control to clear it now. A day is long
+ * enough to come back after a phone call or a night's sleep and short enough
+ * that a library computer is not holding somebody's medical history a week
+ * later.
+ *
+ * ONE STORE, BOTH INTAKES. The chat used to keep its state on the server round
+ * trip and the form kept its own here, so crossing between them started from
+ * nothing. `lib/report/draft.ts` maps between the two shapes; this is where
+ * the result lives.
  *
  * useSyncExternalStore rather than useState plus an effect. The server cannot
  * see sessionStorage, so this is external state, and that hook is built for
@@ -20,10 +33,22 @@ import { EMPTY_DRAFT, ReportDraft } from "@/lib/schemas/report";
 const KEY = "sidenote-report-draft";
 const CHANGED = "sidenote:report-draft-changed";
 
+/** How long a draft outlives the last edit. */
+export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+export const DRAFT_TTL_LABEL = "a day";
+
 export interface SavedProgress {
   readonly draft: ReportDraft;
   /** Which step the reporter had reached, so a refresh returns them to it. */
   readonly stepIndex: number;
+  /**
+   * When this was last written, so it can expire.
+   *
+   * Stored rather than inferred, and checked on READ: a draft that has sat
+   * untouched for a day is discarded when somebody comes back to it, without
+   * needing a timer to have run in a tab nobody had open.
+   */
+  readonly savedAt: number;
   /**
    * Set once the report has been sent.
    *
@@ -38,6 +63,7 @@ export interface SavedProgress {
 const BLANK: SavedProgress = {
   draft: EMPTY_DRAFT,
   stepIndex: 0,
+  savedAt: 0,
   submitted: null,
 };
 
@@ -47,7 +73,7 @@ let cachedValue: SavedProgress = BLANK;
 function read(): SavedProgress {
   let raw: string | null = null;
   try {
-    raw = window.sessionStorage.getItem(KEY);
+    raw = window.localStorage.getItem(KEY);
   } catch {
     // Private mode, or storage disabled. Working without saving is a fine
     // outcome; losing the form to an exception is not.
@@ -69,6 +95,7 @@ function read(): SavedProgress {
         ? (parsed as {
             draft?: unknown;
             stepIndex?: unknown;
+            savedAt?: unknown;
             submitted?: unknown;
           })
         : {};
@@ -84,16 +111,34 @@ function read(): SavedProgress {
         ? (submitted as { reference: string; caseId: string })
         : null;
 
-    cachedValue = draft.success
-      ? {
-          draft: draft.data,
-          stepIndex:
-            typeof shape.stepIndex === "number" && shape.stepIndex >= 0
-              ? shape.stepIndex
-              : 0,
-          submitted: validSubmitted,
-        }
-      : BLANK;
+    /*
+      Expiry is enforced here, on read, rather than by a timer. A tab nobody
+      had open cannot run one, and the case that matters is exactly the person
+      coming back tomorrow.
+
+      A SENT report is exempt: the confirmation holds the reference number, and
+      taking that away while somebody is still looking at it would be a poor
+      way to end a form that just asked about the worst week of their year.
+    */
+    const savedAt =
+      typeof shape.savedAt === "number" && Number.isFinite(shape.savedAt)
+        ? shape.savedAt
+        : 0;
+    const expired =
+      validSubmitted === null && Date.now() - savedAt > DRAFT_TTL_MS;
+
+    cachedValue =
+      draft.success && !expired
+        ? {
+            draft: draft.data,
+            stepIndex:
+              typeof shape.stepIndex === "number" && shape.stepIndex >= 0
+                ? shape.stepIndex
+                : 0,
+            savedAt,
+            submitted: validSubmitted,
+          }
+        : BLANK;
   } catch {
     cachedValue = BLANK;
   }
@@ -113,14 +158,19 @@ export function readDraft(): SavedProgress {
   return read();
 }
 
-/** The server has no sessionStorage and must not guess. */
+/** The server has no localStorage and must not guess. */
 export function readServerDraft(): SavedProgress {
   return BLANK;
 }
 
 export function writeDraft(next: SavedProgress): void {
   try {
-    window.sessionStorage.setItem(KEY, JSON.stringify(next));
+    // Stamped on every write, so the day runs from the last edit rather than
+    // from whenever the form was first opened.
+    window.localStorage.setItem(
+      KEY,
+      JSON.stringify({ ...next, savedAt: Date.now() }),
+    );
   } catch {
     // Not fatal: the form keeps working, it just will not survive a refresh.
   }
@@ -129,7 +179,7 @@ export function writeDraft(next: SavedProgress): void {
 
 export function clearDraft(): void {
   try {
-    window.sessionStorage.removeItem(KEY);
+    window.localStorage.removeItem(KEY);
   } catch {
     // Nothing to do.
   }

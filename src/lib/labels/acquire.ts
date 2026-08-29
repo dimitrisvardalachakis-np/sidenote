@@ -26,17 +26,17 @@ import { chunkDocument } from "@/lib/ingest/chunk";
 import { documentGovernsDrug } from "@/lib/assess/scope";
 import { embedAndUpsert } from "@/lib/retrieval/ingest";
 import { getDocumentLibrary } from "@/lib/store/library-store";
-import { SafetyDocument } from "@/lib/schemas";
+import { type DocumentId, SafetyDocument } from "@/lib/schemas";
 import type { DenseAvailability } from "@/lib/retrieval/vectors";
 import { fetchLabel, type FetchLabelOptions } from "./openfda";
 
 export type AcquireOutcome =
   /** Already in the library. No network call was made. */
-  | { readonly status: "held"; readonly documentId: string }
+  | { readonly status: "held"; readonly documentId: DocumentId }
   /** Fetched, chunked, mirrored, and now searchable. */
   | {
       readonly status: "acquired";
-      readonly documentId: string;
+      readonly documentId: DocumentId;
       readonly title: string;
       readonly chunks: number;
       readonly embedded: boolean;
@@ -189,4 +189,37 @@ export async function ensurePublicLabel(
     chunks: chunks.length,
     embedded: ingest.status === "embedded",
   };
+}
+
+
+/**
+ * Widen a retrieval scope with the label this acquisition actually resolved.
+ *
+ * WHY THIS EXISTS, AND WHY IT IS NOT REDUNDANT WITH `documentsForDrug`.
+ * Scoping matches a typed name against a stored substance and title with
+ * normalisation and a prefix rule. That is a heuristic, and `scope.ts` says
+ * plainly that it is allowed to miss. On a reviewer's screen a miss is
+ * survivable — the panel says no document is held and a human goes to look.
+ * On the public search a miss produces a contradiction the reporter can see:
+ * "Fetched Abacavir — FDA Prescribing Information … 24 passages" and directly
+ * beneath it "No published label we hold describes that".
+ *
+ * This removes the guessing for the one document where no guess is needed.
+ * openFDA was asked for this exact name and answered with this exact record —
+ * that is FDA's own resolution of brand, generic and substance, and it is
+ * strictly better evidence than our string comparison. So the acquired
+ * document is pinned into scope rather than re-derived from its own metadata.
+ *
+ * It only ever widens, and only by documents fetched for the name the person
+ * typed, so the wrong-product guarantee is untouched: nothing here can admit a
+ * document that was not resolved from this very query.
+ */
+export function withAcquiredLabel(
+  scope: ReadonlySet<DocumentId>,
+  outcome: AcquireOutcome | null,
+): ReadonlySet<DocumentId> {
+  if (outcome === null) return scope;
+  if (outcome.status !== "held" && outcome.status !== "acquired") return scope;
+  if (scope.has(outcome.documentId)) return scope;
+  return new Set([...scope, outcome.documentId]);
 }

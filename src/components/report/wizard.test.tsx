@@ -18,7 +18,7 @@ const submitSpy = vi.fn(async (_draft: unknown) => ({
   reference: "SN-2026-500009",
   caseId: "11111111-1111-4111-8111-111111111111",
 }));
-vi.mock("@/app/report/submit-action", () => ({
+vi.mock("@/app/(public)/report/submit-action", () => ({
   submitReportAction: (draft: unknown) => submitSpy(draft),
 }));
 vi.mock("next/link", () => ({
@@ -94,10 +94,16 @@ async function clickButtonByKeyboard(user: UserEvent, name: RegExp) {
 
 describe("the whole form by keyboard", () => {
   beforeEach(() => {
-    window.sessionStorage.clear();
+    window.localStorage.clear();
     submitSpy.mockClear();
   });
 
+  /*
+    The walk follows the ORDER the form now asks in: who, the medicine, what
+    happened (with the seriousness questions folded in), stopping and starting
+    again, about you. That order is the change, so a test that still walked the
+    old one would be asserting the wrong product.
+  */
   it("completes all five steps and sends, using only the keyboard", async () => {
     const user = userEvent.setup();
     render(<ReportWizard />);
@@ -115,8 +121,17 @@ describe("the whole form by keyboard", () => {
     await user.keyboard("72");
     await clickButtonByKeyboard(user, /^next$/i);
 
-    // ---- Step 2 -------------------------------------------------------
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
+    // ---- Step 2: the medicine, because that is what people lead with ----
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toContain(
+      "The medicine",
+    );
+    const medicine = screen.getByLabelText("What is the medicine called?");
+    await tabTo(user, medicine);
+    await user.keyboard("Amoxil");
+    await clickButtonByKeyboard(user, /^next$/i);
+
+    // ---- Step 3: what happened, seriousness folded in -------------------
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toContain(
       "What happened",
     );
     const story = screen.getByLabelText("What went wrong?");
@@ -129,12 +144,8 @@ describe("the whole form by keyboard", () => {
     await user.keyboard("2026");
     await user.selectOptions(screen.getByLabelText("Month"), "03");
     expect(screen.getByText(/You said:/).textContent).toContain("March 2026");
-    await clickButtonByKeyboard(user, /^next$/i);
 
-    // ---- Step 3 -------------------------------------------------------
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "Hospital and emergencies",
-    );
+    // The hospital question now lives on this step rather than its own.
     const hospitalGroup = screen.getByRole("group", {
       name: /go to hospital/i,
     });
@@ -144,13 +155,10 @@ describe("the whole form by keyboard", () => {
     expect(yes).toBeChecked();
     await clickButtonByKeyboard(user, /^next$/i);
 
-    // ---- Step 4 -------------------------------------------------------
-    expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
-      "The medicine",
+    // ---- Step 4: stopping and starting again, which may be skipped ------
+    expect(screen.getByRole("heading", { level: 2 }).textContent).toContain(
+      "Stopping and starting again",
     );
-    const medicine = screen.getByLabelText("What is the medicine called?");
-    await tabTo(user, medicine);
-    await user.keyboard("Amoxil");
     await clickButtonByKeyboard(user, /^next$/i);
 
     // ---- Step 5 -------------------------------------------------------
@@ -181,16 +189,20 @@ describe("the whole form by keyboard", () => {
     await toggleCheckbox(user, "I don't know");
     expect(screen.getByLabelText("I don't know")).toBeChecked();
 
-    // Walk to the last step without answering anything else.
+    // Walk to the last step without answering anything else, in the order the
+    // form now asks. `toContain` rather than `toBe` because an optional step
+    // carries the word "optional" in its heading.
     const expected = [
-      "What happened",
-      "Hospital and emergencies",
       "The medicine",
+      "What happened",
+      "Stopping and starting again",
       "About you",
     ];
     for (const heading of expected) {
       await clickButtonByKeyboard(user, /^next$/i);
-      expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(heading);
+      expect(screen.getByRole("heading", { level: 2 }).textContent).toContain(
+        heading,
+      );
     }
 
     const send = screen.getByRole("button", { name: /send my report/i });

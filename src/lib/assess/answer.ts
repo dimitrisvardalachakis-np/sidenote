@@ -14,6 +14,7 @@ import type {
   Citation,
   DocumentChunk,
   DocumentId,
+  GroundedNarrative,
   ModelReading,
 } from "@/lib/schemas";
 import {
@@ -23,7 +24,7 @@ import {
   type AiGatewayConfig,
 } from "./ai";
 import { aiEnv } from "./env";
-import { readPassages } from "./generate";
+import { narratePassages, readPassages } from "./generate";
 
 /**
  * Ask a question of the public labels, and get an answer grounded in them.
@@ -58,6 +59,14 @@ export interface PublicAnswer {
   readonly reading: ModelReading | null;
   /** The chunks that were searched, so the caller can name the document. */
   readonly hits: readonly DocumentChunk[];
+  /**
+   * A short account of the passages, when one could be produced.
+   *
+   * Null means none was attempted: retrieval found nothing, or the reading
+   * itself did not succeed. It is never a statement that the labels are
+   * silent — that claim belongs to `reading` alone.
+   */
+  readonly narrative: GroundedNarrative | null;
 }
 
 /**
@@ -131,13 +140,17 @@ export async function answerPublicQuestion(
   scope?: ReadonlySet<DocumentId> | null,
 ): Promise<PublicAnswer> {
   const query = question.trim();
-  if (query.length < 2) return { citations: [], reading: null, hits: [] };
+  if (query.length < 2) {
+    return { citations: [], reading: null, hits: [], narrative: null };
+  }
 
   const searchable =
     scope == null
       ? corpus
       : corpus.filter((chunk) => scope.has(chunk.documentId));
-  if (searchable.length === 0) return { citations: [], reading: null, hits: [] };
+  if (searchable.length === 0) {
+    return { citations: [], reading: null, hits: [], narrative: null };
+  }
 
   /*
     Resolved before retrieval now, not after it.
@@ -195,7 +208,9 @@ export async function answerPublicQuestion(
   */
   const fused = fuseByRank([lexical, semantic.hits]).slice(0, ANSWER_LIMIT);
 
-  if (fused.length === 0) return { citations: [], reading: null, hits: [] };
+  if (fused.length === 0) {
+    return { citations: [], reading: null, hits: [], narrative: null };
+  }
 
   const chunks = fused.map((hit) => hit.chunk);
 
@@ -248,5 +263,62 @@ export async function answerPublicQuestion(
     },
   });
 
-  return { citations: fused.map(toCitation), reading, hits: chunks };
+  /*
+    The narrative, on the same gate the reviewer path uses: only when the
+    reading succeeded. After `nothing_found` a multi-point account of the same
+    passages would contradict the sentence directly above it, and this is the
+    surface where the reader is a member of the public with no expertise to
+    notice which one to believe.
+  */
+  const narrated =
+    reading.status === "read"
+      ? await narratePassages({
+          binding: ai.binding,
+          unavailableReason: ai.reason ?? "no model is configured",
+          gateway: resolved.gateway,
+          reactionTerm: query,
+          drugName: "the medicine asked about",
+          chunks,
+          now: new Date().toISOString(),
+        })
+      : null;
+
+  if (narrated !== null) {
+    audit({
+      actor: "public",
+      action: "answer_narrative",
+      target: "public_search",
+      outcome:
+        narrated.narrative.status === "unavailable" ? "failure" : "success",
+      detail: {
+        status: narrated.narrative.status,
+        model: narrated.narrative.model ?? "none",
+        gatewayRequestId: narrated.narrative.gatewayRequestId ?? "none",
+        source: ai.source,
+        passages: chunks.length,
+        inferences: narrated.attempts.length,
+        points:
+          narrated.narrative.status === "narrated"
+            ? narrated.narrative.points.length
+            : 0,
+        dropped: narrated.dropped.length,
+        dropReasons: narrated.dropped.map((d) => d.reason).join(",") || "none",
+        /*
+          Neither the question nor the generated sentences are logged. The
+          question is personal data for the reason given above; the sentences
+          are model prose about a public label, so they are not — but they are
+          also not needed to diagnose anything, and the counts and the drop
+          reasons are.
+        */
+        questionLength: query.length,
+      },
+    });
+  }
+
+  return {
+    citations: fused.map(toCitation),
+    reading,
+    hits: chunks,
+    narrative: narrated?.narrative ?? null,
+  };
 }

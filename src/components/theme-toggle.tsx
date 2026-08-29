@@ -12,8 +12,19 @@ import {
 } from "@/lib/theme";
 
 /**
- * A three-way segmented control, sized to sit in a header bar without asking
- * for attention.
+ * A three-way segmented control, sized to sit in a footer without asking for
+ * attention.
+ *
+ * It used to be the loudest control in the navigation: three always-visible
+ * buttons above everything else in the rail, in a tool whose actual job is
+ * triaging safety cases. Prominence is now inverted to match how often it is
+ * used — it lives in the rail footer beside the reviewer's identity, labelled
+ * once, at `--micro`.
+ *
+ * The buttons were also 22px tall, under any usable touch target. They are
+ * 24px minimum now, which is the smallest this design language can justify
+ * and still be pressable; the width came from the labels, so shortening them
+ * to one word each is what paid for the height.
  *
  * useSyncExternalStore rather than useState + useEffect. localStorage is
  * external state that the server cannot see, and this hook is built for
@@ -45,7 +56,7 @@ export function ThemeToggle() {
     <div
       role="group"
       aria-label="Colour theme"
-      className="inline-flex items-center rounded-soft border border-rule"
+      className="flex w-full items-stretch rounded-soft border border-rule"
     >
       {THEME_MODES.map((option) => {
         const current = mode === option;
@@ -56,7 +67,9 @@ export function ThemeToggle() {
             aria-pressed={current}
             onClick={() => choose(option)}
             className={[
-              "px-2 py-1 text-micro uppercase tracking-label",
+              // min-h-6 is 24px on the 4px scale: the floor for a target
+              // somebody has to hit, and the reason the labels are one word.
+              "min-h-6 flex-1 px-2 py-1 text-micro uppercase tracking-label",
               "border-r border-rule last:border-r-0",
               "first:rounded-l-soft last:rounded-r-soft",
               "cursor-pointer transition-colors",

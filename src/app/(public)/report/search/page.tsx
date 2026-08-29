@@ -1,11 +1,17 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { answerPublicQuestion } from "@/lib/assess/answer";
 import { resolveAiBinding } from "@/lib/assess/ai";
 import { aiEnv } from "@/lib/assess/env";
 import { documentsForDrug } from "@/lib/assess/scope";
-import { ensurePublicLabel } from "@/lib/labels/acquire";
+import { ensurePublicLabel, withAcquiredLabel } from "@/lib/labels/acquire";
 import { resolveDenseFor } from "@/lib/retrieval/resolve";
 import { loadCorpus } from "@/lib/store/corpus";
+import { GeneratedNarrative } from "@/components/narrative";
+import { Orientation } from "@/components/report/orientation";
+import { SourceDialog } from "@/components/source-dialog";
+import { SourcePassage } from "@/components/source-passage";
+import { passageContext } from "@/lib/library/context";
 
 /**
  * "Is this already known?" for the public.
@@ -17,6 +23,10 @@ import { loadCorpus } from "@/lib/store/corpus";
  * A server component with the query in the URL, so a result is linkable and
  * the back button behaves. No client JavaScript is needed to search.
  */
+
+export const metadata: Metadata = {
+  title: "Is this a known side effect? — SideNote",
+};
 export default async function SearchPage({
   searchParams,
 }: PageProps<"/report/search">) {
@@ -63,25 +73,61 @@ export default async function SearchPage({
     answering from a different product's label would be the same wrong-product
     citation `scope.ts` exists to prevent — and here the reader is a member of
     the public, with no expertise to notice.
+
+    Pinned with the label the fetch above actually resolved, so the page cannot
+    announce a document and then refuse to search it. `documentsForDrug` alone
+    could not match "ABACAVIR SULFATE" to a label filed under "abacavir", and
+    the reporter was shown "Nothing found" about a label fetched seconds
+    earlier.
   */
   const scope =
     drug.length > 2
-      ? documentsForDrug(documents, {
-          reportedName: drug,
-          activeSubstance: null,
-        })
+      ? withAcquiredLabel(
+          documentsForDrug(documents, {
+            reportedName: drug,
+            activeSubstance: null,
+          }),
+          acquisition,
+        )
       : null;
 
   const answer =
     query.length > 1
       ? await answerPublicQuestion(query, chunks, undefined, scope)
-      : { citations: [], reading: null, hits: [] };
+      : { citations: [], reading: null, hits: [], narrative: null };
   const hits = answer.citations;
 
   const titleFor = (documentId: string) =>
     documents.find((d) => d.id === documentId)?.title ?? "Unknown document";
 
-  const { reading } = answer;
+  const { reading, narrative } = answer;
+
+  /*
+    "See in source" for a passage on this page too.
+
+    A member of the public has less reason to take our word for a quotation
+    than a reviewer does, not more. The context is computed here on the server
+    from the corpus already loaded above, so the dialog can only show text this
+    request actually holds.
+  */
+  const seeSource = (chunkId: string) => {
+    const context = passageContext(chunks, documents, chunkId);
+    if (context === null) return null;
+    const span =
+      reading?.status === "read" && reading.chunkId === chunkId
+        ? reading.quotedSpan
+        : null;
+    return (
+      <SourceDialog label="see in source">
+        <SourcePassage
+          context={context}
+          span={span}
+          labelSetId={context.chunk.documentId}
+        />
+      </SourceDialog>
+    );
+  };
+
   const answeredFrom =
     reading?.status === "read"
       ? hits.find((c) => c.chunkId === reading.chunkId) ?? null
@@ -94,6 +140,10 @@ export default async function SearchPage({
         Look up whether a side effect is already described in a medicine&rsquo;s
         published information.
       </p>
+
+      <div className="mt-4">
+        <Orientation />
+      </div>
 
       <form method="get" className="mt-5">
         <label htmlFor="drug" className="text-base font-medium">
@@ -152,9 +202,29 @@ export default async function SearchPage({
           </h2>
 
           {/*
-            The answer, when one could be produced. It sits above the passages
-            because it is what was asked for — but it is never shown without
-            them, and it quotes the label rather than paraphrasing it.
+            The generated answer. A few sentences, each quoting the passage
+            numbered beside it — which is what makes it an answer over
+            retrieved documents rather than a lifted quotation, and what lets a
+            reader check every clause of it.
+
+            Written in the plainest register the honesty rules allow: this is a
+            worried person, not a reviewer.
+          */}
+          {narrative !== null && (
+            <div className="mt-3 border-l-2 border-rule pl-3">
+              <GeneratedNarrative
+                narrative={narrative}
+                onSeeSource={seeSource}
+                footnote="Each sentence above quotes the label word for word — the exact words are numbered below it. This is not medical advice and not a decision about your medicine; speak to a doctor or pharmacist."
+              />
+            </div>
+          )}
+
+          {/*
+            The single verified quotation, when one could be produced. It sits
+            above the passages because it is what was asked for — but it is
+            never shown without them, and it quotes the label rather than
+            paraphrasing it.
           */}
           {reading?.status === "read" && (
             <div className="mt-2 border-l-2 border-steady pl-3">
@@ -236,7 +306,8 @@ export default async function SearchPage({
                       >
                         {citation.quote}
                       </blockquote>
-                      <p className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
+                      {/* A <div>: this row holds a <dialog>, which cannot sit inside a <p>. */}
+                      <div className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
                         {quoted && <span className="text-ink">quoted above</span>}
                         <span className="text-steady">{citation.sourceType}</span>
                         <span className="normal-case tracking-normal">
@@ -250,7 +321,10 @@ export default async function SearchPage({
                         <span className="font-mono normal-case tracking-normal">
                           {citation.chunkId}
                         </span>
-                      </p>
+                        <span className="normal-case tracking-normal">
+                          {seeSource(citation.chunkId)}
+                        </span>
+                      </div>
                     </li>
                   );
                 })}

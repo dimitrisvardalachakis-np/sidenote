@@ -1,15 +1,18 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+
 import Link from "next/link";
+import { useState, useSyncExternalStore } from "react";
 import { StepAbout } from "./step-about";
 import { StepWhatHappened } from "./step-what-happened";
-import { StepHospital } from "./step-hospital";
+import { StepStopping } from "./step-stopping";
 import { StepMedicine } from "./step-medicine";
 import { StepYou } from "./step-you";
-import { submitReportAction } from "@/app/report/submit-action";
+import { SentConfirmation } from "./sent";
+import { submitReportAction } from "@/app/(public)/report/submit-action";
 import type { SubmitOutcome } from "@/lib/report/submit";
 import {
+  DRAFT_TTL_LABEL,
   clearDraft,
   readDraft,
   readServerDraft,
@@ -18,6 +21,7 @@ import {
 } from "@/lib/report-draft-store";
 import {
   MISSING_MESSAGES,
+  OPTIONAL_STEPS,
   STEP_IDS,
   STEP_TITLES,
   missingElements,
@@ -26,6 +30,7 @@ import {
   type StepId,
 } from "@/lib/schemas/report";
 import { isAnswered } from "@/lib/schemas/answer";
+import { ProgressRule, RequiredChecklist } from "./orientation";
 
 /**
  * The five-step form.
@@ -87,47 +92,17 @@ export function ReportWizard() {
   // ---------------------------------------------------------------- sent
   if (submitted !== null) {
     return (
-      <div>
-        <h2 className="text-title font-medium">Thank you. Your report is in.</h2>
-        <p className="mt-2 text-prose">
-          A trained person reads every report. You do not need to do anything
-          else.
-        </p>
-
-        <div className="mt-5 rounded-soft border border-rule p-4">
-          <p className="text-micro uppercase tracking-label text-slate">
-            Your reference number
-          </p>
-          <p className="mt-1 font-mono text-figure">{submitted.reference}</p>
-          <p className="mt-3 text-prose">
-            Please write this down or take a picture of it. Say this number if
-            you ever contact us about this report.
-          </p>
-        </div>
-
-        <p className="mt-5 text-meta text-slate">
-          This is a training demo, so here is the reviewer view of what you just
-          sent:{" "}
-          <Link
-            href={`/case/${submitted.caseId}`}
-            className="text-steady hover:underline"
-          >
-            see the case
-          </Link>
-          . A real reporter would not have that link.
-        </p>
-
-        <button
-          type="button"
-          onClick={() => {
-            clearDraft();
-            setOutcome(null);
-          }}
-          className="mt-6 cursor-pointer rounded-soft border border-rule px-4 py-2 text-base hover:bg-row-hover"
-        >
-          Report something else
-        </button>
-      </div>
+      <SentConfirmation
+        reference={submitted.reference}
+        caseId={submitted.caseId}
+        medicineName={
+          isAnswered(draft.medicineName) ? draft.medicineName.value : null
+        }
+        onReportAnother={() => {
+          clearDraft();
+          setOutcome(null);
+        }}
+      />
     );
   }
 
@@ -138,37 +113,51 @@ export function ReportWizard() {
 
   return (
     <div>
-      <ol className="flex flex-wrap gap-x-4 gap-y-1 border-y border-rule py-2">
-        {STEP_IDS.map((id, index) => {
-          const current = index === stepIndex;
-          const touched = stepProgress(draft, id).resolved > 0;
-          return (
-            <li key={id}>
-              <span
-                aria-current={current ? "step" : undefined}
-                className={[
-                  "text-micro uppercase tracking-label",
-                  current ? "text-steady" : touched ? "text-ink" : "text-slate",
-                ].join(" ")}
-              >
-                {index + 1}. {STEP_TITLES[id]}
-              </span>
-            </li>
-          );
-        })}
-      </ol>
+      {/*
+        The way across, and it carries the answers. Crossing used to mean
+        starting again from nothing, which made the first choice on the landing
+        page unrecoverable.
+      */}
+      <p className="text-meta text-slate">
+        Prefer to answer one question at a time?{" "}
+        <Link href="/report/chat" className="text-steady hover:underline">
+          Use the chat
+        </Link>
+        . Your answers come with you.
+      </p>
+
+      {/*
+        The four required things, from the first question rather than at the
+        end. The intro says you can leave anything blank and the send button
+        then refuses without four of them; showing both at once is what stops
+        those being a contradiction the reporter meets four minutes apart.
+      */}
+      <div className="border-y border-rule py-2">
+        <RequiredChecklist missing={missing} />
+      </div>
 
       <div className="mt-4">
+        <ProgressRule
+          steps={STEP_IDS.map((id) => ({ id, title: STEP_TITLES[id] }))}
+          current={stepIndex}
+        />
+      </div>
+
+      <div className="mt-3">
         <h2
           id="step-heading"
           tabIndex={-1}
           className="text-title font-medium focus:outline-2 focus:outline-offset-2 focus:outline-steady"
         >
           {STEP_TITLES[stepId]}
+          {OPTIONAL_STEPS[stepId] && (
+            <span className="ml-2 text-meta font-normal text-slate">
+              optional
+            </span>
+          )}
         </h2>
         <p className="mt-1 text-meta text-slate">
-          Step {stepIndex + 1} of {STEP_IDS.length}. {progress.resolved} of{" "}
-          {progress.total} questions answered on this step.
+          {progress.resolved} of {progress.total} questions answered here.
         </p>
       </div>
 
@@ -177,8 +166,8 @@ export function ReportWizard() {
         {stepId === "what_happened" && (
           <StepWhatHappened draft={draft} update={update} />
         )}
-        {stepId === "hospital" && <StepHospital draft={draft} update={update} />}
         {stepId === "medicine" && <StepMedicine draft={draft} update={update} />}
+        {stepId === "stopping" && <StepStopping draft={draft} update={update} />}
         {stepId === "you" && <StepYou draft={draft} update={update} />}
       </div>
 
@@ -243,26 +232,69 @@ export function ReportWizard() {
           Back
         </button>
 
-        <button
-          type="button"
-          onClick={() => goTo(stepIndex + 1)}
-          disabled={onLastStep || (stepIndex === 0 && !canLeaveFirstStep)}
-          className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Next
-        </button>
+        <div className="flex items-center gap-3">
+          {/*
+            The explanation of a disabled Next, BESIDE the control rather than
+            below it — where it was, under a button, out of the eye-line of the
+            thing it explains.
+          */}
+          {stepIndex === 0 && !canLeaveFirstStep && (
+            <p className="text-meta text-slate">
+              Choose who this is about to carry on.
+            </p>
+          )}
+
+          {/* An optional step says so, and offers the way past it. */}
+          {OPTIONAL_STEPS[stepId] && !onLastStep && (
+            <button
+              type="button"
+              onClick={() => goTo(stepIndex + 1)}
+              className="cursor-pointer text-meta text-slate hover:text-steady hover:underline"
+            >
+              Skip this
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => goTo(stepIndex + 1)}
+            disabled={onLastStep || (stepIndex === 0 && !canLeaveFirstStep)}
+            className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
 
-      {stepIndex === 0 && !canLeaveFirstStep && (
-        <p className="mt-2 text-meta text-slate">
-          Choose who this is about to carry on.
-        </p>
-      )}
+      {/*
+        Says what is actually true now, and offers the way out.
 
-      <p className="mt-6 text-meta text-slate">
-        Your answers are kept in this browser tab as you go, so a refresh will
-        not lose them. Closing the tab clears them.
-      </p>
+        The old copy promised the tab clearing them, which sessionStorage did
+        and localStorage does not. A privacy claim that has quietly stopped
+        being true is worse than no claim, so this states the day and gives a
+        control rather than relying on a browser behaviour.
+      */}
+      <div className="mt-6 flex flex-wrap items-baseline justify-between gap-3 border-t border-rule pt-3">
+        <p className="text-meta text-slate">
+          Your answers are kept on this device for {DRAFT_TTL_LABEL} so you can
+          come back to them.
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            if (
+              window.confirm(
+                "This will delete the answers you have given so far on this device. It cannot be undone.",
+              )
+            ) {
+              clearDraft();
+            }
+          }}
+          className="cursor-pointer text-meta text-slate hover:text-steady hover:underline"
+        >
+          Clear my answers
+        </button>
+      </div>
     </div>
   );
 }

@@ -3,15 +3,20 @@
  * chunks — so the retrieval thresholds are exercised on the text the demo
  * actually ships with.
  *
- * The headline claim: two model calls per case, one per namespace, never one
- * per chunk.
+ * The headline claim: a bounded number of model calls per case — one reading
+ * per namespace and one narrative per namespace, never one call per chunk.
  */
 import { describe, expect, it } from "vitest";
 import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
 import { DrugId, type SuspectDrug } from "@/lib/schemas";
 import { assessCase } from "./assess";
 import { documentsForDrug } from "./scope";
-import { messagesOf, type AiBinding } from "./ai";
+import {
+  MAX_CALLS_PER_ASSESSMENT,
+  NAMESPACES_PER_ASSESSMENT,
+  messagesOf,
+  type AiBinding,
+} from "./ai";
 
 const drug = (reportedName: string, activeSubstance: string | null): SuspectDrug => ({
   id: DrugId.parse("00000002-0000-4000-8000-000000000001"),
@@ -31,38 +36,82 @@ const drug = (reportedName: string, activeSubstance: string | null): SuspectDrug
 const HEPALEX = drug("Hepalex", "hepalexin");
 const COVAXIL = drug("Covaxil", "covaxilin");
 
+/** Every passage in a prompt, as {id, text}. */
+function passagesIn(user: string): { id: string; text: string }[] {
+  const found: { id: string; text: string }[] = [];
+  const pattern = /<<<PASSAGE id="([^"]+)"[^\n]*\n([\s\S]*?)\nPASSAGE>>>/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(user)) !== null) {
+    const [, id, text] = match;
+    if (id !== undefined && text !== undefined) found.push({ id, text });
+  }
+  return found;
+}
+
+/** The first sentence of a passage, copied exactly. */
+function firstSentence(text: string): string {
+  return /^[^.]+\./.exec(text)?.[0] ?? text.slice(0, 60);
+}
+
 /**
- * A binding that answers honestly: it reads the passages out of the prompt it
- * was given and quotes the first sentence of the first one. Verbatim by
- * construction, which is what a well-behaved model would do — and it means
- * these tests exercise the real verification path rather than stepping around
- * it.
+ * A binding that answers honestly, on both contracts.
+ *
+ * It reads the passages out of the prompt it was given and quotes them
+ * verbatim — which is what a well-behaved model would do, and it means these
+ * tests exercise the real verification path rather than stepping around it.
+ *
+ * It answers whichever contract it was asked for. Replying with the reading
+ * shape to a narrative prompt would make every narrative test pass through the
+ * `wrong_shape` branch, so the fixture would be measuring the rejection path
+ * while appearing to measure the happy one.
  */
 function quotingBinding() {
   const prompts: string[] = [];
+  const readingPrompts: string[] = [];
+  const narrativePrompts: string[] = [];
+
   const binding: AiBinding = {
     run: (_model, input) => {
-      const user = messagesOf(input).find((m) => m.role === "user")?.content ?? "";
+      const messages = messagesOf(input);
+      const user = messages.find((m) => m.role === "user")?.content ?? "";
+      const system = messages.find((m) => m.role === "system")?.content ?? "";
       prompts.push(user);
-      const match = /<<<PASSAGE id="([^"]+)"[^\n]*\n([\s\S]*?)\nPASSAGE>>>/.exec(user);
-      if (match?.[1] === undefined || match[2] === undefined) {
+
+      const passages = passagesIn(user);
+
+      // The narrative contract asks for "points"; the reading contract does not.
+      if (system.includes('"points"')) {
+        narrativePrompts.push(user);
+        return Promise.resolve({
+          response: JSON.stringify({
+            points: passages.slice(0, 2).map((p) => ({
+              chunkId: p.id,
+              quotedSpan: firstSentence(p.text),
+              sentence: "The passage describes what happened.",
+            })),
+          }),
+        });
+      }
+
+      readingPrompts.push(user);
+      const first = passages[0];
+      if (first === undefined) {
         return Promise.resolve({
           response: JSON.stringify({ found: false, chunkId: null, quotedSpan: null, rationale: null }),
         });
       }
-      const sentence = /^[^.]+\./.exec(match[2])?.[0] ?? match[2].slice(0, 60);
       return Promise.resolve({
         response: JSON.stringify({
           found: true,
-          chunkId: match[1],
-          quotedSpan: sentence,
+          chunkId: first.id,
+          quotedSpan: firstSentence(first.text),
           rationale: "The passage describes the reaction.",
         }),
       });
     },
     aiGatewayLogId: "aig-test",
   };
-  return { binding, prompts };
+  return { binding, prompts, readingPrompts, narrativePrompts };
 }
 
 const base = {
@@ -76,23 +125,42 @@ const base = {
   target: "SN-2026-000101",
 };
 
-describe("two calls per case, maximum", () => {
-  it("calls the model once per namespace and not once per chunk", async () => {
-    const { binding, prompts } = quotingBinding();
+describe("a bounded number of calls per case", () => {
+  it("makes one reading call per namespace and not one per chunk", async () => {
+    const { binding, readingPrompts } = quotingBinding();
     await assessCase({
       ...base,
       reactionTerm: "liver failure, died",
       drugName: "Hepalex",
       ai: { binding, reason: null, source: "http" as const },
     });
-    expect(prompts).toHaveLength(2);
+    expect(readingPrompts).toHaveLength(NAMESPACES_PER_ASSESSMENT);
+  });
+
+  /*
+    The narrative adds one call per namespace, and this is where that cost is
+    written down. It only runs where the reading succeeded, so a well-behaved
+    binding produces exactly one per namespace — and the total stays under the
+    declared ceiling, which allows for the reading's retry as well.
+  */
+  it("makes at most one narrative call per namespace, and stays under the ceiling", async () => {
+    const { binding, prompts, readingPrompts, narrativePrompts } = quotingBinding();
+    await assessCase({
+      ...base,
+      reactionTerm: "liver failure, died",
+      drugName: "Hepalex",
+      ai: { binding, reason: null, source: "http" as const },
+    });
+    expect(narrativePrompts.length).toBeLessThanOrEqual(NAMESPACES_PER_ASSESSMENT);
+    expect(prompts.length).toBe(readingPrompts.length + narrativePrompts.length);
+    expect(prompts.length).toBeLessThanOrEqual(MAX_CALLS_PER_ASSESSMENT);
   });
 
   it("puts every retrieved passage for a namespace into one prompt", async () => {
     // Covaxil/rash matches two passages in the public label, which is what
     // makes this test meaningful — a query matching one passage could not
     // tell one-prompt-per-namespace from one-prompt-per-chunk apart.
-    const { binding, prompts } = quotingBinding();
+    const { binding, prompts, readingPrompts } = quotingBinding();
     await assessCase({
       ...base,
       documentIds: documentsForDrug(SEED_DOCUMENTS, COVAXIL),
@@ -102,8 +170,8 @@ describe("two calls per case, maximum", () => {
     });
     const passages = prompts.map((p) => p.split("<<<PASSAGE").length - 1);
     expect(Math.max(...passages)).toBeGreaterThan(1);
-    // Still one prompt per namespace, not one per passage.
-    expect(prompts.length).toBeLessThanOrEqual(2);
+    // Still one reading prompt per namespace, not one per passage.
+    expect(readingPrompts.length).toBeLessThanOrEqual(NAMESPACES_PER_ASSESSMENT);
   });
 });
 

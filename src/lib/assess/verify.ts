@@ -45,6 +45,25 @@ export const RawGeneration = z.object({
 });
 
 /**
+ * THE verbatim check. One definition, three callers.
+ *
+ * Exact substring, against the SANITISED text, which is the string the model
+ * was actually shown. No normalisation of whitespace, quotes or dashes —
+ * normalising here would mean the span displayed is not the span verified, and
+ * the gap between the two is precisely where a fabricated quotation would live.
+ *
+ * It is a function rather than an inline expression because there used to be
+ * two copies of it, and they disagreed: the eval in `lib/evals/faithfulness.ts`
+ * compared against the raw chunk text while the runtime compared against the
+ * sanitised text, so a passage containing the fence failed the build for
+ * quoting exactly what it had been given. The narrative verifier is the third
+ * caller, and a third copy is how that recurs.
+ */
+export function spanOccursIn(chunk: DocumentChunk, span: string): boolean {
+  return sanitisePassage(chunk.text).includes(span);
+}
+
+/**
  * A span of nothing is not a quotation.
  *
  * `"any text".includes("")` is true in JavaScript, so an empty string
@@ -54,7 +73,7 @@ export const RawGeneration = z.object({
  * found:true, and it would have rendered as an empty blockquote captioned
  * "checked to occur in it word for word".
  */
-function isEmptySpan(span: string): boolean {
+export function isEmptySpan(span: string): boolean {
   // `trim()` strips the Unicode whitespace class, which does NOT include
   // zero-width characters — "\u200b".trim().length is 1. Requiring a letter or
   // a digit is both simpler and stricter: a quotation with no alphanumeric
@@ -69,7 +88,14 @@ export type RejectionKind =
   | "wrong_shape"
   | "incoherent"
   | "unknown_chunk"
-  | "span_not_verbatim";
+  | "span_not_verbatim"
+  /*
+    Narrative-only. Kept in this union rather than a parallel one so a caller
+    joining `rejection.kind` values onto an audit line needs no change, and so
+    there is one vocabulary for "why a model reply was refused".
+  */
+  | "too_many_points"
+  | "no_points_survived";
 
 export interface Rejection {
   readonly kind: RejectionKind;
@@ -208,16 +234,11 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
     };
   }
 
-  // THE verbatim check. Exact substring, no normalisation of whitespace,
-  // quotes or dashes — normalising here would mean the span we display is not
-  // the span we verified, and the gap between the two is precisely where a
-  // fabricated quotation would live.
-  //
-  // Checked against the SANITISED text, which is the string the model was
-  // actually shown. For every real document the two are identical; they differ
-  // only when a chunk contains the passage fence, and there the model can only
-  // faithfully copy what was in front of it.
-  if (!sanitisePassage(cited.text).includes(raw.quotedSpan)) {
+  // THE verbatim check — see `spanOccursIn` above for why it lives in one
+  // place. For every real document the sanitised and raw texts are identical;
+  // they differ only when a chunk contains the passage fence, and there the
+  // model can only faithfully copy what was in front of it.
+  if (!spanOccursIn(cited, raw.quotedSpan)) {
     return {
       ok: false,
       rejection: {

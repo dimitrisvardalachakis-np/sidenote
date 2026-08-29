@@ -187,6 +187,61 @@ describe("the evidence panes degrade honestly", () => {
     // The test is only meaningful if something was actually retrieved.
     expect(grounded).toBeGreaterThan(0);
   });
+
+  /*
+    The narrative, on the same walk.
+
+    Two things must hold with no model configured. It must never be `narrated`
+    — there is no model to have written it. And the reading beside it must be
+    exactly what it was before the narrative existed: the narrative is
+    additive, so an outage in it costs the narrative and nothing else.
+
+    Note the narrative here is `null` rather than `unavailable`, and the
+    difference is real: the gate never attempted one, because the reading did
+    not succeed. Both render as nothing; only one of them spent a call.
+  */
+  it("never produces a narrative, and does not disturb the reading", async () => {
+    const out = await assess();
+    for (const finding of [out.listedness, out.expectedness]) {
+      if (finding.state !== "grounded") continue;
+      expect(finding.narrative?.status).not.toBe("narrated");
+      expect(finding.narrative).toBeNull();
+      // Unchanged by the narrative's absence.
+      expect(finding.reading.status).toBe("unavailable");
+      expect(documentStance(finding)).toBe("unknown");
+    }
+  });
+
+  /*
+    Non-negotiable #8, stated as a dependency rule rather than a behaviour.
+
+    Nothing derived may consult a narrative. If `documentStance` ever starts
+    reading one, a failed second inference would change what a document is
+    recorded as saying — and this assertion is what would catch it: the stance
+    is identical whether a narrative is attached or not.
+  */
+  it("computes the same stance with a narrative attached as without", async () => {
+    const out = await assess();
+    if (out.listedness.state !== "grounded") return;
+    const before = documentStance(out.listedness);
+    const withNarrative = {
+      ...out.listedness,
+      narrative: {
+        status: "narrated" as const,
+        points: [
+          {
+            chunkId: out.listedness.citations[0]!.chunkId,
+            quotedSpan: "anything at all",
+            sentence: "The passage says something.",
+          },
+        ],
+        model: "m",
+        gatewayRequestId: null,
+        generatedAt: "2026-08-12T10:05:00Z",
+      },
+    };
+    expect(documentStance(withNarrative)).toBe(before);
+  });
 });
 
 describe("a reviewer can still rule, and the clock still works", () => {

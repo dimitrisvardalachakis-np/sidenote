@@ -214,21 +214,51 @@ export type Report = z.output<typeof Report>;
 // Steps
 // ---------------------------------------------------------------------------
 
+/**
+ * The order people tell this story in.
+ *
+ * It used to run: who this is about, what happened, hospital and emergencies,
+ * the medicine, about you. Two things were wrong with that.
+ *
+ * The medicine came fourth. It is what people LEAD with when they say this out
+ * loud — "I took X and then Y happened" — and it is what everything else hangs
+ * off, so it is second now.
+ *
+ * "Hospital and emergencies" was its own step, which made a reporter answer
+ * the same question twice in different words: going to hospital IS what
+ * happened. Those six questions are folded into "What happened" under "How bad
+ * did it get?".
+ *
+ * That left the dechallenge/rechallenge sequence — did you stop it, did it get
+ * better, did you start again, did it come back — buried at the bottom of a
+ * ten-question medicine step, where fatigue is highest, with nothing marking
+ * it optional. It is the most confusing material in the form, so it is its own
+ * step now, explicitly optional and skippable.
+ */
 export const STEP_IDS = [
   "about",
-  "what_happened",
-  "hospital",
   "medicine",
+  "what_happened",
+  "stopping",
   "you",
 ] as const;
 export type StepId = (typeof STEP_IDS)[number];
 
 export const STEP_TITLES: Readonly<Record<StepId, string>> = {
   about: "Who this is about",
-  what_happened: "What happened",
-  hospital: "Hospital and emergencies",
   medicine: "The medicine",
+  what_happened: "What happened",
+  stopping: "Stopping and starting again",
   you: "About you",
+};
+
+/** Steps a reporter may skip outright, and the control says so. */
+export const OPTIONAL_STEPS: Readonly<Record<StepId, boolean>> = {
+  about: false,
+  medicine: false,
+  what_happened: false,
+  stopping: true,
+  you: false,
 };
 
 /** Which fields belong to which step. Used for per-step checks and progress. */
@@ -236,8 +266,19 @@ export const STEP_FIELDS: Readonly<
   Record<StepId, readonly (keyof ReportDraft)[]>
 > = {
   about: ["about", "age", "sex"],
-  what_happened: ["whatHappened", "startedOn", "currentState"],
-  hospital: [
+  medicine: [
+    "medicineName",
+    "takenFor",
+    "dose",
+    "batchNumber",
+    "startedMedicineOn",
+  ],
+  what_happened: [
+    "whatHappened",
+    "startedOn",
+    "currentState",
+    // "How bad did it get?" — the same six questions, in the step they belong
+    // to. Going to hospital is part of what happened, not a separate subject.
     "wentToHospital",
     "stayedLongerInHospital",
     "lifeInDanger",
@@ -245,12 +286,7 @@ export const STEP_FIELDS: Readonly<
     "babyHarmed",
     "died",
   ],
-  medicine: [
-    "medicineName",
-    "batchNumber",
-    "dose",
-    "takenFor",
-    "startedMedicineOn",
+  stopping: [
     "stoppedMedicine",
     "stoppedMedicineOn",
     "betterAfterStopping",

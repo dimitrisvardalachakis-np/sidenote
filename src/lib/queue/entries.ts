@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { buildSeedCases } from "@/lib/fixtures/seed";
 import { getCaseStore } from "@/lib/store/case-store";
 import { getAssessmentStore } from "@/lib/store/assessment-store";
@@ -28,8 +29,17 @@ export interface QueueEntry {
  *
  * Submitted cases come first within their sort band because they are the
  * newest thing a reviewer has not seen.
+ *
+ * Wrapped in React's `cache` so one render pass reads the store once. Three
+ * callers now want the same list on the same request — `generateMetadata`,
+ * the page, and the case screen's rail — and each of them hitting the disk
+ * separately is work nobody asked for. The cache is per-request, so a case
+ * assessed a moment ago is still fresh on the next render; it is a
+ * deduplicator, not a store.
  */
-export async function loadQueue(today: IsoDate): Promise<readonly QueueEntry[]> {
+export const loadQueue = cache(async function loadQueue(
+  today: IsoDate,
+): Promise<readonly QueueEntry[]> {
   const seeded: QueueEntry[] = buildSeedCases(today).map((s) => ({
     record: s.record,
     assessment: s.assessment,
@@ -62,7 +72,7 @@ export async function loadQueue(today: IsoDate): Promise<readonly QueueEntry[]> 
   );
 
   return [...submittedEntries, ...seededWithRuns];
-}
+});
 
 export async function findQueueEntry(
   today: IsoDate,

@@ -9,7 +9,12 @@ const isYes = (a: Answer<"yes" | "no">) =>
   a.status === "answered" && a.value === "yes";
 
 /**
- * Step 3. Hospital and emergencies.
+ * "How bad did it get?" — the six seriousness questions.
+ *
+ * No longer its own step. Going to hospital IS what happened, and asking it
+ * under a separate heading made a reporter answer the same question twice in
+ * different words. These now sit inside "What happened", after the narrative,
+ * which is where they belong in the telling.
  *
  * Each question here is one of the things CLAUDE.md lists, asked in words a
  * worried person would use. The reporter is never shown that list and is never
@@ -25,7 +30,7 @@ const isYes = (a: Answer<"yes" | "no">) =>
  * from the fact that they are typing. It appears only when the report is about
  * someone else.
  */
-export function StepHospital({
+export function HowBadDidItGet({
   draft,
   update,
 }: {
@@ -36,9 +41,20 @@ export function StepHospital({
   const p = pronounsFor(about);
   const wentIn = isYes(draft.wentToHospital);
 
+  /*
+    A yes to any of these is the reporter telling us something frightening
+    happened. Answering with the next question and nothing else reads as not
+    having heard them.
+  */
+  const redFlag =
+    isYes(draft.died) ||
+    isYes(draft.lifeInDanger) ||
+    isYes(draft.wentToHospital);
+
   return (
     <div>
-      <p className="text-prose">
+      <h3 className="text-base font-medium">How bad did it get?</h3>
+      <p className="mt-1 text-prose text-slate">
         These questions help us understand how serious this was. Answer only
         what you know.
       </p>
@@ -92,6 +108,36 @@ export function StepHospital({
           value={draft.died}
           onChange={(next) => update({ died: next })}
         />
+      )}
+
+      {/*
+        Said back to them, in place, as soon as they say it.
+
+        It names what they told us and points at urgent help. It does not
+        block the flow, does not diagnose, and does not use --signal — the red
+        is the regulatory clock, and turning this red would be dressing a kind
+        sentence up as an alarm. It only says what is true.
+      */}
+      {redFlag && (
+        <div
+          role="status"
+          className="mt-4 border-l-2 border-ink bg-row-hover px-3 py-2"
+        >
+          <p className="text-prose">
+            {isYes(draft.died)
+              ? "You have told us someone died."
+              : isYes(draft.lifeInDanger)
+                ? `You have told us ${p.possessive} life was in danger.`
+                : `You have told us ${p.subject} went to hospital.`}{" "}
+            Thank you for saying so — it is important and a reviewer will see
+            it.
+          </p>
+          <p className="mt-1 text-meta text-slate">
+            If anything is still happening now, please contact a doctor or your
+            local emergency services. This form is not monitored in real time.
+            You can come back and finish this later.
+          </p>
+        </div>
       )}
 
       {/* Addressed to the reader, who is always "you" even when the report

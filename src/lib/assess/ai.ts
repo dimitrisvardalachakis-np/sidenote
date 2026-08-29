@@ -36,6 +36,24 @@ export const TEMPERATURE = 0.1;
  */
 export const MAX_OUTPUT_TOKENS = 320;
 
+/**
+ * The narrative's own output ceiling.
+ *
+ * A separate constant rather than a raised `MAX_OUTPUT_TOKENS`, because that
+ * one is shared with the single-reading path and with `lib/extract/`. Both of
+ * those provably fit in 320 and neither asked for more; raising it would more
+ * than double their per-call spend ceiling as a side effect of a feature they
+ * are not part of. Two constants also make the arithmetic writable — the worst
+ * case for an assessment is `4 x 320 + 2 x 700`, which one number cannot say.
+ *
+ * 700 comes from the shape of the reply, not from a round number: three
+ * points, each a 240-character sentence (~60 tokens) plus a quoted span (~75
+ * tokens for a long one) plus the JSON around it, is roughly 445. The headroom
+ * matters in one direction only — a reply truncated mid-string is invalid
+ * JSON, which costs the whole inference and renders as unavailable.
+ */
+export const NARRATIVE_MAX_OUTPUT_TOKENS = 700;
+
 export interface ChatTurn {
   readonly role: "system" | "user";
   readonly content: string;
@@ -150,7 +168,46 @@ export const GATEWAY_CACHE_TTL_SECONDS = 3600;
  * interchangeable — an embedding is a different model at a different price,
  * and folding them into one number would make this bound mean nothing.
  */
-export const MAX_CALLS_PER_ASSESSMENT = 4;
+export const MAX_READING_ATTEMPTS = 2;
+
+/**
+ * Two attempts at a narrative: one, then a stricter retry.
+ *
+ * This was 1, on the reasoning that partial acceptance makes outright failure
+ * rare — a bad point is dropped and the rest stand, so a retry would be
+ * re-rolling a dice that had already partly landed.
+ *
+ * Watching the real @cf/meta/llama-3.1-8b-instruct on this call showed that
+ * reasoning to be wrong in a specific way. Partial acceptance only helps once
+ * the reply PARSES; the model answered in prose instead of JSON, so no point
+ * ever reached verification and the narrative never rendered at all. The audit
+ * lines said so plainly — `points: 0, dropped: 0` — which is the signature of
+ * a parse failure rather than a verification one.
+ *
+ * That is precisely what the single-reading path's retry has always been for,
+ * and `narrativeRetryInstruction` names the failure rather than saying "try
+ * again", for the reason its neighbour gives: a generic retry tends to
+ * reproduce the reply that just failed.
+ */
+export const MAX_NARRATIVE_ATTEMPTS = 2;
+
+export const NAMESPACES_PER_ASSESSMENT = 2;
+
+/**
+ * Two namespaces x (two reading attempts + one narrative attempt) = six.
+ *
+ * Written as the arithmetic rather than as `6`, so the ceiling changes when
+ * one of its factors does instead of silently disagreeing with them.
+ */
+export const MAX_CALLS_PER_ASSESSMENT =
+  NAMESPACES_PER_ASSESSMENT * (MAX_READING_ATTEMPTS + MAX_NARRATIVE_ATTEMPTS);
+
+/**
+ * The public search page asks one namespace, so its ceiling is half the above:
+ * a reading, its retry, and one narrative.
+ */
+export const MAX_CALLS_PER_PUBLIC_ANSWER =
+  MAX_READING_ATTEMPTS + MAX_NARRATIVE_ATTEMPTS;
 
 /**
  * The embedding ceiling for one assessment: one, for the query.
@@ -328,6 +385,15 @@ export function resolveAiBinding(
         accountId,
         apiToken,
         gatewayId,
+        /*
+          Only meaningful when the gateway has Authenticated Gateway switched
+          on, and absent is the ordinary case — a gateway created from the
+          dashboard is open by default and needs nothing here. It is read
+          unconditionally rather than gated on `gatewayId`, so a token left in
+          the environment after the gateway was removed is simply unused
+          instead of being a second thing to remember to clear.
+        */
+        gatewayToken: readString(env, "SIDENOTE_AI_GATEWAY_TOKEN"),
         baseUrl: readString(env, "SIDENOTE_AI_BASE_URL") ?? undefined,
       }),
       reason: null,

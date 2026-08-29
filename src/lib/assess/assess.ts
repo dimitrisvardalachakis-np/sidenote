@@ -34,6 +34,7 @@ import type {
   DocumentId,
   ExpectednessFinding,
   GoverningDocumentKind,
+  GroundedNarrative,
   ListednessFinding,
   ModelReading,
   SourceType,
@@ -41,7 +42,7 @@ import type {
 import { DENSE_LIMIT, MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
 import { denseSearch } from "@/lib/retrieval/dense";
 import type { DenseAvailability, Vector } from "@/lib/retrieval/vectors";
-import { readPassages } from "./generate";
+import { narratePassages, readPassages } from "./generate";
 import type { AiAvailability, AiGatewayConfig } from "./ai";
 
 /**
@@ -245,6 +246,21 @@ async function embedQueryOnce(
 }
 
 /**
+ * What one namespace produced: the reading, and the narrative if one was
+ * attempted and survived.
+ *
+ * Two fields rather than a narrative nested inside the reading. They come from
+ * two independent inferences with two gateway request ids, and a reading that
+ * failed verification twice must not silently take a narrative down with it —
+ * nor the reverse. Keeping them apart is what makes the narrative additive.
+ */
+interface NamespaceReading {
+  readonly reading: ModelReading;
+  /** Null when no narrative was attempted at all. */
+  readonly narrative: GroundedNarrative | null;
+}
+
+/**
  * Read one namespace and record what produced the reading.
  *
  * The audit line carries the model name and the gateway request id, so a
@@ -256,7 +272,7 @@ async function readNamespace(
   input: AssessInput,
   sourceType: SourceType,
   retrieval: RetrievalOutcome,
-): Promise<ModelReading> {
+): Promise<NamespaceReading> {
   const hits = retrieval.hits;
   const { reading, attempts } = await readPassages({
     binding: input.ai.binding,
@@ -327,7 +343,76 @@ async function readNamespace(
     },
   });
 
-  return reading;
+  /*
+    The narrative runs only when the reading is `read`, and the gate is the
+    interesting part.
+
+    After `nothing_found` the model has just said no passage describes this
+    reaction; a two-point account of those same passages would contradict it on
+    the same panel, and the reader would have no way to know which to believe.
+    After `unavailable` the model is either unreachable — so a second call
+    fails too — or it produced two replies that failed verification, and its
+    prose on the same passages is not something to put in front of a reviewer.
+
+    The dependency runs one way only: reading -> narrative, never the reverse.
+    Nothing below can change the reading, the citations, or the finding state.
+  */
+  if (reading.status !== "read") {
+    return { reading, narrative: null };
+  }
+
+  const narrated = await narratePassages({
+    binding: input.ai.binding,
+    unavailableReason:
+      input.ai.reason ?? "no Workers AI binding is configured in this environment",
+    gateway: input.gateway,
+    reactionTerm: input.reactionTerm,
+    drugName: input.drugName,
+    chunks: hits.map((hit) => hit.chunk),
+    now: input.now,
+  });
+
+  /*
+    Its own audit line, not extra fields on the reading's.
+
+    This is a different inference with a different gateway request id. Folding
+    it into `generate_reading` would attach one id to two inferences — exactly
+    the failure the sequential-call comment above exists to prevent,
+    reintroduced one layer up at the logging level.
+  */
+  audit({
+    actor: input.actor,
+    action: "generate_narrative",
+    target: input.target,
+    outcome: narrated.narrative.status === "unavailable" ? "failure" : "success",
+    detail: {
+      sourceType,
+      status: narrated.narrative.status,
+      model: narrated.narrative.model ?? "none",
+      gatewayRequestId: narrated.narrative.gatewayRequestId ?? "none",
+      gateway: input.gateway?.id ?? "none",
+      points:
+        narrated.narrative.status === "narrated"
+          ? narrated.narrative.points.length
+          : 0,
+      citedChunks:
+        narrated.narrative.status === "narrated"
+          ? narrated.narrative.points.map((p) => p.chunkId).join(",")
+          : "none",
+      passages: hits.length,
+      inferences: narrated.attempts.length,
+      /*
+        What the model offered that did not survive, and why. This is the only
+        place a dropped point is recorded: it is a fact about the model, not
+        about the document, so it belongs on the audit line and not on screen.
+      */
+      dropped: narrated.dropped.length,
+      dropReasons:
+        narrated.dropped.map((d) => d.reason).join(",") || "none",
+    },
+  });
+
+  return { reading, narrative: narrated.narrative };
 }
 
 export async function assessCase(input: AssessInput): Promise<AssessOutput> {
@@ -387,7 +472,8 @@ export async function assessCase(input: AssessInput): Promise<AssessOutput> {
           state: "grounded",
           documentKind: input.documentKind,
           citations: company.hits.map(toCitation),
-          reading: companyReading,
+          reading: companyReading.reading,
+          narrative: companyReading.narrative,
           retrievedAt: input.now,
         };
 
@@ -404,7 +490,8 @@ export async function assessCase(input: AssessInput): Promise<AssessOutput> {
       : {
           state: "grounded",
           citations: publicSide.hits.map(toCitation),
-          reading: publicReading,
+          reading: publicReading.reading,
+          narrative: publicReading.narrative,
           labelSetId: input.labelSetId,
           retrievedAt: input.now,
         };

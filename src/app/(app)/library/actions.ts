@@ -134,6 +134,7 @@ export async function saveDocument(
       rejectionReason: assessment.reason,
       chunkCount: 0,
       uploadedAt: new Date().toISOString(),
+      uploadedBy: session.reviewerId,
     });
     await getDocumentLibrary().save({ document: rejected, chunks: [] });
 
@@ -179,6 +180,7 @@ export async function saveDocument(
     rejectionReason: null,
     chunkCount: chunks.length,
     uploadedAt: new Date().toISOString(),
+    uploadedBy: session.reviewerId,
   });
 
   await getDocumentLibrary().save({ document, chunks });

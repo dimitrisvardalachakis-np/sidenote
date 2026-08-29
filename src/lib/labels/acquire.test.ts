@@ -11,7 +11,8 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { SafetyDocument } from "@/lib/schemas";
 import { getDocumentLibrary } from "@/lib/store/library-store";
-import { ensurePublicLabel } from "./acquire";
+import { DocumentId } from "@/lib/schemas";
+import { ensurePublicLabel, withAcquiredLabel } from "./acquire";
 
 const realFetch = globalThis.fetch;
 
@@ -204,5 +205,70 @@ describe("failure never blocks an answer", () => {
       actor: "public",
     });
     expect(await getDocumentLibrary().get(SPL)).toBeNull();
+  });
+});
+
+/**
+ * The re-fetch loop, and the contradiction underneath it.
+ *
+ * A reporter searching "ABACAVIR SULFATE" produced three `fetch_fda_label`
+ * lines in one minute for one label. The cache check and the search share a
+ * predicate, so a name the predicate could not match was neither found in the
+ * library nor searchable once fetched: openFDA was called again on every
+ * request, and the reporter was told nothing was found about a document the
+ * same page had just announced fetching.
+ */
+describe("the salt on the box does not defeat the cache", () => {
+  it("recognises a held label when the reporter types the salt form", async () => {
+    const calls = stub(RESULT);
+    const out = await ensurePublicLabel({
+      drugName: "ATORVASTATIN CALCIUM",
+      held: [held({ activeSubstance: "atorvastatin" })],
+      dense: null,
+      actor: "public",
+    });
+    expect(out.status).toBe("held");
+    // The whole point: no second request. The library mirror IS the cache,
+    // and openFDA's unauthenticated rate limit is what it protects.
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe("the label a fetch resolved is always searchable", () => {
+  const id = DocumentId.parse(SPL);
+  const other = DocumentId.parse("11111111-1111-4111-8111-111111111111");
+
+  it("pins an acquired label into scope", () => {
+    const scope = withAcquiredLabel(new Set(), {
+      status: "acquired",
+      documentId: id,
+      title: "Abacavir — FDA Prescribing Information",
+      chunks: 24,
+      embedded: false,
+    });
+    expect(scope.has(id)).toBe(true);
+  });
+
+  it("pins a held one too, since it is equally the answer to this name", () => {
+    expect(withAcquiredLabel(new Set(), { status: "held", documentId: id }).has(id)).toBe(true);
+  });
+
+  it("only ever widens, and never by anything the fetch did not resolve", () => {
+    const scope = withAcquiredLabel(new Set([other]), {
+      status: "held",
+      documentId: id,
+    });
+    expect([...scope].sort()).toEqual([id, other].sort());
+  });
+
+  it("adds nothing when nothing was resolved", () => {
+    const base = new Set([other]);
+    expect(withAcquiredLabel(base, null)).toBe(base);
+    expect(
+      withAcquiredLabel(base, { status: "not_found", reason: "no such drug" }),
+    ).toBe(base);
+    expect(
+      withAcquiredLabel(base, { status: "unavailable", reason: "openFDA is down" }),
+    ).toBe(base);
   });
 });

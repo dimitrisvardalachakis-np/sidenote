@@ -713,14 +713,135 @@ partially-merged record that neither path is responsible for.
 
 ---
 
+## The name on the box, and the door in front of the model
+
+A reporter searched the public page for **ABACAVIR SULFATE** and asked about
+headache. The page said it had fetched the FDA label — "24 passages, keyword
+search only" — and then, three lines below, said *"No published label we hold
+describes that."* Abacavir's label describes headache four times, including a
+table row reading "Headaches/migraine 7% 11%".
+
+Two independent bugs, and each one hid the other.
+
+### One predicate, two jobs, wrong on both
+
+`documentGovernsDrug` decides which documents a search may cite. It also
+decides, in `acquire.ts`, whether a label is already held — the comment there
+says sharing the predicate "is what keeps 'held' and 'retrievable' meaning the
+same thing", and that was right. What neither of us noticed is that it makes a
+miss doubly invisible.
+
+openFDA files this label under the substance **abacavir**. The reporter typed
+the name printed on the carton, **abacavir sulfate**, which is also the string
+openFDA's own `substance_name` returns. The predicate compared them three ways
+and all three failed: not equal; `"abacavir".startsWith("abacavir sulfate")` is
+false, because the prefix rule points the other way (it exists so the brand
+"hepalex" reaches the substance "hepalexin"); and the title fallback compared
+the two-word name against the title's individual words, which no single word
+can equal.
+
+So the label was fetched, chunked into 24 passages, mirrored into the library —
+and then excluded from the search it had just been fetched for. And because
+the *cache* check is the same predicate, it was never recognised as held
+either: the audit log shows three `fetch_fda_label` successes for one document
+inside ninety seconds. The re-fetch loop and the empty result were the same
+line of code failing twice, and the re-fetching disguised the scoping failure
+as a fresh, honest lookup.
+
+**The fix is a closed list, not a rule.** Every comparison now runs on the
+active moiety: trailing words are stripped when they name a salt, ester or
+hydrate — `sulfate`, `calcium`, `hydrochloride`, thirty-odd of them, written
+out. The tempting version was "ignore the last word", and it is wrong in a way
+that matters here: *amoxicillin clavulanate* and *insulin glargine* are not
+their first word, and matching either to a plain amoxicillin or insulin label
+would be precisely the wrong-product citation `scope.ts` exists to prevent.
+Naming the salts explicitly puts the line where the chemistry puts it, and
+anything not on the list still fails closed.
+
+**And the acquired label is pinned into scope regardless.** `withAcquiredLabel`
+adds the document the fetch actually resolved. This is not redundant with the
+predicate — the predicate is a heuristic and `scope.ts` says plainly that it is
+allowed to miss. On a reviewer's screen a miss is survivable; a human goes and
+looks. On the public page a miss produces a contradiction a member of the
+public can read: we fetched this document, and we have no document. openFDA was
+asked for this exact name and answered with this exact record, which is FDA's
+own resolution of brand, generic and substance — strictly better evidence than
+matching the name back against the record afterwards. So where that evidence
+exists, it is used instead of guessing.
+
+### The gateway said 401, and it was not the token
+
+Underneath all of that, every model call in the app was failing:
+
+```
+"embedding":"failed","embeddingDetail":"http: 401 Unauthorized from
+https://gateway.ai.cloudflare.com/v1/…/workers-ai/@cf/baai/bge-base-en-v1.5"
+```
+
+401 means the credentials are wrong. The credentials were not wrong. The same
+account id and token, sent to the direct Workers AI endpoint, returned 200 for
+both the embedding model and the generation model on the first try; the token
+verified as active. Only the gateway URL refused, with `AiGatewayError`,
+internal code 2009.
+
+AI Gateway can be put behind its own authentication, and then it wants a
+`cf-aig-authorization` header carrying a token with `AI Gateway · Run` — a
+*different* credential from the provider token it forwards to Workers AI. The
+client had no way to send one. So an authenticated gateway was unreachable by
+construction, and because `SIDENOTE_AI_GATEWAY_ID` was set, that took down
+generation *and* embeddings *and* the dense half of retrieval at once, while
+the degraded states all reported themselves perfectly honestly. Everything
+worked exactly as designed around a door nobody could open.
+
+`HttpBindingConfig` now carries `gatewayToken`, read from
+`SIDENOTE_AI_GATEWAY_TOKEN`, sent only when the call genuinely routes through
+the gateway — `baseUrl` wins over the gateway id, so "a gateway is configured"
+and "this call goes through one" are different questions and are now asked
+separately.
+
+**What I could not do is tell the causes apart.** A gateway that does not
+exist, an account id that does not match, and authentication that was never
+satisfied all return the identical 401/2009 — I checked, with a deliberately
+bogus gateway name and a bogus account. There is no signal in the response to
+discriminate on. So the failure message names all three rather than guessing
+between them, and says which environment variable to reach for.
+
+**No automatic fallback to the direct API.** This was the one real temptation:
+the direct call demonstrably works, so the app could route around a broken
+gateway and nobody would see an outage. That is exactly why not. CLAUDE.md puts
+caching, logging and a spend cap on every model call, and the caching argument
+is not about money — two reviewers on one case must see the *same* reading, and
+that is the conflict this whole app exists to resolve. Falling back silently
+would leave somebody believing they have a spend cap and a shared cache when
+they have neither, which is the same species of untruth as a fixture marked
+`suggestedBy: "model"`. A configured gateway is used, or the call fails loudly
+and says how to fix it.
+
+### What the pair has in common
+
+Both failures were a component reporting its own state accurately while the
+system as a whole said something false. The label fetch logged `success`. The
+degraded panel correctly said no reading could be produced. The scoping filter
+correctly returned the empty set for a name it could not match. Every part was
+honest, and the page still told a member of the public that a published label
+does not describe a reaction it describes four times. Component-level honesty
+is not the same as being right, and the only thing that catches the difference
+is reading the whole screen the way the person in front of it does.
+
+---
+
 ## Open, and deliberately so
 
 - **Brand-to-substance matching is a heuristic.** `documentsForDrug` matches on
   substance when the case has one and falls back to a brand-stem test
-  otherwise. A real system uses a product dictionary. This one is allowed to
-  miss — missing means the panel says no document is held, which sends a
-  reviewer to look. Matching the *wrong* product is the failure that is not
-  allowed, and that is the one it is built to avoid.
+  otherwise, both taken on the active moiety so a salt form does not read as a
+  different medicine. A real system uses a product dictionary. This one is
+  allowed to miss — missing means the panel says no document is held, which
+  sends a reviewer to look. Matching the *wrong* product is the failure that is
+  not allowed, and that is the one it is built to avoid. The salt list is
+  closed and hand-written, so it will not know about a salt nobody listed; the
+  public surfaces no longer depend on it alone, because the label a fetch
+  resolved is pinned into scope directly.
 - **`Reaction.meddraPreferredTerm` and `SuspectDrug.activeSubstance` are bare
   nullable strings** with no provenance wrapper. Nothing writes them today. The
   moment a model does, no screen will be able to tell a reviewer-coded term
@@ -748,3 +869,14 @@ partially-merged record that neither path is responsible for.
   written down instead. The consequence matters more than the number: **the
   model gate, not the floor, is what protects quality**, which is precisely why
   the dense half went into `answer.ts` and not the intake chat.
+
+  A third measurement, now against a real FDA label rather than the fixtures.
+  On the abacavir label, asking *"my head was pounding every morning"* ranks
+  the right chunk first — the incidence table holding "Headaches/migraine 7%
+  11%" — at **0.544**, and the floor is 0.55. It is rejected by six
+  thousandths. The literal word "Headache" scores 0.588 against the same
+  corpus and "I kept throwing up" scores 0.578, so paraphrase is not uniformly
+  failing; the band is just narrow enough that a floor cannot sit cleanly
+  inside it. Still not retuning on one more point. What this does add is that
+  the overlap is not an artifact of the synthetic fixtures — it reproduces on
+  real label text, which is the corpus the app will actually see.

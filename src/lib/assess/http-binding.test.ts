@@ -10,6 +10,7 @@ const CONFIG = {
   accountId: "acct-1",
   apiToken: "tok-1",
   gatewayId: null,
+  gatewayToken: null,
   baseUrl: undefined,
 } as const;
 
@@ -156,6 +157,108 @@ describe("failures become failures, not empty readings", () => {
 
   it("has a timeout, so a hung model cannot hold a request open", () => {
     expect(HTTP_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * The gateway has its own front door, and it can be locked.
+ *
+ * A gateway with Authenticated Gateway switched on refuses the request before
+ * Workers AI sees it — 401, internal code 2009 — and there was no way to send
+ * the credential that would open it. The account id and token were correct and
+ * answered 200 against the direct API; every model call in the app failed
+ * anyway, and the audit line said `http: 401 Unauthorized`, which reads as a
+ * bad token and sends whoever is debugging it to the wrong place.
+ */
+describe("the gateway's own credential", () => {
+  const OK = { success: true, result: { response: "x" }, errors: [] };
+
+  it("goes in its own header, beside the provider token rather than instead of it", async () => {
+    const calls = stubFetch(OK);
+    await createHttpAiBinding({
+      ...CONFIG,
+      gatewayId: "sidenote",
+      gatewayToken: "gw-1",
+    }).run("m", INPUT);
+    // Two credentials, two audiences: `cf-aig-authorization` is consumed by
+    // the gateway, `authorization` is forwarded on to Workers AI.
+    expect(headerOf(calls[0]?.init, "cf-aig-authorization")).toBe("Bearer gw-1");
+    expect(headerOf(calls[0]?.init, "authorization")).toBe("Bearer tok-1");
+  });
+
+  it("is absent when the gateway is open, which is the ordinary case", async () => {
+    const calls = stubFetch(OK);
+    await createHttpAiBinding({ ...CONFIG, gatewayId: "sidenote" }).run("m", INPUT);
+    expect(headerOf(calls[0]?.init, "cf-aig-authorization")).toBeNull();
+  });
+
+  it("is not sent to the stub, which is not a gateway", async () => {
+    // baseUrl wins over the gateway in endpointFor, so "a gateway is
+    // configured" and "this call goes through one" are different questions.
+    const calls = stubFetch(OK);
+    await createHttpAiBinding({
+      ...CONFIG,
+      gatewayId: "sidenote",
+      gatewayToken: "gw-1",
+      baseUrl: "http://localhost:8787",
+    }).run("m", INPUT);
+    expect(headerOf(calls[0]?.init, "cf-aig-authorization")).toBeNull();
+  });
+
+  it("is read from the environment, so a deployment needs no code change", async () => {
+    const ai = resolveAiBinding({
+      CLOUDFLARE_ACCOUNT_ID: "acct-1",
+      CLOUDFLARE_API_TOKEN: "tok-1",
+      SIDENOTE_AI_GATEWAY_ID: "sidenote",
+      SIDENOTE_AI_GATEWAY_TOKEN: "gw-1",
+    });
+    const calls = stubFetch(OK);
+    await ai.binding?.run("m", INPUT);
+    expect(headerOf(calls[0]?.init, "cf-aig-authorization")).toBe("Bearer gw-1");
+  });
+});
+
+describe("a 401 from the gateway is not a 401 from the model", () => {
+  const REJECTED = {
+    success: false,
+    result: [],
+    error: [{ code: 2009, message: "Unauthorized" }],
+  };
+
+  it("says the gateway refused, and what to do about it", async () => {
+    stubFetch(REJECTED, { status: 401 });
+    const run = createHttpAiBinding({
+      ...CONFIG,
+      gatewayId: "sidenote",
+    }).run("m", INPUT);
+
+    // The gateway returns this identical 401 for a gateway that does not
+    // exist, an account that does not match, and authentication that was
+    // never satisfied. All three are named because none can be ruled out.
+    await expect(run).rejects.toThrow(/AI Gateway rejected the request \(401\)/);
+    await expect(run).rejects.toThrow(/"sidenote"/);
+    await expect(run).rejects.toThrow(/acct-1/);
+    await expect(run).rejects.toThrow(/SIDENOTE_AI_GATEWAY_TOKEN/);
+  });
+
+  it("does not blame the gateway when there is no gateway in the path", async () => {
+    stubFetch(REJECTED, { status: 401 });
+    await expect(createHttpAiBinding(CONFIG).run("m", INPUT)).rejects.toThrow(
+      /^http: 401/,
+    );
+    await expect(createHttpAiBinding(CONFIG).run("m", INPUT)).rejects.not.toThrow(
+      /AI Gateway rejected/,
+    );
+  });
+
+  it("covers 403 as well, which is what a token without the permission gets", async () => {
+    stubFetch(REJECTED, { status: 403 });
+    await expect(
+      createHttpAiBinding({ ...CONFIG, gatewayId: "sidenote", gatewayToken: "gw-1" }).run(
+        "m",
+        INPUT,
+      ),
+    ).rejects.toThrow(/check that SIDENOTE_AI_GATEWAY_TOKEN carries/);
   });
 });
 

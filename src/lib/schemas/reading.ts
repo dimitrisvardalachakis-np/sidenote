@@ -73,6 +73,56 @@ export function containsRecommendation(text: string): boolean {
 }
 
 /**
+ * Words that would be the model reaching a verdict rather than reading one.
+ *
+ * These used to live in `lib/evals/faithfulness.ts`, where they were *scored*
+ * rather than enforced — a rationale that said "listed" lowered a number and
+ * still rendered. That was defensible while the model wrote one sentence about
+ * one span: non-negotiable #4 is satisfied structurally there, because there
+ * is no field in which a determination could be recorded, and one sentence has
+ * little room to smuggle one in.
+ *
+ * The multi-point narrative changes that. A determination fits comfortably
+ * inside prose, so the structural guarantee is no longer sufficient on its own
+ * and the vocabulary has to become a gate. It lives here, beside the type it
+ * constrains, because `lib/schemas` cannot import from `lib/evals` without
+ * inverting the dependency — the eval imports the schemas.
+ *
+ * Prefix matching on a leading word boundary, which is the eval's existing
+ * semantics kept exactly: `listed` catches "listedness", `serious` catches
+ * "seriousness". `unlisted` and `unexpected` are listed separately because the
+ * boundary is leading-only and "unlisted" does not start with "listed".
+ */
+export const DETERMINATION_WORDS: readonly string[] = [
+  "listed",
+  "unlisted",
+  "expected",
+  "unexpected",
+  "serious",
+  "not serious",
+  "expedited",
+  "causal",
+  "caused by",
+];
+
+/**
+ * True when the text reaches for a verdict.
+ *
+ * Applies to model PROSE and never to a quoted span. An FDA label legitimately
+ * contains the words "serious" and "expected"; refusing a verified quotation
+ * because of a word the document itself chose would run non-negotiable #6
+ * backwards — it would mean the span displayed is not the span verified,
+ * decided by a denylist rather than by the document.
+ *
+ * Blunt, like `containsRecommendation`, and it fails the same safe way: towards
+ * showing the reader one fewer gloss on a quotation that still stands.
+ */
+export function containsDetermination(text: string): boolean {
+  const lower = text.toLowerCase();
+  return DETERMINATION_WORDS.some((word) => new RegExp(`\\b${word}`).test(lower));
+}
+
+/**
  * True when the text is a single sentence.
  *
  * A terminator only ends a sentence when a capital follows it. Without that

@@ -24,7 +24,7 @@
  *      it as `aiGatewayLogId`, so the audit line reads the same either way.
  */
 import { z } from "zod";
-import { fetchJsonWithHeaders, FetchJsonError } from "@/lib/fetch";
+import { fetchJsonWithHeaders, FetchJsonError, HttpError } from "@/lib/fetch";
 import { isTextGeneration, type AiBinding, type AiRunInput, type AiRunOptions } from "./ai";
 
 /**
@@ -46,6 +46,21 @@ export interface HttpBindingConfig {
   readonly apiToken: string;
   /** When set, calls route through AI Gateway instead of the direct API. */
   readonly gatewayId: string | null;
+  /**
+   * The gateway's own credential, when it has authentication switched on.
+   *
+   * SEPARATE FROM `apiToken`, because they authenticate to two different
+   * things. `apiToken` is the provider credential the gateway forwards to
+   * Workers AI; this one authorises the call to the GATEWAY, and a gateway
+   * with Authenticated Gateway enabled rejects the request outright — 401,
+   * internal code 2009 — before Workers AI is ever reached. There was no way
+   * to send it, so an authenticated gateway was unreachable by construction:
+   * the credentials worked perfectly against the direct API and every model
+   * call in the app still failed.
+   *
+   * Null means the gateway is open and only the provider token is sent.
+   */
+  readonly gatewayToken: string | null;
   /** Overridable so a test can point the real client at a local stub. */
   readonly baseUrl?: string | undefined;
   readonly timeoutMs?: number | undefined;
@@ -69,6 +84,72 @@ export function endpointFor(config: HttpBindingConfig, model: string): string {
   return config.gatewayId === null
     ? `https://api.cloudflare.com/client/v4/accounts/${config.accountId}/ai/run/${model}`
     : `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gatewayId}/workers-ai/${model}`;
+}
+
+/**
+ * True when the URL `endpointFor` builds is the gateway's.
+ *
+ * `baseUrl` wins over the gateway — that is how the local stub is reached —
+ * so "a gateway is configured" and "this call goes through the gateway" are
+ * not the same question. Both the auth header and the failure message depend
+ * on the second one, so it is asked once, here.
+ */
+function routedThroughGateway(config: HttpBindingConfig): boolean {
+  return (config.baseUrl ?? null) === null && config.gatewayId !== null;
+}
+
+/**
+ * What a gateway rejection means, in words somebody can act on.
+ *
+ * Worth the length, because the raw failure is actively misleading. It arrives
+ * as `http: 401 Unauthorized from https://gateway.ai.cloudflare.com/…`, which
+ * reads as "the credentials are wrong" — and they are not: the same account id
+ * and token answer 200 against the direct API. The gateway refuses first, and
+ * it returns the identical 401 for a gateway that does not exist, an account
+ * that does not match, and a gateway whose authentication was never satisfied.
+ * Those three are indistinguishable from outside, so all three are named
+ * rather than guessed between.
+ */
+function describeGatewayRejection(
+  config: HttpBindingConfig,
+  status: number,
+): string {
+  const remedy =
+    config.gatewayToken === null
+      ? "set SIDENOTE_AI_GATEWAY_TOKEN to a token carrying the AI Gateway · Run permission"
+      : "check that SIDENOTE_AI_GATEWAY_TOKEN carries the AI Gateway · Run permission";
+  return (
+    `AI Gateway rejected the request (${status}) before it reached Workers AI — ` +
+    `the gateway refused, not the model. Check that a gateway named ` +
+    `"${config.gatewayId ?? ""}" exists on account ${config.accountId}; if it has ` +
+    `Authenticated Gateway switched on, ${remedy}. Unsetting SIDENOTE_AI_GATEWAY_ID ` +
+    `calls Workers AI directly, at the cost of the cache, the log and the spend cap.`
+  );
+}
+
+/**
+ * The message a transport failure degrades into.
+ *
+ * Exported so the gateway case can be tested without a live 401, and separate
+ * from `run` because it is a pure function of the failure and the config —
+ * which is what makes it testable at all.
+ */
+export function describeTransportFailure(
+  config: HttpBindingConfig,
+  cause: unknown,
+): string {
+  if (
+    routedThroughGateway(config) &&
+    cause instanceof HttpError &&
+    (cause.status === 401 || cause.status === 403)
+  ) {
+    return `http: ${describeGatewayRejection(config, cause.status)}`;
+  }
+  return cause instanceof FetchJsonError
+    ? `${cause.kind}: ${cause.message}`
+    : cause instanceof Error
+      ? cause.message
+      : "unknown transport failure";
 }
 
 class HttpAiBinding implements AiBinding {
@@ -103,6 +184,18 @@ class HttpAiBinding implements AiBinding {
       authorization: `Bearer ${this.#config.apiToken}`,
       "content-type": "application/json",
     };
+
+    /*
+      Two credentials on one request, and they are not interchangeable.
+
+      `authorization` is forwarded to Workers AI. `cf-aig-authorization` is
+      consumed by the gateway itself and never reaches the provider. Sent only
+      when the call actually goes through the gateway, so the local stub and
+      the direct API are never handed a header they have no use for.
+    */
+    if (routedThroughGateway(this.#config) && this.#config.gatewayToken !== null) {
+      headers["cf-aig-authorization"] = `Bearer ${this.#config.gatewayToken}`;
+    }
 
     // Gateway cache control travels as headers on the REST path, where the
     // native binding takes them as an options object.
@@ -143,14 +236,7 @@ class HttpAiBinding implements AiBinding {
       // Re-thrown as a plain Error because generate.ts already converts any
       // throw into an `unavailable` reading with the message attached. The
       // FetchJsonError subclasses carry the useful detail; keep it.
-      throw new Error(
-        cause instanceof FetchJsonError
-          ? `${cause.kind}: ${cause.message}`
-          : cause instanceof Error
-            ? cause.message
-            : "unknown transport failure",
-        { cause },
-      );
+      throw new Error(describeTransportFailure(this.#config, cause), { cause });
     }
 
     this.#lastLogId = response.headers.get("cf-aig-log-id");

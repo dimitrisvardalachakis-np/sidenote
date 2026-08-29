@@ -21,24 +21,25 @@
  */
 import {
   containsRecommendation,
+  DETERMINATION_WORDS,
   isSingleSentence,
   RATIONALE_MAX_CHARS,
 } from "@/lib/schemas/reading";
-import { sanitisePassage } from "@/lib/assess/prompt";
-import type { DocumentChunk, ModelReading } from "@/lib/schemas";
+import { spanOccursIn } from "@/lib/assess/verify";
+import type {
+  DocumentChunk,
+  GroundedNarrative,
+  ModelReading,
+} from "@/lib/schemas";
+import { containsDetermination } from "@/lib/schemas/reading";
 
-/** Words that would be the model reaching a verdict rather than reading one. */
-export const DETERMINATION_WORDS: readonly string[] = [
-  "listed",
-  "unlisted",
-  "expected",
-  "unexpected",
-  "serious",
-  "not serious",
-  "expedited",
-  "causal",
-  "caused by",
-];
+/*
+  The determination vocabulary now lives beside the type it constrains, in
+  `lib/schemas/reading.ts`, because the narrative *gates* on it where this
+  module only scores it. Re-exported so existing importers of this module are
+  unaffected and there is still exactly one list.
+*/
+export { DETERMINATION_WORDS };
 
 export type FaithfulnessFailureKind =
   | "span_not_in_chunk"
@@ -47,7 +48,13 @@ export type FaithfulnessFailureKind =
   | "rationale_determines"
   | "rationale_unsupported_terms"
   | "rationale_too_long"
-  | "rationale_multi_sentence";
+  | "rationale_multi_sentence"
+  | "narrative_span_not_in_chunk"
+  | "narrative_chunk_not_supplied"
+  | "narrative_point_determines"
+  | "narrative_point_recommends"
+  | "narrative_duplicate_chunk"
+  | "narrative_point_unsupported_terms";
 
 export interface FaithfulnessFailure {
   readonly kind: FaithfulnessFailureKind;
@@ -147,19 +154,15 @@ export function scoreReading(sample: ScoredReading): readonly FaithfulnessFailur
   /*
     THE HARD GATE — and it must test exactly what the runtime tested.
 
-    `verifyGeneration` compares against `sanitisePassage(cited.text)`, because
-    that is the string the model was actually shown. This compared against the
-    raw text, so the two disagreed about what "verbatim" means: for a chunk
-    containing the passage fence, the model faithfully copies the `[removed]`
-    it was given, the runtime accepts it, and the gate then reports a
-    fabricated quotation and fails the build. A gate that disagrees with the
-    check it is guarding is worse than no gate — it fails honest work and
-    teaches people to distrust it.
-
-    The two strings are identical for every document that does not contain the
-    sentinel, which is all of them today.
+    It now calls the same `spanOccursIn` the runtime calls, rather than a
+    second copy of the comparison. The two copies once disagreed about what
+    "verbatim" means — this one compared against the raw text while the runtime
+    compared against the sanitised text — so a chunk containing the passage
+    fence failed the build for quoting exactly what it had been shown. A gate
+    that disagrees with the check it is guarding is worse than no gate: it
+    fails honest work and teaches people to distrust it.
   */
-  if (!sanitisePassage(cited.text).includes(reading.quotedSpan)) {
+  if (!spanOccursIn(cited, reading.quotedSpan)) {
     failures.push({
       kind: "span_not_in_chunk",
       detail: `quoted span does not occur in ${cited.id}: ${JSON.stringify(reading.quotedSpan.slice(0, 80))}`,
@@ -227,5 +230,115 @@ export function scoreFaithfulness(
     failures,
     fatalFailures: failures.filter((f) => f.fatal),
     score: readable.length === 0 ? 1 : clean / readable.length,
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// The narrative
+//
+// The fatal/non-fatal split here differs from the rationale's, and the
+// difference is the whole point of scoring it separately.
+//
+// For a rationale, a determination is SCORED: the pipeline keeps a reading
+// whose rationale it dropped, so a determination surviving into a sample is
+// drift worth measuring, not a broken gate.
+//
+// For a narrative point, the pipeline drops the WHOLE POINT. A surviving point
+// that recommends or determines therefore cannot mean the model misbehaved —
+// it can only mean the gate did not run. That is a correctness bug in
+// `verifyNarrative`, and it fails the build.
+// ---------------------------------------------------------------------------
+
+export interface ScoredNarrative {
+  readonly narrative: GroundedNarrative;
+  /** Exactly the chunks that were put in the prompt for this narrative. */
+  readonly chunks: readonly DocumentChunk[];
+}
+
+/**
+ * Check one narrative. Only `narrated` narratives have anything to be
+ * faithful to — an `unavailable` one makes no claim about any document.
+ */
+export function scoreNarrative(
+  sample: ScoredNarrative,
+): readonly FaithfulnessFailure[] {
+  const { narrative, chunks } = sample;
+  if (narrative.status !== "narrated") return [];
+
+  const failures: FaithfulnessFailure[] = [];
+  const seen = new Set<string>();
+
+  for (const point of narrative.points) {
+    const cited = chunks.find((c) => c.id === point.chunkId);
+    if (cited === undefined) {
+      failures.push({
+        kind: "narrative_chunk_not_supplied",
+        detail: `point cites ${point.chunkId}, which was not among the passages supplied`,
+        fatal: true,
+      });
+      continue;
+    }
+
+    // The same predicate the runtime used. See `spanOccursIn`.
+    if (!spanOccursIn(cited, point.quotedSpan)) {
+      failures.push({
+        kind: "narrative_span_not_in_chunk",
+        detail: `point span does not occur in ${cited.id}: ${JSON.stringify(point.quotedSpan.slice(0, 80))}`,
+        fatal: true,
+      });
+    }
+
+    if (seen.has(point.chunkId)) {
+      failures.push({
+        kind: "narrative_duplicate_chunk",
+        detail: `two points cite ${point.chunkId}, which reads as two pieces of evidence where there is one`,
+        fatal: false,
+      });
+    }
+    seen.add(point.chunkId);
+
+    if (containsRecommendation(point.sentence)) {
+      failures.push({
+        kind: "narrative_point_recommends",
+        detail: `point recommends an action, which the gate should have dropped: ${JSON.stringify(point.sentence)}`,
+        fatal: true,
+      });
+    }
+
+    if (containsDetermination(point.sentence)) {
+      failures.push({
+        kind: "narrative_point_determines",
+        detail: `point reaches a determination, which the gate should have dropped: ${JSON.stringify(point.sentence)}`,
+        fatal: true,
+      });
+    }
+
+    const unsupported = unsupportedTerms(point.sentence, cited.text);
+    if (unsupported.length > 0) {
+      failures.push({
+        kind: "narrative_point_unsupported_terms",
+        detail: `point asserts terms absent from ${cited.id}: ${unsupported.join(", ")}`,
+        fatal: false,
+      });
+    }
+  }
+
+  return failures;
+}
+
+/** Score a sample of generated narratives. */
+export function scoreNarrativeFaithfulness(
+  samples: readonly ScoredNarrative[],
+): FaithfulnessResult {
+  const narrated = samples.filter((s) => s.narrative.status === "narrated");
+  const failures = samples.flatMap(scoreNarrative);
+  const clean = narrated.filter((s) => scoreNarrative(s).length === 0).length;
+
+  return {
+    checked: narrated.length,
+    failures,
+    fatalFailures: failures.filter((f) => f.fatal),
+    score: narrated.length === 0 ? 1 : clean / narrated.length,
   };
 }

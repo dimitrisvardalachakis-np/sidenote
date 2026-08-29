@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { getSession } from "@/lib/auth";
+import { signOut, switchReviewer } from "@/app/session-actions";
+import { DemoBanner } from "@/components/demo-banner";
+import { ReviewerRail } from "@/components/reviewer-rail";
+import { DEMO_REVIEWERS, getSession } from "@/lib/auth";
 
 /**
- * The single authentication gate.
+ * The single authentication gate, and the reviewer chrome.
  *
  * Every reviewer route lives under this layout, so there is exactly one place
  * where "are you signed in" is asked. Putting the check in each page would
@@ -14,8 +17,10 @@ import { getSession } from "@/lib/auth";
  * these routes, not something a reviewer should see in the URL. The queue is
  * at /queue, not /app/queue.
  *
- * The navigation that used to live here has moved to the persistent sidebar,
- * so this is now only the gate and the signed-in strip.
+ * The rail lives here rather than in the root layout, which is the whole of
+ * the navigation change. A reporter is under `(public)` and never renders it;
+ * the signed-in strip it used to need has folded into the rail's footer,
+ * where the reviewer's identity sits beside the control that ends it.
  */
 export const dynamic = "force-dynamic";
 
@@ -24,13 +29,18 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   if (session === null) redirect("/");
 
   return (
-    <div className="flex flex-1 flex-col">
-      <div className="border-b border-rule px-4 py-1.5">
-        <p className="text-micro uppercase tracking-label text-slate">
-          Reviewer · signed in as <span className="text-ink">{session.displayName}</span>
-        </p>
+    <div className="flex min-h-full flex-col lg:flex-row">
+      <ReviewerRail
+        displayName={session.displayName}
+        reviewerId={session.reviewerId}
+        reviewers={DEMO_REVIEWERS}
+        signOut={signOut}
+        switchReviewer={switchReviewer}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
+        <DemoBanner />
+        <div className="flex flex-1 flex-col">{children}</div>
       </div>
-      <div className="flex flex-1 flex-col">{children}</div>
     </div>
   );
 }

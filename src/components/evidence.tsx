@@ -4,6 +4,8 @@ import type {
   ListednessFinding,
   ModelReading,
 } from "@/lib/schemas";
+import { documentStance } from "@/lib/schemas";
+import { GeneratedNarrative } from "./narrative";
 
 /**
  * The two evidence panels.
@@ -21,15 +23,24 @@ import type {
  * outage. CLAUDE.md non-negotiable #8 is precisely this.
  *
  * Nothing here uses --signal. A degraded panel is not a regulatory deadline.
+ *
+ * The two panels are rendered SIDE BY SIDE at xl by the case screen, aligned
+ * row for row: stance, generated summary, verified reading, passages. CLAUDE.md
+ * promises "both side by side with citations" and the landing page repeats it
+ * to the user; stacking them meant the comparison the product is built around
+ * had to be done from memory while scrolling.
  */
 
 function CitationBlock({
   citation,
   cited,
+  source,
 }: {
   citation: Citation;
   /** True when this is the passage the model's reading quotes from. */
   cited: boolean;
+  /** "See in source" for this passage, when the corpus still holds it. */
+  source?: React.ReactNode | undefined;
 }) {
   return (
     <li className="border-t border-rule py-2 first:border-t-0">
@@ -65,25 +76,58 @@ function CitationBlock({
         <span className="font-mono normal-case tracking-normal">
           {citation.chunkId}
         </span>
+        {source}
       </div>
     </li>
+  );
+}
+
+/**
+ * What this document was observed to say, in three words, at the top of the
+ * column — so the comparison can be made at a glance before any reading.
+ *
+ * It is `documentStance` rendered, and it is emphatically not a determination:
+ * "describes" is an observation about a passage, where "listed" would be a
+ * ruling. The wording keeps that distinction visible.
+ */
+function Stance({ stance }: { stance: "describes" | "silent" | "unknown" }) {
+  const label =
+    stance === "describes"
+      ? "describes this reaction"
+      : stance === "silent"
+        ? "silent on this reaction"
+        : "not read";
+  return (
+    <p
+      className={[
+        "text-base",
+        stance === "describes" ? "font-medium text-ink" : "text-slate",
+      ].join(" ")}
+    >
+      {label}
+    </p>
   );
 }
 
 function PanelShell({
   heading,
   note,
+  stance,
   children,
 }: {
   heading: string;
   note: string;
+  stance: "describes" | "silent" | "unknown";
   children: React.ReactNode;
 }) {
   return (
-    <section aria-label={heading}>
-      <div className="flex items-baseline justify-between gap-3">
+    <section aria-label={heading} className="min-w-0">
+      <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-1">
         <h3 className="text-base font-medium">{heading}</h3>
         <p className="text-micro uppercase tracking-label text-slate">{note}</p>
+      </div>
+      <div className="mt-2">
+        <Stance stance={stance} />
       </div>
       <div className="mt-2">{children}</div>
     </section>
@@ -113,15 +157,23 @@ function Reading({
 }) {
   if (reading.status === "unavailable") {
     return (
-      /* Dashed, never --signal. A missing reading is not a regulatory deadline. */
-      <div className="border border-dashed border-rule px-3 py-2 rounded-soft">
-        <p className="text-base font-medium">Assessment unavailable</p>
-        <p className="mt-1 text-meta text-slate">
-          The passages below were retrieved, but no reading of them could be
-          produced. This is not a finding that the document is silent — nothing
-          has read it. Read the passages yourself.
-        </p>
-        <p className="mt-2 text-meta text-ink">{reading.reason}</p>
+      /*
+        A one-line marker, not a paragraph.
+
+        Both panels used to print the same three-line explanation and the same
+        reason string, so a reviewer with no model configured read the identical
+        text twice and neither copy said anything the other did not. The
+        explanation is hoisted to a single notice above the pair; what stays
+        here is the fact that THIS panel was not read. Dashed, never --signal.
+      */
+      <div className="border border-dashed border-rule px-3 py-1.5 rounded-soft">
+        {/*
+          The REASON, not the state. The stance line two rows above already
+          says "not read", and repeating it here in a box was the same
+          duplication one layer down from the one this change removed between
+          the two panels.
+        */}
+        <p className="text-meta text-slate">{reading.reason}</p>
       </div>
     );
   }
@@ -211,16 +263,41 @@ function SourceUnavailable({ reason, at }: { reason: string; at: string }) {
   );
 }
 
-export function CompanyEvidence({ finding }: { finding: ListednessFinding }) {
+export function CompanyEvidence({
+  finding,
+  seeSource,
+}: {
+  finding: ListednessFinding;
+  /** Renders a source-in-context control for one passage. */
+  seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+}) {
   const documentLabel =
     finding.documentKind === "ccds"
       ? "Company Core Data Sheet"
       : "Investigator's Brochure";
 
   return (
-    <PanelShell heading="Company documents" note={`${documentLabel} · confidential`}>
+    <PanelShell
+      heading="Company documents"
+      note={`${documentLabel} · confidential`}
+      stance={documentStance(finding)}
+    >
       {finding.state === "grounded" && (
         <>
+          {/*
+            The generated summary sits ABOVE the single verified quotation.
+            The user asked for the generated answer to be prominent, and
+            burying it under the quotation defeats that. The quotation below
+            still reads as the stronger evidence — it carries --steady, the
+            summary carries only a label.
+          */}
+          <div className="mb-3">
+            <GeneratedNarrative
+              narrative={finding.narrative}
+              onSeeSource={seeSource}
+              footnote="Every sentence above quotes the passage numbered beside it, word for word. Not a determination: listedness is yours to record."
+            />
+          </div>
           <Reading reading={finding.reading} citations={finding.citations} />
           <ul className="mt-2">
             {finding.citations.map((citation) => (
@@ -231,6 +308,7 @@ export function CompanyEvidence({ finding }: { finding: ListednessFinding }) {
                   finding.reading.status === "read" &&
                   finding.reading.chunkId === citation.chunkId
                 }
+                source={seeSource?.(citation.chunkId)}
               />
             ))}
           </ul>
@@ -246,11 +324,24 @@ export function CompanyEvidence({ finding }: { finding: ListednessFinding }) {
   );
 }
 
-export function PublicEvidence({ finding }: { finding: ExpectednessFinding }) {
+export function PublicEvidence({
+  finding,
+  seeSource,
+}: {
+  finding: ExpectednessFinding;
+  seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+}) {
   return (
-    <PanelShell heading="FDA label" note="public">
+    <PanelShell heading="FDA label" note="public" stance={documentStance(finding)}>
       {finding.state === "grounded" && (
         <>
+          <div className="mb-3">
+            <GeneratedNarrative
+              narrative={finding.narrative}
+              onSeeSource={seeSource}
+              footnote="Every sentence above quotes the passage numbered beside it, word for word. Not a determination: expectedness is yours to record."
+            />
+          </div>
           <Reading reading={finding.reading} citations={finding.citations} />
           <ul className="mt-2">
             {finding.citations.map((citation) => (
@@ -261,6 +352,7 @@ export function PublicEvidence({ finding }: { finding: ExpectednessFinding }) {
                   finding.reading.status === "read" &&
                   finding.reading.chunkId === citation.chunkId
                 }
+                source={seeSource?.(citation.chunkId)}
               />
             ))}
           </ul>

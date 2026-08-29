@@ -14,15 +14,25 @@
  */
 import { describe, expect, it } from "vitest";
 import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
-import { ChunkId, DocumentId, DrugId, type DocumentChunk, type SuspectDrug } from "@/lib/schemas";
+import {
+  ChunkId,
+  DocumentId,
+  DrugId,
+  type DocumentChunk,
+  type NarrativePoint,
+  type SuspectDrug,
+} from "@/lib/schemas";
 import { assessCase } from "@/lib/assess/assess";
 import { verifyGeneration } from "@/lib/assess/verify";
 import { documentsForDrug } from "@/lib/assess/scope";
 import { messagesOf, type AiBinding } from "@/lib/assess/ai";
 import {
   scoreFaithfulness,
+  scoreNarrative,
+  scoreNarrativeFaithfulness,
   scoreReading,
   unsupportedTerms,
+  type ScoredNarrative,
   type ScoredReading,
 } from "./faithfulness";
 
@@ -350,5 +360,164 @@ describe("the gate agrees with the check it guards", () => {
       chunks: [fencedChunk],
     });
     expect(failures.some((f) => f.kind === "span_not_in_chunk" && f.fatal)).toBe(true);
+  });
+});
+
+
+// ---------------------------------------------------------------------------
+// The narrative
+// ---------------------------------------------------------------------------
+
+describe("narrative faithfulness", () => {
+  const A = chunk(
+    "ccds#1",
+    "Elevations in hepatic transaminases have been reported. Jaundice has been reported rarely.",
+  );
+  const B = chunk(
+    "ccds#2",
+    "Headache and nausea were the most frequently reported adverse reactions.",
+  );
+
+  const narrated = (points: readonly NarrativePoint[]): ScoredNarrative => ({
+    narrative: {
+      status: "narrated",
+      points: [...points],
+      model: "m",
+      gatewayRequestId: null,
+      generatedAt: "2026-08-26T10:00:00Z",
+    },
+    chunks: [A, B],
+  });
+
+  /*
+    Sentences that stay inside their passage's vocabulary.
+
+    Worth saying why they read a little flatly than they otherwise might: the
+    first draft of these used "records jaundice as an uncommon occurrence" and
+    "names headache and nausea as most frequent", and the unsupported-terms
+    check flagged both — "uncommon", "occurrence" and "names" appear in neither
+    passage. That is the check doing its job on the test data, and rewording
+    was the honest response. It is also a fair demonstration of how tight the
+    constraint on a grounded sentence really is.
+  */
+  const CLEAN: readonly NarrativePoint[] = [
+    {
+      chunkId: ChunkId.parse("ccds#1"),
+      quotedSpan: "Jaundice has been reported rarely.",
+      sentence: "The passage states jaundice has been reported rarely.",
+    },
+    {
+      chunkId: ChunkId.parse("ccds#2"),
+      quotedSpan: "Headache and nausea were the most frequently reported adverse reactions.",
+      sentence: "The passage reports headache and nausea most frequently.",
+    },
+  ];
+
+  it("scores a clean two-point narrative with no failures", () => {
+    expect(scoreNarrative(narrated(CLEAN))).toHaveLength(0);
+    expect(scoreNarrativeFaithfulness([narrated(CLEAN)]).score).toBe(1);
+  });
+
+  it("ignores an unavailable narrative, which claims nothing", () => {
+    const failures = scoreNarrative({
+      narrative: {
+        status: "unavailable",
+        reason: "no model is configured",
+        model: null,
+        gatewayRequestId: null,
+        attemptedAt: "2026-08-26T10:00:00Z",
+      },
+      chunks: [A, B],
+    });
+    expect(failures).toHaveLength(0);
+  });
+
+  it("fails fatally on a fabricated span", () => {
+    const failures = scoreNarrative(
+      narrated([
+        {
+          chunkId: ChunkId.parse("ccds#1"),
+          quotedSpan: "Fatal hepatic failure occurred in 3% of patients.",
+          sentence: "The passage describes an outcome.",
+        },
+      ]),
+    );
+    expect(
+      failures.some((f) => f.kind === "narrative_span_not_in_chunk" && f.fatal),
+    ).toBe(true);
+  });
+
+  it("fails fatally on a point citing a passage that was not supplied", () => {
+    const failures = scoreNarrative(
+      narrated([
+        {
+          chunkId: ChunkId.parse("ccds#99"),
+          quotedSpan: "Jaundice has been reported rarely.",
+          sentence: "The passage records jaundice.",
+        },
+      ]),
+    );
+    expect(
+      failures.some((f) => f.kind === "narrative_chunk_not_supplied" && f.fatal),
+    ).toBe(true);
+  });
+
+  /*
+    The split that makes this worth having separately from the rationale score.
+
+    `verifyNarrative` drops any point whose sentence reaches a determination,
+    so a surviving one cannot mean the model misbehaved — it can only mean the
+    gate did not run. That is a correctness bug, so it is fatal here where the
+    equivalent rationale failure is merely scored.
+  */
+  it("fails FATALLY on a surviving point that reaches a determination", () => {
+    const failures = scoreNarrative(
+      narrated([
+        {
+          chunkId: ChunkId.parse("ccds#1"),
+          quotedSpan: "Jaundice has been reported rarely.",
+          sentence: "This reaction is listed for the product.",
+        },
+      ]),
+    );
+    const failure = failures.find((f) => f.kind === "narrative_point_determines");
+    expect(failure?.fatal).toBe(true);
+  });
+
+  it("fails FATALLY on a surviving point that recommends an action", () => {
+    const failures = scoreNarrative(
+      narrated([
+        {
+          chunkId: ChunkId.parse("ccds#1"),
+          quotedSpan: "Jaundice has been reported rarely.",
+          sentence: "The reviewer should note this passage.",
+        },
+      ]),
+    );
+    const failure = failures.find((f) => f.kind === "narrative_point_recommends");
+    expect(failure?.fatal).toBe(true);
+  });
+
+  it("flags but does not fail two points citing one passage", () => {
+    const first = CLEAN[0];
+    if (first === undefined) throw new Error("fixture missing");
+    const failures = scoreNarrative(
+      narrated([
+        first,
+        {
+          chunkId: ChunkId.parse("ccds#1"),
+          quotedSpan: "Elevations in hepatic transaminases have been reported.",
+          sentence: "Elevations in hepatic transaminases have been reported.",
+        },
+      ]),
+    );
+    const failure = failures.find((f) => f.kind === "narrative_duplicate_chunk");
+    expect(failure).toBeDefined();
+    expect(failure?.fatal).toBe(false);
+  });
+
+  it("leaves the reading score untouched", () => {
+    // scoreFaithfulness knows nothing about narratives and must stay that way.
+    expect(scoreFaithfulness([]).score).toBe(1);
   });
 });

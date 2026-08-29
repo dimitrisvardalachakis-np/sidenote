@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { AppShell } from "@/components/app-shell";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "./globals.css";
 
@@ -28,9 +27,13 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             to dark. See src/lib/theme.ts for why this is not an effect. */}
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-full bg-paper text-ink">
-        <AppShell>{children}</AppShell>
-      </body>
+      {/*
+        No chrome here. Each route group brings its own: `(public)` a slim
+        header for reporters, `(app)` the reviewer rail behind the auth gate.
+        One shell for both audiences is what put `Reviewer · Queue · Library`
+        in front of a patient filling in a form.
+      */}
+      <body className="min-h-full bg-paper text-ink">{children}</body>
     </html>
   );
 }

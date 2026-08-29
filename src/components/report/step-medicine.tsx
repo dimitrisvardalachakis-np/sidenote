@@ -1,25 +1,18 @@
 "use client";
 
-import { DateQuestion, TextQuestion, YesNoQuestion } from "./questions";
+import { DateQuestion, TextQuestion } from "./questions";
 import { pronounsFor } from "@/lib/schemas/pronouns";
-import { isAnswered, UNANSWERED, type Answer } from "@/lib/schemas/answer";
+import { isAnswered } from "@/lib/schemas/answer";
 import type { ReportDraft } from "@/lib/schemas/report";
 
-const isYes = (a: Answer<"yes" | "no">) =>
-  a.status === "answered" && a.value === "yes";
-
 /**
- * Step 4. The medicine.
+ * The medicine. Second, because it is what people lead with.
  *
- * The last four questions are what CLAUDE.md calls dechallenge and
- * rechallenge: did stopping help, and did it come back on restarting. The
- * reporter meets neither word. They are asked whether they stopped, whether
- * things improved, whether they started again, and whether it happened again,
- * which is the same information in the order a person would tell it.
- *
- * The follow-ups appear only when they mean something. "Did things get better
- * after stopping?" asked of someone who never stopped is noise, and answering
- * it would put a fact in the record that is not true.
+ * "I took X and then Y happened" is how this story gets told out loud, and
+ * everything else hangs off which medicine it was. It used to come fourth,
+ * after the longest stretch of event questions, carrying ten questions
+ * including the dechallenge sequence — the heaviest step in the form, placed
+ * where fatigue was highest. That sequence is its own step now.
  */
 export function StepMedicine({
   draft,
@@ -29,8 +22,6 @@ export function StepMedicine({
   update: (patch: Partial<ReportDraft>) => void;
 }) {
   const p = pronounsFor(isAnswered(draft.about) ? draft.about.value : "someone_else");
-  const stopped = isYes(draft.stoppedMedicine);
-  const restarted = isYes(draft.startedAgain);
 
   return (
     <div>
@@ -73,57 +64,6 @@ export function StepMedicine({
         value={draft.startedMedicineOn}
         onChange={(next) => update({ startedMedicineOn: next })}
       />
-
-      <YesNoQuestion
-        legend={`Did ${p.subject} stop taking it?`}
-        value={draft.stoppedMedicine}
-        onChange={(next) =>
-          update(
-            isYes(next)
-              ? { stoppedMedicine: next }
-              : {
-                  stoppedMedicine: next,
-                  stoppedMedicineOn: UNANSWERED,
-                  betterAfterStopping: UNANSWERED,
-                },
-          )
-        }
-      />
-
-      {stopped && (
-        <>
-          <DateQuestion
-            legend={`When did ${p.subject} stop?`}
-            value={draft.stoppedMedicineOn}
-            onChange={(next) => update({ stoppedMedicineOn: next })}
-          />
-          <YesNoQuestion
-            legend="Did things get better after stopping?"
-            value={draft.betterAfterStopping}
-            onChange={(next) => update({ betterAfterStopping: next })}
-          />
-        </>
-      )}
-
-      <YesNoQuestion
-        legend={`Did ${p.subject} start taking it again later?`}
-        value={draft.startedAgain}
-        onChange={(next) =>
-          update(
-            isYes(next)
-              ? { startedAgain: next }
-              : { startedAgain: next, cameBackAfterStartingAgain: UNANSWERED },
-          )
-        }
-      />
-
-      {restarted && (
-        <YesNoQuestion
-          legend="Did the same thing happen again?"
-          value={draft.cameBackAfterStartingAgain}
-          onChange={(next) => update({ cameBackAfterStartingAgain: next })}
-        />
-      )}
     </div>
   );
 }

@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
+import { Orientation } from "@/components/report/orientation";
 import { ReportWizard } from "@/components/report/wizard";
+
+export const metadata: Metadata = {
+  title: "Report a side effect — SideNote",
+};
 
 /**
  * The public report form.
@@ -13,13 +19,12 @@ export default function ReportPage() {
     <main className="mx-auto w-full max-w-[62ch] px-4 py-8">
       <h1 className="text-title font-medium">Report a side effect</h1>
       <p className="mt-2 text-prose">
-        Tell us what happened after someone took a medicine. It takes about five
-        minutes. You do not need an account.
+        Tell us what happened after someone took a medicine.
       </p>
-      <p className="mt-3 text-prose">
-        There are five short steps. You can leave anything blank if you do not
-        know it, and you can go back at any time.
-      </p>
+
+      <div className="mt-4">
+        <Orientation />
+      </div>
 
       <div className="mt-6">
         <ReportWizard />

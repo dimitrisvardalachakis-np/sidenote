@@ -306,6 +306,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -318,6 +319,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },
@@ -363,6 +365,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -375,6 +378,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },
@@ -420,6 +424,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -432,6 +437,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "3c81-cardiquel-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -480,6 +486,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -492,6 +499,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "77bd-dermacil-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -537,6 +545,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -549,6 +558,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "51ae-pulmoxa-2026",
       retrievedAt: RETRIEVED_AT,
     },
@@ -585,6 +595,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -597,6 +608,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "3c81-cardiquel-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -685,6 +697,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -763,6 +776,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -775,6 +789,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "77bd-dermacil-2024",
       retrievedAt: RETRIEVED_AT,
     },
@@ -815,6 +830,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -862,6 +878,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       retrievedAt: RETRIEVED_AT,
     },
     expectedness: {
@@ -874,6 +891,7 @@ const SPECS: readonly CaseSpec[] = [
         ),
       ],
       reading: NO_READING,
+      narrative: null,
       labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },

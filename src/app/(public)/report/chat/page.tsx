@@ -1,4 +1,10 @@
+import type { Metadata } from "next";
+import { Orientation } from "@/components/report/orientation";
 import { ChatPanel } from "./chat-panel";
+
+export const metadata: Metadata = {
+  title: "Report a side effect — SideNote",
+};
 
 /**
  * Conversational intake.
@@ -16,6 +22,10 @@ export default function ChatIntakePage() {
         Describe what happened in your own words. We will ask for anything else
         we need, one question at a time.
       </p>
+
+      <div className="mt-4">
+        <Orientation />
+      </div>
 
       <div className="mt-4 border border-rule p-3 rounded-soft">
         <p className="text-micro uppercase tracking-label text-slate">

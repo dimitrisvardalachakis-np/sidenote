@@ -30,9 +30,12 @@ interface Marked {
 function HighlightedNarrative({
   text,
   marks,
+  numbering,
 }: {
   text: string;
   marks: readonly Marked[];
+  /** Criterion to display number, computed once so both views agree. */
+  numbering: ReadonlyMap<string, number>;
 }) {
   const usable = marks
     .filter((m) => spanMatchesNarrative(text, m.span))
@@ -49,19 +52,49 @@ function HighlightedNarrative({
       parts.push(text.slice(cursor, mark.span.start));
     }
     parts.push(
+      /*
+        A 2px --slate underline and a --row-active fill, where this was a 6%
+        ink wash and a dotted underline — effectively invisible, for a
+        requirement CLAUDE.md states outright ("the app highlights the exact
+        phrase that triggered each flag").
+
+        The id and the index are what tie a mark to its row in the seriousness
+        list beside it, in both directions: `:target` styling is not used, but
+        the shared numbering means a reviewer can match "[2]" here to "[2]"
+        there without counting highlights.
+      */
       <mark
         key={`${mark.criterion}-${index}`}
+        id={`mark-${mark.criterion}`}
         title={SERIOUSNESS_LABELS[mark.criterion]}
-        className="bg-row-active text-ink decoration-slate underline decoration-dotted underline-offset-4"
+        className="bg-row-active text-ink underline decoration-slate decoration-2 underline-offset-4"
       >
         {text.slice(mark.span.start, mark.span.end)}
+        <sup className="ml-0.5 font-medium text-slate no-underline">
+          [{numbering.get(mark.criterion) ?? index + 1}]
+        </sup>
       </mark>,
     );
     cursor = mark.span.end;
   }
   if (cursor < text.length) parts.push(text.slice(cursor));
 
-  return <p className="text-prose whitespace-pre-wrap">{parts}</p>;
+  return (
+    <>
+      <p className="text-prose whitespace-pre-wrap">{parts}</p>
+      {/*
+        A legend, because a highlight with no key is a decoration. One line,
+        and only when there is something to explain.
+      */}
+      {usable.length > 0 && (
+        <p className="mt-2 text-micro text-slate">
+          Marked phrases are the exact words behind a seriousness flag,
+          numbered to match the list. A phrase is only marked when it still
+          occurs in the narrative word for word.
+        </p>
+      )}
+    </>
+  );
 }
 
 /**
@@ -112,7 +145,14 @@ function ValidityChecklist({ record }: { record: Case }) {
   );
 }
 
-function SeriousnessList({ record }: { record: Case }) {
+function SeriousnessList({
+  record,
+  numbering,
+}: {
+  record: Case;
+  /** The same map the narrative marks use, so [2] here is [2] there. */
+  numbering: ReadonlyMap<string, number>;
+}) {
   const rows = record.reactions.flatMap((reaction) =>
     SERIOUSNESS_CRITERIA.map((criterion) => ({
       criterion,
@@ -150,6 +190,17 @@ function SeriousnessList({ record }: { record: Case }) {
                     flag.rejectedByReviewer ? "text-slate line-through" : "",
                   ].join(" ")}
                 >
+                  {/*
+                    The number that ties this row to its highlight in the
+                    narrative. Absent when the flag has no phrase to point at —
+                    a ticked box on the public form marks nothing, and a number
+                    pointing at no highlight would be worse than none.
+                  */}
+                  {numbering.has(criterion) && (
+                    <span className="mr-1 text-slate">
+                      [{numbering.get(criterion)}]
+                    </span>
+                  )}
                   {SERIOUSNESS_LABELS[criterion]}
                   {"kind" in flag && (
                     <span className="text-slate"> ({flag.kind})</span>
@@ -192,6 +243,108 @@ function SeriousnessList({ record }: { record: Case }) {
   );
 }
 
+/**
+ * The pieces of a case, exported separately.
+ *
+ * `CaseDetail` used to render all of them in one fixed order: nine cells of
+ * administrative metadata, then the narrative, then the reporter, then
+ * seriousness and validity — above the evidence a reviewer opened the case to
+ * read. The page now places these itself, so the answer comes first and the
+ * supporting material sits below it or in a context rail.
+ *
+ * Kept in one file because they all share the mark numbering, which has to be
+ * computed once from the marks that actually render.
+ */
+export function caseMarkNumbering(record: Case): ReadonlyMap<string, number> {
+  const marks = marksFor(record);
+  return new Map<string, number>(
+    marks
+      .filter((m) => spanMatchesNarrative(record.narrative, m.span))
+      .sort((a, b) => a.span.start - b.span.start)
+      .map((m, index) => [m.criterion, index + 1]),
+  );
+}
+
+function marksFor(record: Case): Marked[] {
+  return record.reactions.flatMap((reaction) =>
+    SERIOUSNESS_CRITERIA.flatMap((criterion) => {
+      const flag = reaction.seriousness[criterion];
+      // A rejected flag keeps its row but loses its highlight: marking the
+      // narrative for a criterion a reviewer has struck down would keep
+      // asserting it in the one place the reviewer reads most closely.
+      return flag !== null && flag.trigger !== null && !flag.rejectedByReviewer
+        ? [{ span: flag.trigger, criterion }]
+        : [];
+    }),
+  );
+}
+
+/** The narrative with its seriousness phrases marked, beside the flag list. */
+export function WhyThisIsSerious({ record }: { record: Case }) {
+  const numbering = caseMarkNumbering(record);
+  return (
+    <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
+      <section aria-label="Narrative">
+        <h3 className="text-micro uppercase tracking-label text-slate">
+          Narrative
+        </h3>
+        <div className="mt-1">
+          <HighlightedNarrative
+            text={record.narrative}
+            marks={marksFor(record)}
+            numbering={numbering}
+          />
+        </div>
+      </section>
+      <SeriousnessList record={record} numbering={numbering} />
+    </div>
+  );
+}
+
+/** The administrative facts. Collapsed by default on the case screen. */
+export function CaseFacts({ record }: { record: Case }) {
+  const drug = record.drugs[0];
+  const reaction = record.reactions[0];
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 xl:grid-cols-2">
+      <Fact label="Drug">{drug?.reportedName ?? "—"}</Fact>
+      <Fact label="Substance">{drug?.activeSubstance ?? "—"}</Fact>
+      {/*
+        The reaction spans the row. The grid stopped at four columns, so
+        "liver failure, died" wrapped inside a narrow cell while the row it sat
+        in was 1400px wide.
+      */}
+      <Fact label="Reaction" wide>
+        {reaction?.verbatimTerm ?? "—"}
+      </Fact>
+      <Fact label="Coded as">{reaction?.meddraPreferredTerm ?? "not coded"}</Fact>
+      <Fact label="Patient">
+        {[
+          record.patient?.ageYears !== null && record.patient?.ageYears !== undefined
+            ? `${record.patient.ageYears}y`
+            : (record.patient?.ageGroup ?? null),
+          record.patient?.sex ?? null,
+        ]
+          .filter((part): part is string => part !== null && part !== "unknown")
+          .join(", ") || "not stated"}
+      </Fact>
+      <Fact label="Day 0">{record.receivedAt}</Fact>
+      <Fact label="Origin">{record.origin.replace("_", " ")}</Fact>
+      <Fact label="Outcome">
+        {reaction?.outcome.replaceAll("_", " ") ?? "—"}
+      </Fact>
+      <Fact label="Status">{record.status.replace("_", " ")}</Fact>
+      <Fact label="Governed by">
+        {drug?.marketingStatus === "investigational"
+          ? "Investigator's Brochure"
+          : "CCDS"}
+      </Fact>
+    </dl>
+  );
+}
+
+export { ValidityChecklist, ReporterPanel };
+
 export function CaseDetail({ record }: { record: Case }) {
   const marks: Marked[] = record.reactions.flatMap((reaction) =>
     SERIOUSNESS_CRITERIA.flatMap((criterion) => {
@@ -203,6 +356,21 @@ export function CaseDetail({ record }: { record: Case }) {
         ? [{ span: flag.trigger, criterion }]
         : [];
     }),
+  );
+
+  /*
+    The numbering, computed once and shared.
+
+    It is derived from the marks that will actually RENDER — sorted by where
+    they appear in the narrative, and only those whose quote still matches the
+    text at its offsets. Numbering the criteria instead would put a "[3]" beside
+    a row whose highlight was dropped, which is a pointer to nothing.
+  */
+  const numbering = new Map<string, number>(
+    marks
+      .filter((m) => spanMatchesNarrative(record.narrative, m.span))
+      .sort((a, b) => a.span.start - b.span.start)
+      .map((m, index) => [m.criterion, index + 1]),
   );
 
   const drug = record.drugs[0];
@@ -242,14 +410,18 @@ export function CaseDetail({ record }: { record: Case }) {
           Narrative
         </h3>
         <div className="mt-1">
-          <HighlightedNarrative text={record.narrative} marks={marks} />
+          <HighlightedNarrative
+            text={record.narrative}
+            marks={marks}
+            numbering={numbering}
+          />
         </div>
       </section>
 
       <ReporterPanel record={record} />
 
       <div className="mt-5 grid gap-5 sm:grid-cols-2">
-        <SeriousnessList record={record} />
+        <SeriousnessList record={record} numbering={numbering} />
         <ValidityChecklist record={record} />
       </div>
     </div>
@@ -259,16 +431,20 @@ export function CaseDetail({ record }: { record: Case }) {
 function Fact({
   label,
   children,
+  wide = false,
 }: {
   label: string;
   children: React.ReactNode;
+  /** Span the whole row, for a value long enough to wrap in one cell. */
+  wide?: boolean;
 }) {
   return (
-    <div>
+    <div className={wide ? "col-span-2 sm:col-span-3 xl:col-span-2" : undefined}>
       <dt className="text-micro uppercase tracking-label text-slate">
         {label}
       </dt>
-      <dd className="mt-0.5 text-base">{children}</dd>
+      {/* break-words so an email or a long term wraps instead of overlapping. */}
+      <dd className="mt-0.5 text-base break-words">{children}</dd>
     </div>
   );
 }
@@ -305,9 +481,20 @@ function ReporterPanel({ record }: { record: Case }) {
           case — see the minimum criteria above.
         </p>
       ) : (
-        <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-          <Fact label="Name">{reporter.name ?? "not stated"}</Fact>
-          <Fact label="Email">{reporter.email ?? "—"}</Fact>
+        /*
+          Two columns, not four, and the long values span both.
+
+          An address is 25+ characters and the context rail is 18rem wide, so a
+          four-column grid overlapped it with the field beside it. Long values
+          get the whole row and `break-words`; short ones pair up.
+        */
+        <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2">
+          <Fact label="Name" wide>
+            {reporter.name ?? "not stated"}
+          </Fact>
+          <Fact label="Email" wide>
+            {reporter.email ?? "—"}
+          </Fact>
           <Fact label="Phone">{reporter.phone ?? "—"}</Fact>
           <Fact label="Contact">
             {reporter.contactPermitted ? "permitted" : "declined"}

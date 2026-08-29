@@ -99,6 +99,19 @@ SIDENOTE_AI_GATEWAY_ID=sidenote
    spend cap — the app bounds each request (320 output tokens, at most four
    inferences per assessment), but only the dashboard can cap the account.
 
+5. **If the gateway has Authenticated Gateway switched on**, it needs its own
+   credential, separate from the Workers AI token:
+
+```
+SIDENOTE_AI_GATEWAY_TOKEN=a-token-with-AI-Gateway-Run
+```
+
+   Create it the same way as step 2, with the permission `Account` ·
+   `AI Gateway` · `Run`. It is sent as `cf-aig-authorization` and is consumed
+   by the gateway; `CLOUDFLARE_API_TOKEN` still travels on to Workers AI. Leave
+   it unset for an open gateway, which is the default a new gateway is created
+   with.
+
 With a gateway configured, every `[AUDIT]` line gains a real
 `gatewayRequestId`, so any reading a reviewer saw can be traced back to the
 exact inference in the gateway log. Without one it reads `"none"`, honestly.
@@ -110,6 +123,46 @@ passages. With the gateway they get the **same answer**; without it they can
 get two different readings of one document. Given that "two reviewers on one
 case" is the conflict this app exists to resolve, this matters more than the
 money.
+
+### When every model call returns 401
+
+This is worth its own heading because the error is misleading and the fix is
+not where it points.
+
+```
+[AUDIT] … "embedding":"failed","embeddingDetail":"http: 401 Unauthorized from
+https://gateway.ai.cloudflare.com/v1/…/workers-ai/@cf/baai/bge-base-en-v1.5"
+```
+
+That reads as a bad token, and it usually is not. The gateway refuses the
+request **before Workers AI ever sees it** — internal code 2009 — so the same
+account id and token that answer 200 here:
+
+```bash
+curl -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/ai/run/@cf/baai/bge-base-en-v1.5" -H "authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "content-type: application/json" -d '{"text":["headache"]}'
+```
+
+can still fail against the gateway URL. If the direct call above works and the
+gateway one does not, the credentials are fine and the gateway is not.
+
+The gateway returns **the identical 401 for three different causes**, so there
+is no way to tell them apart from the response:
+
+- no gateway of that name exists on that account (a name copied from this file
+  without creating the gateway does this);
+- the account id does not match the gateway;
+- Authenticated Gateway is on and no `SIDENOTE_AI_GATEWAY_TOKEN` was sent, or
+  the one sent lacks `AI Gateway · Run`.
+
+Check them in that order. The app now says all three in its failure message
+rather than printing the raw 401.
+
+**The escape hatch** is to unset `SIDENOTE_AI_GATEWAY_ID`, which calls Workers
+AI directly. It is deliberately not automatic: falling back on its own would
+mean somebody believes they have a spend cap and a shared cache and has
+neither, and "two reviewers on one case see the same reading" is the property
+the gateway is here for. A gateway that is configured is used, or the call
+fails loudly.
 
 ---
 

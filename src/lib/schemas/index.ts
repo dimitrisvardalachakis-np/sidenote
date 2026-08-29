@@ -13,6 +13,7 @@ export * from "./reporter";
 export * from "./drug";
 export * from "./reaction";
 export * from "./reading";
+export * from "./narrative";
 export * from "./document";
 export * from "./assessment";
 export * from "./case";

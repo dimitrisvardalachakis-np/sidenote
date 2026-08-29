@@ -11,6 +11,7 @@ import { z } from "zod";
 import {
   ChunkId,
   DocumentId,
+  ReviewerId,
   IsoDate,
   IsoDateTime,
   SourceType,
@@ -96,6 +97,20 @@ export const SafetyDocument = z
     /** Populated once extraction succeeds; drives the "N chunks" readout. */
     chunkCount: z.int().nonnegative(),
     uploadedAt: IsoDateTime,
+    /**
+     * Which reviewer put it here, or null when nobody did.
+     *
+     * Null is the honest value for a public label fetched from openFDA the
+     * moment a medicine was named: no reviewer chose to add it, and writing
+     * one in would attribute a decision to somebody who never made it. The
+     * library says "fetched from openFDA" for those rather than a name.
+     *
+     * Nullable with a default so documents stored before this field existed
+     * still parse — the same reasoning as `narrative` on a finding. A stored
+     * document that fails to parse disappears from the library, which is a
+     * steep price for an additive field.
+     */
+    uploadedBy: ReviewerId.nullable().default(null),
   })
   .refine(
     (doc) =>
