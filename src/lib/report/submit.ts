@@ -6,6 +6,7 @@ import {
   Report,
   ReportDraft,
   missingElements,
+  trimDraft,
   type MissingElement,
 } from "@/lib/schemas/report";
 import { guardPublicSubmission } from "@/lib/protection/guard";
@@ -78,11 +79,21 @@ export async function submitReport(
     };
   }
 
+  /*
+    Normalise once, here, now the reporter has finished typing.
+
+    Trimming used to happen inside the field schemas, which meant it ran on
+    every keystroke through the draft's round-trip and ate the spaces out of
+    what somebody was still typing. This is the boundary it belongs at: the
+    value is finished, so "Amoxil 500 " and "Amoxil 500" become one value.
+  */
+  const draft = trimDraft(shape.data);
+
   // Then the rule that all four are present. Reported separately from shape
   // errors because they are a different kind of problem with a different fix:
   // one is "that is not a valid email", the other is "we still need to know
   // who you are".
-  const missing = missingElements(shape.data);
+  const missing = missingElements(draft);
   if (missing.length > 0) {
     audit({
       actor: "public",
@@ -100,7 +111,7 @@ export async function submitReport(
 
   // Belt and braces: parse through the gate schema too, so the rule cannot
   // drift between missingElements() and Report.
-  const gated = Report.safeParse(shape.data);
+  const gated = Report.safeParse(draft);
   if (!gated.success) {
     return {
       status: "malformed",

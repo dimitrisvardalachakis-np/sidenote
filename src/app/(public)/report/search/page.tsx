@@ -211,11 +211,12 @@ export default async function SearchPage({
             worried person, not a reviewer.
           */}
           {narrative !== null && (
-            <div className="mt-3 border-l-2 border-rule pl-3">
+            <div className="mt-3">
               <GeneratedNarrative
                 narrative={narrative}
                 onSeeSource={seeSource}
-                footnote="Each sentence above quotes the label word for word — the exact words are numbered below it. This is not medical advice and not a decision about your medicine; speak to a doctor or pharmacist."
+                about={drug.length > 0 ? `${query} and ${drug}` : query}
+                footnote="The sentences above were written by a computer. The words beneath each one were copied from the published label exactly as they appear there, so you can check them. This is not medical advice and not a decision about your medicine — speak to a doctor or pharmacist."
               />
             </div>
           )}

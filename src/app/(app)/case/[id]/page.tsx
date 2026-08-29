@@ -161,6 +161,22 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
     about the shelf. Same predicate retrieval uses, so the two cannot disagree.
   */
   const drug = record.drugs[0];
+
+  /*
+    What the generated answer is about, in the reviewer's own terms.
+
+    Without it the paragraph reads as prose that happens to be on the page.
+    With it, it reads as an answer to the question they opened the case to ask
+    — "about liver failure, died in Hepalex" — which is what the reviewer said
+    they wanted to see.
+  */
+  const aboutPhrase = [
+    record.reactions[0]?.verbatimTerm,
+    drug?.reportedName,
+  ].every((part) => part !== undefined)
+    ? `${record.reactions[0]?.verbatimTerm} in ${drug?.reportedName}`
+    : (record.reactions[0]?.verbatimTerm ?? undefined);
+
   const coverage =
     drug === undefined
       ? null
@@ -380,11 +396,13 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                       <CompanyEvidence
                         finding={assessment.listedness}
                         seeSource={seeSource}
+                        about={aboutPhrase}
                       />
                       <div className="border-t border-rule pt-4 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-8">
                         <PublicEvidence
                           finding={assessment.expectedness}
                           seeSource={seeSource}
+                          about={aboutPhrase}
                         />
                       </div>
                     </div>

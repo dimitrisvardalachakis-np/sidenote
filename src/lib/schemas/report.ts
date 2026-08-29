@@ -66,8 +66,31 @@ export const REPORTER_ROLE_LABELS: Readonly<Record<ReporterRole, string>> = {
   other: "Something else",
 };
 
-const shortText = z.string().trim().min(1).max(200);
-const longText = z.string().trim().min(1).max(5000);
+/**
+ * Text a reporter typed, held exactly as they typed it.
+ *
+ * NOT `.trim()`, and the difference is a bug somebody hit. `.trim()` is a zod
+ * TRANSFORM, and the draft round-trips through `ReportDraft.safeParse` on
+ * every read — so a trailing space was stripped the instant it was typed,
+ * before the next character arrived. Typing "Amoxil 500" produced
+ * "Amoxil500": every space eaten, every word run together.
+ *
+ * So the shape here VALIDATES without rewriting. Whitespace-only is still
+ * refused — it is not an answer — but a space in the middle of typing is left
+ * alone, because the person is still typing. Normalisation happens once, at
+ * the submission boundary, in `trimDraft`.
+ */
+const notBlank = (value: string) => value.trim().length > 0;
+const BLANK_MESSAGE = "This needs some text, not just spaces";
+
+const shortText = z
+  .string()
+  .max(200)
+  .refine(notBlank, { message: BLANK_MESSAGE });
+const longText = z
+  .string()
+  .max(5000)
+  .refine(notBlank, { message: BLANK_MESSAGE });
 
 // ---------------------------------------------------------------------------
 // The five steps
@@ -115,7 +138,14 @@ export const ReportDraft = z.object({
   yourRole: answer(ReporterRole),
   yourName: answer(shortText),
   yourEmail: answer(z.email()),
-  yourPhone: answer(z.string().trim().min(3).max(40)),
+  yourPhone: answer(
+    z
+      .string()
+      .max(40)
+      .refine((value) => value.trim().length >= 3, {
+        message: "A phone number needs at least three characters",
+      }),
+  ),
   // A country NAME, not a two-letter code. Asking someone who is frightened
   // to know that GB means the United Kingdom is exactly the kind of small
   // cruelty this surface is supposed to avoid. A reviewer maps it later.
@@ -190,6 +220,36 @@ export function missingElements(draft: ReportDraft): readonly MissingElement[] {
   if (!isAnswered(draft.medicineName)) missing.push("the_medicine");
   if (!isAnswered(draft.whatHappened)) missing.push("what_happened");
   return missing;
+}
+
+/**
+ * Trim every answered string, once, on the way out.
+ *
+ * The one place normalisation belongs: the reporter has finished typing, so
+ * "Amoxil 500 " and "Amoxil 500" should become the same stored value. Doing it
+ * per keystroke is what ate their spaces.
+ *
+ * Applied before the submission gate rather than inside it, so `Report` stays
+ * a validator rather than a rewriter — and so what a reviewer eventually reads
+ * is the trimmed value while what the reporter sees while typing is theirs.
+ */
+export function trimDraft(draft: ReportDraft): ReportDraft {
+  const out: Record<string, unknown> = { ...draft };
+  for (const [field, answer] of Object.entries(draft)) {
+    if (
+      typeof answer === "object" &&
+      answer !== null &&
+      "status" in answer &&
+      answer.status === "answered" &&
+      typeof (answer as { value: unknown }).value === "string"
+    ) {
+      const value = (answer as { value: string }).value.trim();
+      out[field] = value.length === 0
+        ? { status: "unanswered" }
+        : { status: "answered", value };
+    }
+  }
+  return out as ReportDraft;
 }
 
 /**

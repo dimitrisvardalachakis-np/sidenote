@@ -1,40 +1,52 @@
 import type { GroundedNarrative } from "@/lib/schemas";
 
 /**
- * The generated summary. One renderer, imported by both surfaces.
+ * The generated answer, and where every sentence of it came from.
  *
- * Two copies of the code that decides which sentences appear would be two
- * places for non-negotiable #3 to be violated, and the public search page has
- * always hand-rolled its own rendering. This is the part carrying the rule, so
- * this is the part that gets shared.
+ * One renderer, imported by both surfaces. Two copies of the code that decides
+ * which sentences appear would be two places for non-negotiable #3 to be
+ * violated, and the public search page has always hand-rolled its own
+ * rendering — so this is the part that gets shared, because this is the part
+ * carrying the rule.
  *
- * THREE RENDERING RULES DO THE WORK:
+ * THE ONE THING THIS LAYOUT MUST DO is make it impossible to confuse what a
+ * MODEL WROTE with what a DOCUMENT SAYS. A reader who mistakes the first for
+ * the second thinks a safety document contains a sentence a language model
+ * composed. Four separate signals do that work, because one is not enough:
  *
- * The paragraph and the citation list map the SAME array, in the same order.
- * A marker without a citation and a citation without a marker are both
- * unconstructible — there is no lookup here that can fail, and no branch in
- * which a sentence renders alone.
+ *   1. Containment. The whole block sits inside one bordered frame with a
+ *      header, so it reads as a single thing that arrived together, rather
+ *      than as prose that happens to sit above some quotations.
+ *   2. Naming. The header says "Written by AI" in as many words, and the
+ *      citation list is introduced by "Where each sentence comes from".
+ *   3. Typeface. Model prose is the body face; every quoted span is monospace
+ *      and indented behind a rule. Nothing in this app renders document text
+ *      in monospace anywhere else, so the switch is a signal rather than a
+ *      decoration.
+ *   4. Attribution on each quote, individually — "quoted from the document",
+ *      beside the passage id — so a screenshot of any single line still says
+ *      which of the two it is.
  *
- * The quotation shown is `point.quotedSpan`, never the matching `Citation.quote`.
- * `toCitation` runs chunk text through `excerpt(…, 320)`, which truncates; the
- * verified span can sit outside that excerpt, and the reviewer panel already
- * has to warn about exactly that. Rendering the point's own span means the
- * span displayed is the span verified.
- *
- * No `--signal`, and no `--steady` either. `--signal` is the regulatory clock.
- * `--steady` is already spoken for by the single verified quotation in the
- * `Reading` block, which is stronger evidence than a generated paragraph and
- * must keep reading that way. This block is carried by a label and a rule, so
- * it sits below the quotation in the visual hierarchy rather than beside it.
+ * No `--signal`: that is the regulatory clock. No `--steady` on the prose
+ * either — `--steady` means assessed, listed, resolved, and it is spoken for
+ * by the single verified quotation in the panel below. A generated paragraph
+ * must not read as equal to it.
  */
 export function GeneratedNarrative({
   narrative,
   footnote,
+  about,
   onSeeSource,
 }: {
   narrative: GroundedNarrative | null;
   /** Each surface supplies its own closing sentence, in its own register. */
   footnote: React.ReactNode;
+  /**
+   * What the answer is about, in the reader's own terms — "liver failure,
+   * died in Hepalex". Turns a floating paragraph into an answer to a question
+   * somebody actually asked.
+   */
+  about?: string | undefined;
   /** Renders a "see in source" control for one chunk. Omitted where none exists. */
   onSeeSource?: ((chunkId: string) => React.ReactNode) | undefined;
 }) {
@@ -48,78 +60,96 @@ export function GeneratedNarrative({
   if (narrative.status === "unavailable") {
     return (
       /*
-        One quiet line, no box and no border. Deliberately weaker than the
-        "Assessment unavailable" panel beside it: that one says nothing has
-        read the document, which is a far more serious statement, and these two
-        must not be mistaken for each other.
+        One quiet line, no frame. Deliberately weaker than the "Assessment
+        unavailable" panel beside it: that one says nothing has read the
+        document, which is a far more serious statement, and the two must not
+        be mistaken for each other.
       */
       <p className="text-meta text-slate">
-        No combined account of these passages could be produced. The passages
+        No written answer could be produced from these passages. The passages
         and the reading below are unaffected. {narrative.reason}
       </p>
     );
   }
 
   return (
-    <section aria-label="Generated summary">
-      {/*
-        The "visibly AI-generated" requirement, carried by a label rather than
-        by styling. A reader should not have to infer that a machine wrote this.
-      */}
-      <p className="text-micro uppercase tracking-label text-slate">
-        Generated summary ·{" "}
-        <span className="font-mono normal-case tracking-normal">
-          {narrative.model}
-        </span>
-      </p>
+    <section
+      aria-label="AI-written answer"
+      className="border border-rule rounded-soft"
+    >
+      <header className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-rule px-3 py-1.5">
+        <p className="text-micro uppercase tracking-label text-ink">
+          Written by AI
+        </p>
+        <p className="text-micro text-slate">
+          <span className="font-mono">{narrative.model}</span> · from{" "}
+          {narrative.points.length}{" "}
+          {narrative.points.length === 1 ? "passage" : "passages"}
+        </p>
+      </header>
 
-      <p className="mt-1.5 text-prose">
-        {narrative.points.map((point, index) => (
-          <span key={point.chunkId}>
-            {index > 0 && " "}
-            {point.sentence}
-            <sup className="ml-0.5 text-slate">[{index + 1}]</sup>
-          </span>
-        ))}
-      </p>
+      <div className="px-3 py-2">
+        {about !== undefined && (
+          <p className="text-micro uppercase tracking-label text-slate">
+            About {about}
+          </p>
+        )}
 
-      <ol className="mt-2">
-        {narrative.points.map((point, index) => (
-          <li key={point.chunkId} className="mt-1.5 flex gap-2">
-            <span className="shrink-0 pt-0.5 text-micro text-slate">
-              [{index + 1}]
+        {/*
+          The model's own words. Body face, ordinary prose — the thing a reader
+          is meant to read first. Every sentence carries the marker of the
+          passage it came from, and the paragraph and the list below map the
+          SAME array in the same order, so a marker without a citation and a
+          citation without a marker are both unconstructible.
+        */}
+        <p className={about === undefined ? "text-prose" : "mt-1 text-prose"}>
+          {narrative.points.map((point, index) => (
+            <span key={point.chunkId}>
+              {index > 0 && " "}
+              {point.sentence}
+              <sup className="ml-0.5 font-medium text-slate">[{index + 1}]</sup>
             </span>
-            <div className="min-w-0">
-              {/*
-                A small model often returns the passage itself as its sentence
-                rather than a gloss on it — which is honest, and it passes every
-                guard, but it means the same words render twice in a row. When
-                they are identical the quotation is omitted here: it is already
-                on screen a few lines above, attributed to this same marker.
-                Nothing is hidden, and nothing is deduplicated across DIFFERENT
-                text, which would be.
-              */}
-              {point.sentence.trim() !== point.quotedSpan.trim() && (
-                <blockquote className="border-l-2 border-rule pl-2 text-meta">
+          ))}
+        </p>
+      </div>
+
+      <div className="border-t border-rule px-3 py-2">
+        <p className="text-micro uppercase tracking-label text-slate">
+          Where each sentence comes from
+        </p>
+
+        <ol className="mt-1.5">
+          {narrative.points.map((point, index) => (
+            <li key={point.chunkId} className="mt-2 flex gap-2 first:mt-0">
+              <span className="shrink-0 pt-0.5 text-micro font-medium text-slate">
+                [{index + 1}]
+              </span>
+              <div className="min-w-0 flex-1">
+                {/*
+                  Monospace, behind a rule. Document text is set differently
+                  from model text everywhere in this block, so which is which
+                  survives being screenshotted, skim-read, or read aloud.
+
+                  The span shown is `point.quotedSpan`, never the matching
+                  `Citation.quote`: the latter is a <=320-character excerpt from
+                  `toCitation` and the verified span can sit outside it. What is
+                  displayed is what was checked.
+                */}
+                <blockquote className="border-l-2 border-ink pl-2 font-mono text-meta">
                   {point.quotedSpan}
                 </blockquote>
-              )}
-              {/*
-                A <div>, not a <p>. `onSeeSource` renders a <dialog>, and a
-                <dialog> inside a <p> is invalid HTML — the browser closes the
-                paragraph early and React's hydration then fails against a tree
-                that does not match what it rendered.
-              */}
-              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-micro text-slate">
-                <span className="font-mono">{point.chunkId}</span>
-                {onSeeSource?.(point.chunkId)}
+                <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-micro text-slate">
+                  <span>quoted from the document</span>
+                  <span className="font-mono">{point.chunkId}</span>
+                  {onSeeSource?.(point.chunkId)}
+                </div>
               </div>
-            </div>
-          </li>
-        ))}
-      </ol>
+            </li>
+          ))}
+        </ol>
 
-      <p className="mt-2 text-meta text-slate">{footnote}</p>
+        <p className="mt-2 text-meta text-slate">{footnote}</p>
+      </div>
     </section>
   );
 }

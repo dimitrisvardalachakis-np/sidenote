@@ -216,18 +216,38 @@ export function TextQuestion({
   const id = useId();
   const hintId = `${id}-hint`;
   const unknown = value.status === "unknown";
+
+  /**
+   * Controlled by the answer, which is safe BECAUSE the answer is no longer
+   * rewritten on the way past.
+   *
+   * `shortText` used to be `z.string().trim()` — a zod TRANSFORM — and the
+   * draft round-trips through `ReportDraft.safeParse` on every read. So a
+   * trailing space was stripped the instant it was typed and the next
+   * character landed against the previous word: typing "co-codamol 30 mg"
+   * produced "co-codamol30mg". The value a controlled input is fed has to be
+   * the value it emitted, and it was not.
+   *
+   * The schema validates without transforming now, so the round trip is
+   * lossless and this can stay a single source of truth. Trimming happens
+   * once, at submission, in `trimDraft`.
+   */
   const text = value.status === "answered" ? value.value : "";
 
   const handle = (raw: string) => {
-    // Blank means unanswered, not an empty answer. Trimming to nothing puts
-    // the question back in the "still to do" pile rather than recording "".
+    // Blank means unanswered, not an empty answer. A box emptied to nothing
+    // puts the question back in the "still to do" pile rather than recording
+    // "". The value emitted is what was typed, spaces and all — trimming
+    // happens once, at submission.
     onChange(raw.trim() === "" ? UNANSWERED : answered(raw));
   };
 
   const shared = {
     id,
     disabled: unknown,
-    value: text,
+    // "I don't know" empties the box rather than leaving stale text behind a
+    // disabled control.
+    value: unknown ? "" : text,
     placeholder,
     "aria-describedby": hint === undefined ? undefined : hintId,
     className:
@@ -352,6 +372,22 @@ export function DateQuestion({
         {hint ?? "If you only remember the year, just fill in the year."}
       </p>
 
+      {/*
+        Say why the boxes are locked.
+
+        Month is dead until a year is given and Day until a month is, which is
+        defensible — a day with no month is not a date — but nothing said so,
+        so somebody clicking Day first got nothing at all and reported that
+        they could not pick a date. The cascade is fine; the silence was not.
+      */}
+      {!unknown && (year === "" || month === "") && (
+        <p className="mt-2 text-meta text-slate">
+          {year === ""
+            ? "Start with the year. Month and day open once you have."
+            : "Add a month if you remember it, and the day opens after that."}
+        </p>
+      )}
+
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <div>
           <label htmlFor={`${id}-year`} className="block text-meta text-slate">
@@ -377,9 +413,10 @@ export function DateQuestion({
           <select
             id={`${id}-month`}
             disabled={unknown || year === ""}
+            title={year === "" ? "Give the year first" : undefined}
             value={month}
             onChange={(event) => rebuild(year, event.target.value, day)}
-            className="mt-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+            className="mt-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
           >
             <option value="">Not sure</option>
             {MONTH_NAMES.map((name, index) => (
@@ -397,9 +434,10 @@ export function DateQuestion({
           <select
             id={`${id}-day`}
             disabled={unknown || month === ""}
+            title={month === "" ? "Choose a month first" : undefined}
             value={day}
             onChange={(event) => rebuild(year, month, event.target.value)}
-            className="mt-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+            className="mt-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
           >
             <option value="">Not sure</option>
             {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0")).map(

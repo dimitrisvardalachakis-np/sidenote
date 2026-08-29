@@ -266,10 +266,13 @@ function SourceUnavailable({ reason, at }: { reason: string; at: string }) {
 export function CompanyEvidence({
   finding,
   seeSource,
+  about,
 }: {
   finding: ListednessFinding;
   /** Renders a source-in-context control for one passage. */
   seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+  /** "liver failure, died in Hepalex" — what this answer is about. */
+  about?: string | undefined;
 }) {
   const documentLabel =
     finding.documentKind === "ccds"
@@ -295,7 +298,8 @@ export function CompanyEvidence({
             <GeneratedNarrative
               narrative={finding.narrative}
               onSeeSource={seeSource}
-              footnote="Every sentence above quotes the passage numbered beside it, word for word. Not a determination: listedness is yours to record."
+              about={about}
+              footnote="Each sentence above was written by a model; each quotation beneath it was copied from the company document word for word and checked against it. Not a determination — listedness is yours to record."
             />
           </div>
           <Reading reading={finding.reading} citations={finding.citations} />
@@ -327,9 +331,11 @@ export function CompanyEvidence({
 export function PublicEvidence({
   finding,
   seeSource,
+  about,
 }: {
   finding: ExpectednessFinding;
   seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+  about?: string | undefined;
 }) {
   return (
     <PanelShell heading="FDA label" note="public" stance={documentStance(finding)}>
@@ -339,7 +345,8 @@ export function PublicEvidence({
             <GeneratedNarrative
               narrative={finding.narrative}
               onSeeSource={seeSource}
-              footnote="Every sentence above quotes the passage numbered beside it, word for word. Not a determination: expectedness is yours to record."
+              about={about}
+              footnote="Each sentence above was written by a model; each quotation beneath it was copied from the FDA label word for word and checked against it. Not a determination — expectedness is yours to record."
             />
           </div>
           <Reading reading={finding.reading} citations={finding.citations} />

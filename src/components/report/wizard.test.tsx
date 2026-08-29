@@ -226,3 +226,81 @@ describe("the whole form by keyboard", () => {
     ).toBeChecked();
   }, 30_000);
 });
+
+// ---------------------------------------------------------------------------
+// Typing, through the real draft store
+// ---------------------------------------------------------------------------
+
+describe("what the reporter types is what the box holds", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    submitSpy.mockClear();
+  });
+
+  /*
+    Typing, end to end through the real draft store.
+
+    The bug these describe was `shortText` being `z.string().trim()` — a zod
+    TRANSFORM — while the draft round-trips through `ReportDraft.safeParse` on
+    every read, so a trailing space was stripped the instant it was typed and
+    the next character landed against the previous word: "Amoxil 500" became
+    "Amoxil500".
+
+    BE HONEST ABOUT WHAT THESE CATCH. They do not reproduce that failure:
+    jsdom applies the store update synchronously and `user-event` types faster
+    than the round trip, so they passed with the transform in place. The tests
+    that actually fail without the fix are in `schemas/report.test.ts`, at the
+    layer where the rewriting happened. These are here for the layer above —
+    that a person typing into the assembled form gets what they typed — and
+    they would catch a future change that broke it more coarsely.
+  */
+  it("keeps spaces and dashes, in order", async () => {
+    const user = userEvent.setup();
+    render(<ReportWizard />);
+
+    await chooseRadio(user, "It happened to someone else");
+    await clickButtonByKeyboard(user, /^next$/i);
+
+    const medicine = screen.getByLabelText("What is the medicine called?");
+    await user.click(medicine);
+    await user.type(medicine, "co-codamol 30 mg");
+
+    expect((medicine as HTMLInputElement).value).toBe("co-codamol 30 mg");
+  }, 30_000);
+
+  it("keeps a multi-word narrative intact", async () => {
+    const user = userEvent.setup();
+    render(<ReportWizard />);
+
+    await chooseRadio(user, "It happened to someone else");
+    await clickButtonByKeyboard(user, /^next$/i);
+    await clickButtonByKeyboard(user, /^next$/i);
+
+    const story = screen.getByLabelText("What went wrong?");
+    await user.click(story);
+    await user.type(story, "A rash on both arms, two days after starting it.");
+
+    expect((story as HTMLTextAreaElement).value).toBe(
+      "A rash on both arms, two days after starting it.",
+    );
+  }, 30_000);
+
+  /*
+    The other half: a value that is finished IS trimmed, once, on the way to
+    the server. What the reporter sees while typing is theirs; what a reviewer
+    reads is normalised.
+  */
+  it("trims only at submission, not while typing", async () => {
+    const user = userEvent.setup();
+    render(<ReportWizard />);
+
+    await chooseRadio(user, "It happened to someone else");
+    await clickButtonByKeyboard(user, /^next$/i);
+
+    const medicine = screen.getByLabelText("What is the medicine called?");
+    await user.click(medicine);
+    await user.type(medicine, "Amoxil  ");
+    // Still exactly what was typed, trailing spaces and all.
+    expect((medicine as HTMLInputElement).value).toBe("Amoxil  ");
+  }, 30_000);
+});

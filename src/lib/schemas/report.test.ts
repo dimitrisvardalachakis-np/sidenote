@@ -22,6 +22,7 @@ import {
   STEP_IDS,
   missingElements,
   stepProgress,
+  trimDraft,
 } from "./report";
 
 describe("partial dates", () => {
@@ -271,5 +272,83 @@ describe("steps", () => {
     const draft: ReportDraft = { ...EMPTY_DRAFT, age: NOT_KNOWN };
     expect(stepProgress(draft, "about")).toEqual({ resolved: 1, total: 3 });
     expect(stepProgress(EMPTY_DRAFT, "about")).toEqual({ resolved: 0, total: 3 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bug that ate people's spaces
+// ---------------------------------------------------------------------------
+
+describe("a draft holds what was typed, and only trims on the way out", () => {
+  /*
+    THE regression. `shortText` used to be `z.string().trim()`, which is a zod
+    TRANSFORM — and the draft round-trips through `ReportDraft.safeParse` on
+    every read, so a trailing space was stripped the instant it was typed and
+    the next character landed against the previous word. Typing "Amoxil 500"
+    produced "Amoxil500".
+  */
+  it("does not strip a trailing space while somebody is still typing", () => {
+    const parsed = ReportDraft.safeParse({
+      ...EMPTY_DRAFT,
+      medicineName: { status: "answered", value: "Amoxil " },
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    if (parsed.data.medicineName.status !== "answered") return;
+    expect(parsed.data.medicineName.value).toBe("Amoxil ");
+  });
+
+  it("survives a round trip through the schema unchanged", () => {
+    const typed = "co-codamol 30 mg ";
+    let draft: ReportDraft = {
+      ...EMPTY_DRAFT,
+      medicineName: { status: "answered", value: typed },
+    };
+    // Three reads, as the draft store would do across three keystrokes.
+    for (let i = 0; i < 3; i += 1) {
+      const parsed = ReportDraft.safeParse(draft);
+      if (!parsed.success) throw new Error("should parse");
+      draft = parsed.data;
+    }
+    if (draft.medicineName.status !== "answered") throw new Error("answered");
+    expect(draft.medicineName.value).toBe(typed);
+  });
+
+  it("still refuses whitespace-only, which is not an answer", () => {
+    const parsed = ReportDraft.safeParse({
+      ...EMPTY_DRAFT,
+      medicineName: { status: "answered", value: "   " },
+    });
+    expect(parsed.success).toBe(false);
+  });
+
+  it("trims once at the submission boundary", () => {
+    const trimmed = trimDraft({
+      ...EMPTY_DRAFT,
+      medicineName: { status: "answered", value: "  Amoxil 500  " },
+      whatHappened: { status: "answered", value: "a rash\n" },
+    });
+    if (trimmed.medicineName.status !== "answered") throw new Error("answered");
+    expect(trimmed.medicineName.value).toBe("Amoxil 500");
+    if (trimmed.whatHappened.status !== "answered") throw new Error("answered");
+    expect(trimmed.whatHappened.value).toBe("a rash");
+  });
+
+  it("turns a value that was only whitespace back into unanswered", () => {
+    const trimmed = trimDraft({
+      ...EMPTY_DRAFT,
+      batchNumber: { status: "answered", value: "   " },
+    });
+    expect(trimmed.batchNumber.status).toBe("unanswered");
+  });
+
+  it("leaves non-string answers alone", () => {
+    const trimmed = trimDraft({
+      ...EMPTY_DRAFT,
+      age: { status: "answered", value: 61 },
+      wentToHospital: { status: "answered", value: "yes" },
+    });
+    expect(trimmed.age).toEqual({ status: "answered", value: 61 });
+    expect(trimmed.wentToHospital).toEqual({ status: "answered", value: "yes" });
   });
 });
