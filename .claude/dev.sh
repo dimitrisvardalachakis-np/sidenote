@@ -7,4 +7,4 @@
 #
 # Set SIDENOTE_SIGNED_OUT=1 here to exercise the (app) auth gate.
 export PATH="$HOME/.local/node/bin:$PATH"
-exec node node_modules/next/dist/bin/next dev --port 3000
+exec node node_modules/next/dist/bin/next dev --port "${PORT:-3000}"
