@@ -208,7 +208,3 @@ export const ModelReading = z.discriminatedUnion("status", [
 ]);
 export type ModelReading = z.output<typeof ModelReading>;
 
-/** The citation a reading points at, when it points at one. */
-export function readingCitesChunk(reading: ModelReading): string | null {
-  return reading.status === "read" ? reading.chunkId : null;
-}

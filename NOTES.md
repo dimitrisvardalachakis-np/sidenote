@@ -80,9 +80,10 @@ Seriousness turned out to be the same bug wearing different clothes.
 so a reviewer could reject all three model-asserted flags on a case and watch
 the clock keep running.
 
-Two honest caveats on that fix. First, the domain now honours a rejection but
-**nothing sets one yet** — the reject control is Cluster D along with claiming
-and ruling, so today this is a guarantee waiting for a button. Second,
+Two honest caveats on that fix. First, the domain honours a rejection and
+**nothing sets one yet** — claiming and ruling have since been wired to the
+Durable Object, but the reject control has not, so this one remains a guarantee
+waiting for a button. Second,
 seriousness remains a thing the model may *raise*, which means the clock has
 one input a model still contributes to. That is deliberate rather than an
 oversight — spotting "kept in overnight" is the job the model is best at, and
@@ -686,10 +687,13 @@ with `SIDENOTE_AI_DISABLED=1`, and walked the flow.
 - `[AUDIT]` lines emitted throughout, and they parse.
 
 **What that run did *not* prove, and I want to be exact about it.** The brief
-asked me to open a case, claim it, and record a verdict. I could not: there is
-no claim, ruling or reject write path in the app — those are Cluster D, behind
-the Durable Object, and the case screen says so on its face. What I actually
-verified is that the *domain* accepts a ruling and computes correctly from it
+asked me to open a case, claim it, and record a verdict. I could not: at the
+time there was no claim, ruling or reject write path in the app. *(Superseded:
+claiming, releasing and ruling are now wired through `getCaseCoordination()`
+and were walked end to end in a browser — claim, assess, and an audit line
+carrying the model and the gateway request id. Rejecting a seriousness flag is
+still unwired.)* What I actually verified then is that the *domain* accepts a
+ruling and computes correctly from it
 with no model anywhere (`degraded.test.ts` constructs the `Assessment` and
 asserts `ruledListedness` and `requiresExpeditedReport`), and that every screen
 a reviewer can reach today still renders. The human write that must not be

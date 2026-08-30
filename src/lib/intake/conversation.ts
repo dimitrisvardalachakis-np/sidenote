@@ -214,7 +214,7 @@ export function extractSex(text: string): "male" | "female" | "unknown" | null {
  * to give it. Context changes what is safe to assume, so the two cases get two
  * functions rather than one compromise.
  */
-export function parseAgeAnswer(text: string): number | null {
+function parseAgeAnswer(text: string): number | null {
   const direct = extractAge(text);
   if (direct !== null) return direct;
   const any = /\b(\d{1,3})\b/.exec(text);

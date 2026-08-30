@@ -76,3 +76,80 @@ describe("getSession", () => {
     expect(await getSession()).toBeNull();
   });
 });
+
+/**
+ * THE SECRET ROTATION DRILL.
+ *
+ * Cluster F asks for a rotation done wrong first, so the breakage is seen
+ * rather than described, and then done right. Both halves are here, because a
+ * dual-key window is one of those mechanisms that looks obviously correct and
+ * is obviously correct only until somebody deletes the second key.
+ *
+ * The wrong way is one line: change the key. Every cookie in the wild was
+ * signed with the old one, every signature check fails, and every reviewer is
+ * signed out at once — including the one holding a case with a 15-day clock
+ * running, who now has to sign in again to release it.
+ */
+describe("rotating the session secret", () => {
+  it("signs everybody out when the key is swapped with no window", async () => {
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-one");
+    await startSession("reviewer-demo");
+    expect(await getSession()).not.toBeNull();
+
+    // The mistake, in full: the new key replaces the old one and nothing
+    // remembers the old one existed.
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-two");
+
+    // The cookie is still in the jar and still perfectly well formed. It is
+    // just signed with a key nothing will verify against any more.
+    expect(await getSession()).toBeNull();
+    vi.unstubAllEnvs();
+  });
+
+  it("keeps existing sessions alive across a dual-key window", async () => {
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-one");
+    await startSession("reviewer-demo");
+
+    // The right way. Deploy the CONSUMER first: the new key signs, the old one
+    // is still accepted. Nobody notices anything.
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-two");
+    vi.stubEnv("SIDENOTE_SESSION_SECRET_PREVIOUS", "key-one");
+
+    const session = await getSession();
+    expect(session).not.toBeNull();
+    expect(session?.reviewerId).toBe("reviewer-demo");
+    vi.unstubAllEnvs();
+  });
+
+  it("issues new cookies under the new key only", async () => {
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-two");
+    vi.stubEnv("SIDENOTE_SESSION_SECRET_PREVIOUS", "key-one");
+    await startSession("reviewer-demo");
+
+    /*
+      The half that makes the window closeable.
+
+      If new cookies were signed with the old key too, retiring it would break
+      sessions created DURING the window and the rotation would never finish.
+      Dropping the previous key must be a no-op for anyone who signed in after
+      the new key went live — so here the previous key is retired and the
+      cookie minted a moment ago still verifies.
+    */
+    vi.stubEnv("SIDENOTE_SESSION_SECRET_PREVIOUS", "");
+    expect(await getSession()).not.toBeNull();
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses a cookie signed with a key that was never ours", async () => {
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-one");
+    await startSession("reviewer-demo");
+
+    // Neither the current key nor the previous one. A forged cookie does not
+    // become valid just because a rotation happens to be in progress.
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "key-two");
+    vi.stubEnv("SIDENOTE_SESSION_SECRET_PREVIOUS", "key-three");
+
+    expect(await getSession()).toBeNull();
+    vi.unstubAllEnvs();
+  });
+});

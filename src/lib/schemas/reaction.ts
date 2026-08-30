@@ -146,8 +146,9 @@ export const NO_SERIOUSNESS_FLAGS: SeriousnessFlags = {
  *
  * This counts a flag whether or not a reviewer has confirmed it, because the
  * queue has to surface a *possibly* serious case immediately — waiting for
- * confirmation before showing it would defeat the point of the clock. Callers
- * that need only confirmed flags use `isConfirmedSerious`.
+ * confirmation before showing it would defeat the point of the clock. Nothing
+ * currently needs the confirmed-only count; the predicate that answered it was
+ * removed rather than left exported for a caller that never arrived.
  *
  * It does NOT count a flag a reviewer has explicitly rejected, and the
  * difference between those two is the whole of this function's judgement.
@@ -189,13 +190,6 @@ export function isSerious(flags: SeriousnessFlags): boolean {
   return flaggedCriteria(flags).length > 0;
 }
 
-/** Serious on the strength of flags a human has actually signed off. */
-export function isConfirmedSerious(flags: SeriousnessFlags): boolean {
-  return SERIOUSNESS_CRITERIA.some((c) => {
-    const assertion = flags[c];
-    return assertion !== null && assertion.confirmedByReviewer;
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Reaction

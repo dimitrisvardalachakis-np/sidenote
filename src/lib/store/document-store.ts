@@ -264,7 +264,7 @@ class R2DocumentStore implements DocumentStore {
 
 const localStore: DocumentStore = new LocalFileDocumentStore();
 
-/** The one line Cluster D changed. */
+/** The one line Cluster D changed: R2 when the bucket is bound. */
 export async function getDocumentStore(): Promise<DocumentStore> {
   const env = await getCloudflareEnv();
   const bucket = env?.DOCUMENTS;

@@ -88,20 +88,6 @@ export type IsoDateTime = z.output<typeof IsoDateTime>;
 export const Provenance = z.enum(["model", "reviewer"]);
 export type Provenance = z.output<typeof Provenance>;
 
-/**
- * A model suggestion that a human has not yet ruled on. `confirmedByReviewer`
- * starts false for anything the model produced and can only be set by a
- * reviewer action. Nothing renders as fact while it is false.
- */
-export function suggestionShape<T extends z.ZodType>(value: T) {
-  return z.object({
-    value,
-    suggestedBy: Provenance,
-    confirmedByReviewer: z.boolean(),
-    /** Set when a reviewer explicitly rejected the suggestion. */
-    rejectedByReviewer: z.boolean(),
-  });
-}
 
 // ---------------------------------------------------------------------------
 // Evidence

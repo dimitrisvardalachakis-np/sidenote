@@ -17,22 +17,6 @@ export function blankToNull<T extends z.ZodType>(schema: T) {
   );
 }
 
-/**
- * As above, for a number arriving as text.
- *
- * Unparseable input is passed through unchanged rather than coerced to NaN,
- * so the inner schema reports "expected a number" instead of the form
- * silently accepting nonsense as zero.
- */
-export function blankToNullNumber<T extends z.ZodType>(schema: T) {
-  return z.preprocess((v) => {
-    if (typeof v !== "string") return v;
-    const trimmed = v.trim();
-    if (trimmed === "") return null;
-    const parsed = Number(trimmed);
-    return Number.isNaN(parsed) ? v : parsed;
-  }, schema.nullable());
-}
 
 /** FormData gives strings or nothing. Normalise once. */
 export function formText(formData: FormData, key: string): string {

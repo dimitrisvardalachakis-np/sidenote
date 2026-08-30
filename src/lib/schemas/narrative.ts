@@ -137,11 +137,3 @@ export const GroundedNarrative = z.discriminatedUnion("status", [
 ]);
 export type GroundedNarrative = z.output<typeof GroundedNarrative>;
 
-/** The chunks a narrative points at, in render order. Empty when unavailable. */
-export function narrativeCitesChunks(
-  narrative: GroundedNarrative,
-): readonly string[] {
-  return narrative.status === "narrated"
-    ? narrative.points.map((point) => point.chunkId)
-    : [];
-}

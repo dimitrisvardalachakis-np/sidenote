@@ -82,10 +82,3 @@ export function isAcceptedFilename(filename: string): boolean {
   return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
 }
 
-export function rejectUnsupported(): ExtractionAssessment {
-  return {
-    ok: false,
-    reason: "unsupported_format",
-    message: REJECTION_MESSAGES.unsupported_format,
-  };
-}

@@ -100,12 +100,3 @@ export function suspectDrugsOf(
   return drugs.filter((d) => d.role === "suspect");
 }
 
-/**
- * Which company document this drug is judged against. One line, but it is the
- * line that decides whether the reviewer is reading a CCDS or an IB.
- */
-export function governingDocumentKind(
-  drug: SuspectDrug,
-): "ccds" | "investigators_brochure" {
-  return drug.marketingStatus === "marketed" ? "ccds" : "investigators_brochure";
-}

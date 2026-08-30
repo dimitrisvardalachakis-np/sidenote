@@ -100,6 +100,12 @@ demo.
 
 ## Target architecture (end state, built cluster by cluster)
 
+Every row below is declared in `wrangler.jsonc` and wired in code. The one
+qualification that applies to the whole table: **it has not been deployed.**
+The resource ids are placeholders and `scripts/preflight-deploy.mjs` refuses to
+deploy over them, so what is proven is that the bindings exist, are typed, and
+are reached through one accessor each — not that they have served traffic.
+
 | Concern | Where it lives |
 |---|---|
 | Cases, reactions, drugs, assessments, documents, audit | **D1** via Drizzle |
@@ -247,18 +253,33 @@ Workers AI REST API, so generation runs under `next dev` or any Node host with
 two environment variables — see SETUP.md. Before it was a stub returning null
 whose parameter type could not have held a binding.
 
-**No write path for a verdict either.** Claiming a case, recording a ruling and
-rejecting a seriousness flag are all Cluster D, behind the Durable Object. The
-domain honours all three — `ruledListedness`, `requiresExpeditedReport` and
-`flaggedCriteria` are written and tested against them — but no screen sets
-them yet.
+**The verdict has a write path, and it goes through the Durable Object.**
+Claiming, releasing and ruling are wired on the case screen and all three call
+`getCaseCoordination()` — `CaseCoordinator` when the binding is present, an
+in-process stand-in that reports `arbitrates: false` when it is not. The
+read-then-write race `claim-store.ts` documented is gone: `idFromName(caseId)`
+makes the check and the write one turn. A ruling asks the coordinator first and
+mirrors to the assessment store second, so a claim that lapsed in between is
+refused rather than written and discovered later. Every mutating method takes
+an idempotency key, so a retried submission returns its first result instead of
+recording a second determination. Rejecting a seriousness flag is the one of
+the three that still has no control.
 
-**Still standing in for Cloudflare.** There is no wrangler config, no D1, no
-R2, no Queues in this session. Vectorize now has a real REST client but is
-opt-in; the default vector store is a local file, which is brute-force cosine
-over every vector and says so on the screen and the audit line. Stores are
-in-memory or on disk. Each of these is one line to change, and each is marked
-where it sits.
+**A claim lapses after 30 minutes.** It did not, and the two branches argued
+opposite cases in prose. The Durable Object settles it by invalidating the
+argument for permanence: `rule()` re-reads the live claim inside a
+single-threaded object, so a lapse cannot produce two rulings, only a handover
+— and against a deadline counted in days, a case locked until Monday is the
+worse failure.
+
+**Cloudflare is configured, not deployed.** `wrangler.jsonc` declares D1, KV,
+R2, Vectorize, Queues with a DLQ, two Durable Objects, two cron triggers, two
+rate-limit bindings and Workers AI, and `worker/index.ts` exports `fetch`,
+`queue` and `scheduled`. What has not happened is `wrangler deploy`: the
+resource ids are placeholders and `scripts/preflight-deploy.mjs` refuses to
+deploy over them. Vectorize is opt-in; the default vector store is a local file
+doing brute-force cosine over every vector, and it says so on the screen and
+the audit line.
 
 **Degradation is the tested path, not the assumed one.** With no model
 configured, `resolveAiBinding` returns null, the dense half switches off with

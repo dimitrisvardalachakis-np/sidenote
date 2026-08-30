@@ -21,16 +21,19 @@ import {
  * released and re-claimed like any other case, which is what makes the
  * conflict demonstrable at all.
  *
- * Same seam as the other stores: an interface, a local-file implementation for
- * this session, one line for Cluster D to point at the Durable Object.
+ * NOT WHAT THE APP TALKS TO ANY MORE. `getCaseCoordination()` is, and behind it
+ * is `CaseCoordinator` — one Durable Object per case, addressed
+ * `idFromName(caseId)`, whose methods cannot run concurrently.
  *
- * THE HONEST LIMIT. `claim` reads and then writes, and nothing serialises the
- * two. Two requests arriving in the same millisecond can both see null and
- * both write. That window is what `idFromName(caseId)` closes — a Durable
- * Object is single-threaded per id, so the read-then-write becomes atomic
- * without a lock. Until then this is a demonstration of the interaction, not a
- * guarantee about it, and it is written down here rather than implied to be
- * safe.
+ * This file used to carry a paragraph admitting that `claim` reads and then
+ * writes with nothing serialising the two, so two requests in the same
+ * millisecond could both see null and both write. That is the window the
+ * Durable Object closed, and the paragraph is kept here in the past tense
+ * because it is the reason the coordinator exists.
+ *
+ * What survives is the seeded holders and the local/ephemeral persistence the
+ * in-process stand-in leans on, so `next dev` without a binding still has
+ * somewhere to put a claim that outlives a page render.
  */
 
 const StoredClaim = z.object({

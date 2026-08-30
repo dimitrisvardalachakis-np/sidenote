@@ -19,7 +19,7 @@ export const THEME_LABELS: Readonly<Record<ThemeMode, string>> = {
   dark: "Dark",
 };
 
-export function isThemeMode(value: unknown): value is ThemeMode {
+function isThemeMode(value: unknown): value is ThemeMode {
   return (
     value === "system" || value === "light" || value === "dark"
   );
