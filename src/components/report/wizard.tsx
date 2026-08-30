@@ -9,6 +9,10 @@ import { StepStopping } from "./step-stopping";
 import { StepMedicine } from "./step-medicine";
 import { StepYou } from "./step-you";
 import { SentConfirmation } from "./sent";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/protection/turnstile";
 import { submitReportAction } from "@/app/(public)/report/submit-action";
 import type { SubmitOutcome } from "@/lib/report/submit";
 import {
@@ -45,7 +49,17 @@ import { ProgressRule, RequiredChecklist } from "./orientation";
  * wizard it means "leave the form", and people lose their work to it. Back and
  * Next are on the page where they can be seen and reached by keyboard.
  */
-export function ReportWizard() {
+export function ReportWizard({ siteKey }: { readonly siteKey: string | null }) {
+  /*
+    The token lives with the wizard, not with the step that submits.
+
+    Turnstile solves in the background while the reporter answers eight
+    questions, so by the time they reach Send the challenge is long done. The
+    widget is rendered on the final step only — a challenge on step one, four
+    screens before anything is sent, would expire before it was used.
+  */
+  const turnstile = useTurnstile(siteKey);
+
   const saved = useSyncExternalStore(
     subscribeToDraft,
     readDraft,
@@ -77,8 +91,12 @@ export function ReportWizard() {
       // The client checks first so the reporter is not made to wait for a
       // round trip to be told something the page already knew. The server
       // checks again regardless; that is the check that counts.
-      const result = await submitReportAction(draft);
+      const result = await submitReportAction(draft, turnstile.token);
       setOutcome(result);
+      // Single use: siteverify answers `timeout-or-duplicate` the second time
+      // it sees a token, so a failed submit that reused this one would be
+      // rejected as a robot rather than retried.
+      turnstile.reset();
       if (result.status === "created") {
         writeDraft({
           ...saved,
@@ -240,9 +258,25 @@ export function ReportWizard() {
               </div>
             )}
 
+            <TurnstileWidget
+              status={turnstile.status}
+              containerRef={turnstile.containerRef}
+            />
+
             <button
               type="button"
               onClick={() => void send()}
+              /*
+                Not disabled on a missing token.
+
+                The obvious wiring — require a solved token before Send is
+                pressable — makes a Turnstile outage silently swallow adverse
+                event reports, and the reporter is shown a dead button with no
+                explanation. The server decides: guard.ts already separates
+                "the challenge rejected you" from "the challenge did not run",
+                and only the first is a refusal. So the button stays live and
+                the answer comes back as a sentence.
+              */
               disabled={sending || missing.length > 0 || problems.length > 0}
               className="mt-4 min-h-11 cursor-pointer rounded-soft bg-steady px-5 py-2 text-body font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >

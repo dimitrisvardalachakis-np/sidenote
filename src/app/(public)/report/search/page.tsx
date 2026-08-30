@@ -12,6 +12,7 @@ import { Orientation } from "@/components/report/orientation";
 import { SourceDialog } from "@/components/source-dialog";
 import { SourcePassage } from "@/components/source-passage";
 import { passageContext } from "@/lib/library/context";
+import { guardPublicSearch } from "@/lib/protection/guard";
 
 /**
  * "Is this already known?" for the public.
@@ -37,6 +38,20 @@ export default async function SearchPage({
   const drug = typeof rawDrug === "string" ? rawDrug.trim() : "";
 
   /*
+    Counted before a penny is spent.
+
+    Checked here rather than deeper in, because everything expensive on this
+    page is below this line: the label fetch, the embedding, and the
+    generation. A limiter consulted after the work is a limiter that pays for
+    the work it was meant to prevent.
+
+    The form and the passages still render when the ceiling is hit — a reader
+    who has just been told to wait a minute should not also lose the page.
+  */
+  const searching = query.length > 1 || drug.length > 2;
+  const guard = searching ? await guardPublicSearch() : { allowed: true as const };
+
+  /*
     The medicine is its own field, and that is a design decision rather than a
     form-layout preference.
 
@@ -48,7 +63,7 @@ export default async function SearchPage({
     inferring, and it costs the reporter one field.
   */
   let acquisition = null;
-  if (drug.length > 2) {
+  if (guard.allowed && drug.length > 2) {
     const env = await aiEnv();
     const held = (await loadCorpus()).documents;
     acquisition = await ensurePublicLabel({
@@ -92,7 +107,7 @@ export default async function SearchPage({
       : null;
 
   const answer =
-    query.length > 1
+    guard.allowed && query.length > 1
       ? await answerPublicQuestion(query, chunks, undefined, scope)
       : { citations: [], reading: null, hits: [], narrative: null };
   const hits = answer.citations;
@@ -209,7 +224,13 @@ export default async function SearchPage({
         </p>
       </form>
 
-      {query.length > 1 && (
+      {!guard.allowed && (
+        <p className="mt-6 rounded-card border border-rule bg-surface p-4 text-body shadow-card">
+          {guard.message}
+        </p>
+      )}
+
+      {guard.allowed && query.length > 1 && (
         <section aria-label="Results" className="mt-6">
 
           {/*

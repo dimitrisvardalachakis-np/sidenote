@@ -29,7 +29,7 @@ export interface Corpus {
 }
 
 export async function loadCorpus(): Promise<Corpus> {
-  const library = getDocumentLibrary();
+  const library = await await getDocumentLibrary();
   const uploaded = await library.list();
 
   const chunks: DocumentChunk[] = [...SEED_CHUNKS];

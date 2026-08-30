@@ -107,7 +107,7 @@ describe("the whole form by keyboard", () => {
   */
   it("completes all five steps and sends, using only the keyboard", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     // ---- Step 1 -------------------------------------------------------
     expect(screen.getByRole("heading", { level: 2 }).textContent).toBe(
@@ -179,7 +179,7 @@ describe("the whole form by keyboard", () => {
 
   it("will not send while something is still needed, and says what", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
 
@@ -217,11 +217,11 @@ describe("the whole form by keyboard", () => {
 
   it("keeps answers across a remount, the way a refresh would", async () => {
     const user = userEvent.setup();
-    const first = render(<ReportWizard />);
+    const first = render(<ReportWizard siteKey={null} />);
     await chooseRadio(user, "It happened to someone else");
     first.unmount();
 
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
     expect(
       screen.getByLabelText("It happened to someone else"),
     ).toBeChecked();
@@ -292,7 +292,7 @@ describe("the form asks each thing once, and only when it makes sense", () => {
   */
   it("does not ask a self-reporter who this happened to a second time", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to me");
     await walkTo(user, "About you");
@@ -303,7 +303,7 @@ describe("the form asks each thing once, and only when it makes sense", () => {
 
   it("still asks how somebody reporting for another person is connected", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await walkTo(user, "About you");
@@ -323,7 +323,7 @@ describe("the form asks each thing once, and only when it makes sense", () => {
   */
   it("does not ask about starting again when they never stopped", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await walkTo(user, "Stopping and starting again");
@@ -336,7 +336,7 @@ describe("the form asks each thing once, and only when it makes sense", () => {
 
   it("asks the rest of the sequence once they did stop", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await walkTo(user, "Stopping and starting again");
@@ -359,7 +359,7 @@ describe("the form asks each thing once, and only when it makes sense", () => {
   */
   it("withdraws the answers underneath when the stop is withdrawn", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await walkTo(user, "Stopping and starting again");
@@ -408,7 +408,7 @@ describe("what the reporter types is what the box holds", () => {
   */
   it("keeps spaces and dashes, in order", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await clickButtonByKeyboard(user, /^next$/i);
@@ -422,7 +422,7 @@ describe("what the reporter types is what the box holds", () => {
 
   it("keeps a multi-word narrative intact", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await clickButtonByKeyboard(user, /^next$/i);
@@ -450,7 +450,7 @@ describe("what the reporter types is what the box holds", () => {
   */
   it("does not throw the form away when an email is half typed", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await clickButtonByKeyboard(user, /^next$/i);
@@ -499,7 +499,7 @@ describe("what the reporter types is what the box holds", () => {
   */
   it("trims only at submission, not while typing", async () => {
     const user = userEvent.setup();
-    render(<ReportWizard />);
+    render(<ReportWizard siteKey={null} />);
 
     await chooseRadio(user, "It happened to someone else");
     await clickButtonByKeyboard(user, /^next$/i);

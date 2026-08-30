@@ -46,7 +46,7 @@ export const loadQueue = cache(async function loadQueue(
   }));
 
   const submitted = await (await getCaseStore()).list();
-  const store = getAssessmentStore();
+  const store = await getAssessmentStore();
 
   /*
     A real assessment, where one has been run, wins over the seeded one.

@@ -138,10 +138,10 @@ export async function runAssessment(caseId: string): Promise<void> {
     target: record.reference,
   });
 
-  const existing = await getAssessmentStore().get(record.id);
+  const existing = await (await getAssessmentStore()).get(record.id);
   const now = new Date().toISOString();
 
-  await getAssessmentStore().put(
+  await (await getAssessmentStore()).put(
     Assessment.parse({
       id: existing?.id ?? randomUUID(),
       caseId: record.id,
@@ -357,7 +357,7 @@ export async function recordRuling(
     };
   }
 
-  const store = getAssessmentStore();
+  const store = await getAssessmentStore();
   const existing = (await store.get(caseId)) ?? entry.assessment;
   if (existing === null) {
     return {

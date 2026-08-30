@@ -135,7 +135,7 @@ export async function ensurePublicLabel(
   });
 
   try {
-    await getDocumentLibrary().save({ document: chunked, chunks });
+    await (await getDocumentLibrary()).save({ document: chunked, chunks });
   } catch {
     audit({
       actor: input.actor,
@@ -157,7 +157,7 @@ export async function ensurePublicLabel(
   });
 
   if (ingest.status === "embedded") {
-    await getDocumentLibrary().save({
+    await (await getDocumentLibrary()).save({
       document: SafetyDocument.parse({ ...chunked, status: "embedded" }),
       chunks,
     });

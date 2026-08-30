@@ -45,7 +45,7 @@ describe.runIf(ENABLED)("backfilling vectors for already-uploaded documents", ()
       );
     }
 
-    const library = getDocumentLibrary();
+    const library = await getDocumentLibrary();
     const documents = await library.list();
     const pending = documents.filter((d) => d.status === "chunking");
 

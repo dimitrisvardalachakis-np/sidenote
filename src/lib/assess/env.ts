@@ -1,4 +1,5 @@
 import "server-only";
+import { getCloudflareEnv } from "@/lib/platform/env";
 import type { AiBinding } from "./ai";
 
 /**
@@ -10,27 +11,32 @@ import type { AiBinding } from "./ai";
  * which world it is in, this returns one merged record and lets
  * `resolveAiBinding` narrow it.
  *
- * The Cloudflare context is looked up lazily and its absence is not an error:
- * on Node there simply is no adapter to ask, which is the ordinary case today.
+ * WHY THIS DELEGATES RATHER THAN ASKING THE ADAPTER ITSELF.
+ *
+ * It used to import `@opennextjs/cloudflare` and call `getCloudflareContext()`
+ * directly, which was right until there were handlers other than `fetch`.
+ * OpenNext publishes its Cloudflare context by writing it onto `globalThis`
+ * from the fetch entrypoint and nowhere else — so inside the queue consumer or
+ * a cron sweep that call throws, this returned `process.env` alone, `env.AI`
+ * was not there, and `resolveAiBinding` reported no model configured. The
+ * pipeline would then run to completion, degrade honestly, and record that it
+ * had found nothing. Every layer behaving exactly as designed, and the queue
+ * assessing nothing.
+ *
+ * `getCloudflareEnv()` is the one door that knows about that: it tries the
+ * adapter first, so a real request always uses its own context, and falls back
+ * to the ambient env that `worker/index.ts` sets for the two handlers the
+ * adapter does not reach. Asking it here rather than reimplementing it is what
+ * keeps this file from drifting out of agreement with the platform layer.
+ *
+ * The Cloudflare context's absence is not an error: on Node there simply is no
+ * adapter to ask, which is the ordinary case in development and in tests.
  */
 export async function aiEnv(): Promise<Readonly<Record<string, unknown>>> {
   const base: Record<string, unknown> = { ...process.env };
 
-  try {
-    // Resolved at runtime so the dependency stays optional: the adapter is
-    // only installed once the app is actually deployed to Workers, and a
-    // static import would break every Node run until then.
-    const specifier = "@opennextjs/cloudflare";
-    const mod: unknown = await import(/* webpackIgnore: true */ specifier);
-    const get = (mod as { getCloudflareContext?: unknown }).getCloudflareContext;
-    if (typeof get === "function") {
-      const ctx = (get as () => { env?: Record<string, unknown> })();
-      if (ctx.env !== undefined) Object.assign(base, ctx.env);
-    }
-  } catch {
-    // No adapter here. Expected on Node; `resolveAiBinding` falls through to
-    // the HTTP client, or to an honest "no model configured".
-  }
+  const bindings = await getCloudflareEnv();
+  if (bindings !== null) Object.assign(base, bindings);
 
   return base;
 }

@@ -25,9 +25,13 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // A partner system proves itself with a credential, not a browser widget,
-  // so there is no Turnstile token on this path. The rate limit still applies.
-  const outcome = await submitReport(body, { botToken: null });
+  /*
+    A partner system proves itself with a credential, not a browser widget, so
+    there is no Turnstile token on this path and its absence is not suspicious.
+    Declared as `machine` rather than passing a null token, so that switching
+    Turnstile on cannot switch this endpoint off. The rate limit still applies.
+  */
+  const outcome = await submitReport(body, { kind: "machine" });
 
   switch (outcome.status) {
     case "created":

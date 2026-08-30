@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Orientation } from "@/components/report/orientation";
 import { ChatPanel } from "./chat-panel";
+import { getTurnstileSiteKey } from "@/lib/protection/bot-gate";
 
 export const metadata: Metadata = {
   title: "Report a side effect — SideNote",
@@ -14,7 +15,11 @@ export const metadata: Metadata = {
  * Telling a member of the public they are talking to an AI when they are not
  * would be the kind of small lie that makes everything else suspect.
  */
-export default function ChatIntakePage() {
+export default async function ChatIntakePage() {
+  // Server-read, so the widget and the gate cannot disagree about whether
+  // Turnstile is on. See the note on /report's page.
+  const siteKey = await getTurnstileSiteKey();
+
   return (
     <main className="mx-auto w-full max-w-[46rem] flex-1 px-4 py-10">
       <h1 className="text-hero font-semibold">Report a side effect</h1>
@@ -41,7 +46,7 @@ export default function ChatIntakePage() {
       </div>
 
       <div className="mt-6">
-        <ChatPanel />
+        <ChatPanel siteKey={siteKey} />
       </div>
     </main>
   );

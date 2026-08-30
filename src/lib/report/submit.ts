@@ -9,7 +9,7 @@ import {
   trimDraft,
   type MissingElement,
 } from "@/lib/schemas/report";
-import { guardPublicSubmission } from "@/lib/protection/guard";
+import { guardPublicSubmission, type Caller } from "@/lib/protection/guard";
 import { reportToCase } from "./to-case";
 
 /**
@@ -48,12 +48,21 @@ export type SubmitOutcome =
 
 export async function submitReport(
   input: unknown,
-  options: { readonly botToken?: string | null } = {},
+  /*
+    Who is calling, as a discriminated union rather than an optional token.
+
+    A browser with no token and a partner system that has no browser are
+    different facts and used to arrive as the same `null`. With a default of
+    `{ kind: "machine" }` the bot check would be skipped for anything that
+    forgot to say — so there is no default: every caller states its kind, and
+    "I forgot" is a compile error rather than a silently unguarded endpoint.
+  */
+  caller: Caller,
 ): Promise<SubmitOutcome> {
   // Protection first, before any work is done on the input. An endpoint that
   // parses and stores before checking whether it should have is an endpoint
   // that can be made to do work for free.
-  const guard = await guardPublicSubmission(options.botToken ?? null);
+  const guard = await guardPublicSubmission(caller);
   if (!guard.allowed) {
     return {
       status: "blocked",

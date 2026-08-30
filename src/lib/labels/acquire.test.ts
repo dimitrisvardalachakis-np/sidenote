@@ -159,7 +159,7 @@ describe("acquiring", () => {
     expect(out.chunks).toBeGreaterThan(0);
 
     // In the library, so `loadCorpus` picks it up and it is citable.
-    const entry = await getDocumentLibrary().get(SPL);
+    const entry = await (await getDocumentLibrary()).get(SPL);
     expect(entry).not.toBeNull();
     expect(entry?.document.sourceType).toBe("public");
     expect(entry?.chunks.length).toBe(out.chunks);
@@ -176,7 +176,7 @@ describe("acquiring", () => {
       dense: null,
       actor: "public",
     });
-    const entry = await getDocumentLibrary().get(SPL);
+    const entry = await (await getDocumentLibrary()).get(SPL);
     expect(entry?.document.status).toBe("chunking");
   });
 });
@@ -204,7 +204,7 @@ describe("failure never blocks an answer", () => {
       dense: null,
       actor: "public",
     });
-    expect(await getDocumentLibrary().get(SPL)).toBeNull();
+    expect(await (await getDocumentLibrary()).get(SPL)).toBeNull();
   });
 });
 

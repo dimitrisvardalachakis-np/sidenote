@@ -136,7 +136,7 @@ export async function saveDocument(
       uploadedAt: new Date().toISOString(),
       uploadedBy: session.reviewerId,
     });
-    await getDocumentLibrary().save({ document: rejected, chunks: [] });
+    await (await getDocumentLibrary()).save({ document: rejected, chunks: [] });
 
     audit({
       actor: session.reviewerId,
@@ -183,7 +183,7 @@ export async function saveDocument(
     uploadedBy: session.reviewerId,
   });
 
-  await getDocumentLibrary().save({ document, chunks });
+  await (await getDocumentLibrary()).save({ document, chunks });
 
   const env = await aiEnv();
   const ingest = await embedAndUpsert({
@@ -196,7 +196,7 @@ export async function saveDocument(
   // of an upsert that resolved. A comment cannot keep that status honest; this
   // control flow can.
   if (ingest.status === "embedded") {
-    await getDocumentLibrary().save({
+    await (await getDocumentLibrary()).save({
       document: SafetyDocument.parse({ ...document, status: "embedded" }),
       chunks,
     });

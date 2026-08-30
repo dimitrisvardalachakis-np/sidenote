@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Orientation } from "@/components/report/orientation";
 import { ReportWizard } from "@/components/report/wizard";
+import { getTurnstileSiteKey } from "@/lib/protection/bot-gate";
 
 export const metadata: Metadata = {
   title: "Report a side effect — SideNote",
@@ -14,7 +15,15 @@ export const metadata: Metadata = {
  * regulatory wording. Nothing here asks anyone to classify anything; the
  * mapping onto the regulatory concepts happens on our side of the line.
  */
-export default function ReportPage() {
+export default async function ReportPage() {
+  /*
+    Read on the server and handed down, so the widget and the gate cannot
+    disagree. If a page ever rendered a challenge the server was not checking,
+    the endpoint would look protected and be wide open — which is the failure
+    this whole step exists to close.
+  */
+  const siteKey = await getTurnstileSiteKey();
+
   return (
     <main className="mx-auto w-full max-w-[46rem] flex-1 px-4 py-10">
       <h1 className="text-hero font-semibold">Report a side effect</h1>
@@ -28,7 +37,7 @@ export default function ReportPage() {
       </div>
 
       <div className="mt-4">
-        <ReportWizard />
+        <ReportWizard siteKey={siteKey} />
       </div>
     </main>
   );

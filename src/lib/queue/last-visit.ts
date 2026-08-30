@@ -1,6 +1,11 @@
 import "server-only";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import {
+  dataPath,
+  ephemeralSingleton,
+  nodeFs,
+  nodePath,
+  storageBacking,
+} from "@/lib/store/backing";
 
 /**
  * When each reviewer last looked at the queue.
@@ -15,19 +20,37 @@ import { join } from "node:path";
  * nothing rather than marking everything, and a queue where all sixteen cases
  * are new says exactly as much as one where none is.
  */
-const DIR = join(process.cwd(), ".data", "visits");
-
-function fileFor(reviewerId: string): string | null {
+/** A reviewer id becomes a filename, so it must not be able to escape the directory. */
+function safeName(reviewerId: string): string | null {
   const safe = reviewerId.replace(/[^A-Za-z0-9._-]/g, "_");
   if (safe.length === 0 || safe === "." || safe === "..") return null;
-  return join(DIR, `${safe}.txt`);
+  return `${safe}.txt`;
 }
 
+/**
+ * No disk: remember the visit for as long as the isolate lives.
+ *
+ * Losing it marks nothing rather than marking everything, which is the same
+ * degradation a first-ever visit produces — so unlike the other stores this one
+ * needs no ephemeral audit line. There is no false promise to announce.
+ */
+const visits = () =>
+  ephemeralSingleton("last_visit", () => new Map<string, string>());
+
 export async function readLastVisit(reviewerId: string): Promise<string | null> {
-  const path = fileFor(reviewerId);
-  if (path === null) return null;
+  const name = safeName(reviewerId);
+  if (name === null) return null;
+
+  if ((await storageBacking()) === "ephemeral") {
+    return visits().get(name) ?? null;
+  }
+
+  const { readFile } = await nodeFs();
+  const { join } = await nodePath();
   try {
-    const raw = (await readFile(path, "utf8")).trim();
+    const raw = (
+      await readFile(join(await dataPath("visits"), name), "utf8")
+    ).trim();
     return raw.length > 0 ? raw : null;
   } catch {
     return null;
@@ -35,11 +58,21 @@ export async function readLastVisit(reviewerId: string): Promise<string | null> 
 }
 
 export async function recordVisit(reviewerId: string): Promise<void> {
-  const path = fileFor(reviewerId);
-  if (path === null) return;
+  const name = safeName(reviewerId);
+  if (name === null) return;
+  const now = new Date().toISOString();
+
+  if ((await storageBacking()) === "ephemeral") {
+    visits().set(name, now);
+    return;
+  }
+
   try {
-    await mkdir(DIR, { recursive: true });
-    await writeFile(path, new Date().toISOString(), "utf8");
+    const { mkdir, writeFile } = await nodeFs();
+    const { join } = await nodePath();
+    const dir = await dataPath("visits");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, name), now, "utf8");
   } catch {
     // Not being able to remember the visit is not worth failing a page render.
   }

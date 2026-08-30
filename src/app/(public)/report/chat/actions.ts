@@ -13,6 +13,7 @@ import { intakeToCase } from "@/lib/intake/to-case";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { guardPublicConversation } from "@/lib/protection/guard";
+import { TURNSTILE_TOKEN_FIELD } from "@/lib/protection/bot-gate";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
 import {
   type AcquireOutcome,
@@ -64,6 +65,16 @@ export async function sendChatMessage(
 ): Promise<ChatState> {
   if (previous.submitted !== null) return previous;
 
+  /*
+    The widget renders inside this form, so its hidden input arrives in the
+    same FormData as the message. A fresh token per turn, because a Turnstile
+    token is single use — see the widget.
+  */
+  const rawToken = formData.get(TURNSTILE_TOKEN_FIELD);
+  const botToken = typeof rawToken === "string" && rawToken.length > 0
+    ? rawToken
+    : null;
+
   // Checked before the intent, because a change button carries a slot rather
   // than an intent — see the note on CHAT_INTENTS.
   const change = formData.get("change");
@@ -73,9 +84,9 @@ export async function sendChatMessage(
 
   switch (parseIntent(formData.get("intent"))) {
     case "submit":
-      return submitReport(previous);
+      return submitReport(previous, botToken);
     case "message":
-      return addMessage(previous, formData);
+      return addMessage(previous, formData, botToken);
   }
 }
 
@@ -129,6 +140,7 @@ function mergePrefill(
 async function addMessage(
   previous: ChatState,
   formData: FormData,
+  botToken: string | null,
 ): Promise<ChatState> {
   const raw = formData.get("message");
   const reply = typeof raw === "string" ? raw.trim() : "";
@@ -147,7 +159,7 @@ async function addMessage(
   // ceiling. Checked before any retrieval or generation runs: both are the
   // expensive part and doing them for an unthrottled caller is doing their
   // work for them.
-  const guard = await guardPublicConversation();
+  const guard = await guardPublicConversation(botToken);
   if (!guard.allowed) {
     return { ...previous, error: guard.message };
   }
@@ -346,10 +358,13 @@ function isIntakeSlot(value: string): value is IntakeSlot {
  * same words whatever the reading said: "already described" is not a reason to
  * discard a report, and this action does not consult the review at all.
  */
-async function submitReport(previous: ChatState): Promise<ChatState> {
+async function submitReport(
+  previous: ChatState,
+  botToken: string | null,
+): Promise<ChatState> {
   if (previous.intake.phase !== "review") return previous;
 
-  const guard = await guardPublicConversation();
+  const guard = await guardPublicConversation(botToken);
   if (!guard.allowed) {
     return { ...previous, error: guard.message };
   }

@@ -79,7 +79,7 @@ async function chunkStep(
   documentId: string,
   textKey: string,
 ): Promise<readonly IngestMessage[]> {
-  const library = await getDocumentLibrary();
+  const library = await await getDocumentLibrary();
   const entry = await library.get(documentId);
   if (entry === null) {
     // The document record went away between enqueue and now. Nothing to do,

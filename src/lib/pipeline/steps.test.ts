@@ -49,7 +49,7 @@ No case of overdose has been reported to date.
 `;
 
 async function seedDocument(): Promise<string> {
-  const library = await getDocumentLibrary();
+  const library = await await getDocumentLibrary();
   const store = await getDocumentStore();
 
   const objectKey = objectKeyFor("company", DOCUMENT_ID, "ccds.pdf");
@@ -144,7 +144,7 @@ describe("chunk_document", () => {
   });
 
   it("rejects a document whose text chunks to nothing, and stops the chain", async () => {
-    const library = await getDocumentLibrary();
+    const library = await await getDocumentLibrary();
     const store = await getDocumentStore();
     const objectKey = objectKeyFor("company", DOCUMENT_ID, "scan.pdf");
     const textKey = `${objectKey}.txt`;
@@ -200,7 +200,7 @@ describe("chunk_document", () => {
   });
 
   it("retries when the text is missing but the document is not", async () => {
-    const library = await getDocumentLibrary();
+    const library = await await getDocumentLibrary();
     await library.save({
       document: SafetyDocument.parse({
         id: DOCUMENT_ID,

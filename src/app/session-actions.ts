@@ -45,7 +45,7 @@ export async function signIn(
     be measured.
   */
   const ip = await clientIp();
-  const decision = await getSignInRateLimiter().check(`sign_in:${ip}`);
+  const decision = await (await getSignInRateLimiter()).check(`sign_in:${ip}`);
   if (!decision.allowed) {
     audit({
       actor: "public",

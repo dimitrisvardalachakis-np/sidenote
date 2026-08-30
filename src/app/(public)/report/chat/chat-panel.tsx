@@ -8,6 +8,10 @@ import {
   useSyncExternalStore,
 } from "react";
 import { sendChatMessage } from "./actions";
+import {
+  TurnstileWidget,
+  useTurnstile,
+} from "@/components/protection/turnstile";
 import { initialChatState } from "./chat-state";
 import {
   INTAKE_QUESTION_COUNT,
@@ -125,7 +129,18 @@ function Message({ message }: { message: IntakeMessage }) {
   );
 }
 
-export function ChatPanel() {
+export function ChatPanel({ siteKey }: { readonly siteKey: string | null }) {
+  /*
+    One widget for both forms below.
+
+    It renders inside whichever form is showing, because Turnstile injects its
+    hidden input into the container and FormData only collects fields inside
+    the form being submitted — outside it, the token silently never arrives.
+    Every turn sends one: tokens are single use, and the widget issues a fresh
+    one after each submit.
+  */
+  const turnstile = useTurnstile(siteKey);
+
   const [state, formAction, pending] = useActionState(
     sendChatMessage,
     initialChatState(),
@@ -251,6 +266,10 @@ export function ChatPanel() {
             review={state.review}
             pending={pending}
           />
+          <TurnstileWidget
+            status={turnstile.status}
+            containerRef={turnstile.containerRef}
+          />
         </form>
       ) : (
         <form
@@ -372,6 +391,11 @@ export function ChatPanel() {
           <div className="mt-4 border-t border-rule pt-4">
             <RequiredChecklist missing={missing} />
           </div>
+
+          <TurnstileWidget
+            status={turnstile.status}
+            containerRef={turnstile.containerRef}
+          />
 
           <p className="mt-4 text-meta text-slate">
             Prefer to see all the questions at once?{" "}
