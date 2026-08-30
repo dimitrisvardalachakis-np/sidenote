@@ -120,7 +120,7 @@ export async function submitReport(
   }
 
   const now = new Date();
-  const store = getCaseStore();
+  const store = await getCaseStore();
 
   try {
     const reference = await store.nextReference(now.getUTCFullYear());

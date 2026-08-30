@@ -67,17 +67,20 @@ const settled = row({
   assessed: true,
 });
 const unassessed = row({ reference: "SN-2026-500002" });
+/** Far enough out that these fixtures are about claiming, not about lapsing. */
+const LIVE = "2099-01-01T00:00:00Z";
+
 const mine = row({
   reference: "SN-2026-000300",
   assessed: true,
   clock: { state: "not_applicable" },
-  claim: { reviewerId: ME, displayName: "Demo Reviewer", heldSince: "x" },
+  claim: { reviewerId: ME, displayName: "Demo Reviewer", heldSince: "x", expiresAt: LIVE },
 });
 const theirs = row({
   reference: "SN-2026-000301",
   assessed: true,
   clock: { state: "not_applicable" },
-  claim: { reviewerId: THEM, displayName: "A. Okonkwo", heldSince: "x" },
+  claim: { reviewerId: THEM, displayName: "A. Okonkwo", heldSince: "x", expiresAt: LIVE },
 });
 
 const ALL = [overdue, dueToday, settled, unassessed, mine, theirs];
@@ -94,7 +97,7 @@ describe("filters", () => {
       reference: "SN-2026-000999",
       clock: { state: "overdue", dueOn: "2026-08-22", daysOverdue: 2 },
       assessed: true,
-      claim: { reviewerId: THEM, displayName: "A. Okonkwo", heldSince: "x" },
+      claim: { reviewerId: THEM, displayName: "A. Okonkwo", heldSince: "x", expiresAt: LIVE },
     });
     const rows = [...ALL, claimedOverdue];
     // Overdue AND unclaimed is one case, not two.

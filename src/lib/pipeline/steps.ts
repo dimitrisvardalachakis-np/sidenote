@@ -1,12 +1,16 @@
 import "server-only";
 import { eq, inArray } from "drizzle-orm";
 import { audit } from "@/lib/audit";
-import { EMBEDDING_BATCH_SIZE, embed } from "@/lib/ai/embeddings";
-import { namespaceFor, upsertVectors } from "@/lib/ai/vectorize";
 import { getDb, schema } from "@/lib/db/client";
 import { chunkDocument } from "@/lib/ingest/chunk";
-import { hybridSearch } from "@/lib/retrieval/hybrid";
-import { toCitation, type ScoredChunk } from "@/lib/retrieval/search";
+import { assessCase } from "@/lib/assess/assess";
+import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
+import { aiEnv } from "@/lib/assess/env";
+import { documentsForDrug } from "@/lib/assess/scope";
+import { ensurePublicLabel, withAcquiredLabel } from "@/lib/labels/acquire";
+import { EMBED_BATCH_SIZE, embedTextFor } from "@/lib/retrieval/embed";
+import { resolveDenseFor } from "@/lib/retrieval/resolve";
+import { loadCorpus } from "@/lib/store/corpus";
 import { getCaseStore } from "@/lib/store/case-store";
 import { getDocumentLibrary } from "@/lib/store/library-store";
 import { getDocumentStore } from "@/lib/store/document-store";
@@ -14,11 +18,11 @@ import { saveAssessment } from "@/lib/db/assessments";
 import {
   Assessment,
   AssessmentId,
+  ChunkId,
+  DocumentId,
   SafetyDocument,
-  type Citation,
-  type ExpectednessFinding,
-  type ListednessFinding,
 } from "@/lib/schemas";
+import type { VectorRecord } from "@/lib/retrieval/vectors";
 import type { IngestMessage } from "./messages";
 
 /**
@@ -177,6 +181,45 @@ async function embedStep(
   const pending = rows.filter((row) => row.embeddedAt === null);
   if (pending.length === 0) return [];
 
+  /*
+    The dense half, resolved the same way every other caller resolves it.
+
+    Absent is not a failure and must not be a retry: with no model configured
+    there is nothing a fourth attempt would fix, and the document is already
+    chunked and mirrored, so it is lexically searchable and honestly labelled.
+    Returning cleanly leaves it at `chunking`, which is what the library screen
+    reads to say "keyword search only".
+  */
+  /*
+    `activeSubstance` is vector metadata and lives on the document, not the
+    chunk. Read once here rather than joined per row: every chunk in this loop
+    belongs to the same document by construction.
+  */
+  const [documentRow] = await db
+    .select({ activeSubstance: schema.documents.activeSubstance })
+    .from(schema.documents)
+    .where(eq(schema.documents.id, documentId))
+    .limit(1);
+  const activeSubstance = documentRow?.activeSubstance ?? "";
+
+  const env = await aiEnv();
+  const dense = resolveDenseFor(env, resolveAiBinding(env));
+  const embedder = dense.embedder;
+  const store = dense.store;
+  if (embedder === null || store === null) {
+    audit({
+      actor: "system",
+      action: "embed_document",
+      target: documentId,
+      outcome: "rejected",
+      detail: {
+        reason: dense.reason ?? "semantic retrieval is not configured",
+        pending: pending.length,
+      },
+    });
+    return [];
+  }
+
   /**
    * THE DEDUPE STEP.
    *
@@ -201,55 +244,71 @@ async function embedStep(
   const embeddedAt = new Date().toISOString();
   let upserted = 0;
 
-  for (let i = 0; i < unique.length; i += EMBEDDING_BATCH_SIZE) {
-    const batch = unique.slice(i, i + EMBEDDING_BATCH_SIZE);
-    const texts = batch.map((group) => group[0]?.text ?? "");
+  for (let i = 0; i < unique.length; i += EMBED_BATCH_SIZE) {
+    const batch = unique.slice(i, i + EMBED_BATCH_SIZE);
 
-    const result = await embed(texts);
-    if (!result.ok) {
+    /*
+      `embedTextFor` rather than the raw text, so the queue embeds the exact
+      string the reviewer path embeds. The two used to differ — this step sent
+      `row.text` untouched while lib/retrieval prefixed and truncated it — and
+      a vector produced from a different string than the query encoder expects
+      is not wrong in any way a test would catch, only quietly worse at
+      ranking.
+    */
+    let values: readonly (readonly number[])[];
+    try {
+      values = await embedder.embed(
+        batch.map((group) =>
+          embedTextFor({
+            text: group[0]?.text ?? "",
+            section: group[0]?.section ?? null,
+          }),
+        ),
+      );
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
       audit({
         actor: "system",
         action: "embed_document",
         target: documentId,
         outcome: "failure",
-        detail: { reason: result.reason, pending: pending.length },
+        detail: { reason, pending: pending.length },
       });
       // Thrown, not swallowed. Embedding is the step that can be rate limited
       // or time out, and those are exactly the failures a retry fixes. The
       // chunks stay `embeddedAt = null`, so a retry picks up where this left
       // off rather than redoing the whole document.
-      throw new Error(`Embedding failed: ${result.reason}`);
+      throw new Error(`Embedding failed: ${reason}`);
     }
 
     const vectors = batch.flatMap((group, index) => {
-      const values = result.vectors[index];
-      if (values === undefined) return [];
+      const vector = values[index];
+      if (vector === undefined) return [];
       return group.map((row) => ({
-        id: row.id,
-        values,
-        namespace: namespaceFor(
-          row.sourceType === "company" ? "company" : "public",
-        ),
+        id: ChunkId.parse(row.id),
+        values: vector,
         metadata: {
-          documentId: row.documentId,
-          sourceType: row.sourceType,
-          ordinal: row.ordinal,
+          documentId: DocumentId.parse(row.documentId),
+          sourceType: row.sourceType === "company" ? "company" : "public",
+          activeSubstance,
         },
-      }));
+      })) satisfies readonly VectorRecord[];
     });
 
-    const upsert = await upsertVectors(vectors);
-    if (!upsert.ok) {
+    try {
+      await store.upsert(vectors);
+    } catch (cause) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
       audit({
         actor: "system",
         action: "embed_document",
         target: documentId,
         outcome: "failure",
-        detail: { reason: upsert.reason },
+        detail: { reason },
       });
-      throw new Error(`Vectorize upsert failed: ${upsert.reason}`);
+      throw new Error(`Vector upsert failed: ${reason}`);
     }
-    upserted += upsert.value;
+    upserted += vectors.length;
 
     // Marked only after the vector is actually in the index. The other order
     // would leave chunks recorded as embedded that no search can find, and
@@ -338,20 +397,59 @@ async function assessStep(caseId: string): Promise<readonly IngestMessage[]> {
     return [];
   }
 
-  const query = `${reaction.verbatimTerm} ${drug.activeSubstance ?? drug.reportedName}`;
   const now = new Date().toISOString();
 
-  const [company, publicLabel] = await Promise.all([
-    hybridSearch(query, "company", 3),
-    hybridSearch(query, "public", 3),
-  ]);
+  /*
+    THE SAME ASSESSMENT THE REVIEWER'S BUTTON PRODUCES.
 
-  const listedness: ListednessFinding = toListedness(company, query, now);
-  const expectedness: ExpectednessFinding = toExpectedness(
-    publicLabel,
-    query,
-    now,
+    This step used to build its own findings out of retrieval alone, and what
+    it built was not an assessment: it hardcoded `determination: "listed"` for
+    any case where retrieval returned a hit, stamped it `suggestedBy: "model"`
+    though no model was ever called, and carried no reading and no narrative.
+    A search result is not a verdict, and non-negotiable #4 says nothing but a
+    reviewer writes one — so that path is gone rather than corrected, and the
+    queue now calls `assessCase` exactly as the case screen does.
+
+    The consequence worth naming: a case assessed by the queue and the same
+    case assessed by a reviewer can no longer disagree, because there is one
+    implementation instead of two.
+  */
+  const env = await aiEnv();
+  const ai = resolveAiBinding(env);
+  const dense = resolveDenseFor(env, ai);
+
+  // The public label, fetched if we do not hold it. Never blocks: a failure
+  // leaves the corpus as it was and expectedness degrades honestly.
+  const beforeFetch = await loadCorpus();
+  const label = await ensurePublicLabel({
+    drugName: drug.activeSubstance ?? drug.reportedName,
+    held: beforeFetch.documents,
+    dense,
+    actor: "system",
+  });
+  const { chunks, documents } =
+    label.status === "acquired" ? await loadCorpus() : beforeFetch;
+
+  const inScope = withAcquiredLabel(documentsForDrug(documents, drug), label);
+  const publicDoc = documents.find(
+    (d) => d.sourceType === "public" && inScope.has(d.id),
   );
+
+  const { listedness, expectedness } = await assessCase({
+    chunks,
+    documentIds: inScope,
+    reactionTerm: reaction.verbatimTerm,
+    drugName: drug.reportedName,
+    documentKind:
+      drug.marketingStatus === "marketed" ? "ccds" : "investigators_brochure",
+    labelSetId: publicDoc?.id ?? null,
+    ai,
+    dense,
+    gateway: resolveGateway(env),
+    now,
+    actor: "system",
+    target: record.reference,
+  });
 
   const assessment = Assessment.parse({
     id: AssessmentId.parse(crypto.randomUUID()),
@@ -375,77 +473,10 @@ async function assessStep(caseId: string): Promise<readonly IngestMessage[]> {
     detail: {
       listedness: listedness.state,
       expectedness: expectedness.state,
-      degraded: company.degraded || publicLabel.degraded,
+      dense: dense.source,
     },
   });
 
   return [];
 }
 
-/** Every hit becomes a citation: a chunk id and the quoted span (#3). */
-function citationsOf(hits: readonly ScoredChunk[]): readonly Citation[] {
-  return hits.map(toCitation);
-}
-
-function toListedness(
-  result: Awaited<ReturnType<typeof hybridSearch>>,
-  query: string,
-  now: string,
-): ListednessFinding {
-  // "The search could not run" and "the search found nothing" are different
-  // facts, and the second is a finding a reviewer may act on while the first is
-  // not. Collapsing them would let an outage masquerade as a clean result.
-  if (!result.lexical.ran && !result.dense.ran) {
-    return {
-      state: "source_unavailable",
-      documentKind: "ccds",
-      reason: `Retrieval could not run: ${result.lexical.reason}`,
-      attemptedAt: now,
-    };
-  }
-
-  if (result.hits.length === 0) {
-    return {
-      state: "no_result",
-      documentKind: "ccds",
-      query,
-      retrievedAt: now,
-    };
-  }
-
-  return {
-    state: "grounded",
-    determination: "listed",
-    documentKind: "ccds",
-    citations: [...citationsOf(result.hits)],
-    suggestedBy: "model",
-    retrievedAt: now,
-  };
-}
-
-function toExpectedness(
-  result: Awaited<ReturnType<typeof hybridSearch>>,
-  query: string,
-  now: string,
-): ExpectednessFinding {
-  if (!result.lexical.ran && !result.dense.ran) {
-    return {
-      state: "source_unavailable",
-      reason: `Retrieval could not run: ${result.lexical.reason}`,
-      attemptedAt: now,
-    };
-  }
-
-  if (result.hits.length === 0) {
-    return { state: "no_result", query, retrievedAt: now };
-  }
-
-  return {
-    state: "grounded",
-    determination: "expected",
-    citations: [...citationsOf(result.hits)],
-    suggestedBy: "model",
-    labelSetId: null,
-    retrievedAt: now,
-  };
-}

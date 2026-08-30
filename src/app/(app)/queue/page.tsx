@@ -46,7 +46,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const rows = buildRows({
     entries,
     today,
-    claims: await getClaimStore().all(),
+    claims: await (await getClaimStore()).all(),
     lastVisit: null,
   });
   const live = rows.filter(
@@ -82,7 +82,7 @@ export default async function QueuePage({
   const rows = buildRows({
     entries,
     today,
-    claims: await getClaimStore().all(),
+    claims: await (await getClaimStore()).all(),
     lastVisit,
   });
 

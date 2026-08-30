@@ -44,7 +44,7 @@ describe("claiming", () => {
 
     const outcome = await c.claim(id, ALICE.id, ALICE.name);
 
-    expect(outcome.status).toBe("granted");
+    expect(outcome.kind).toBe("granted");
     expect((await c.state(id)).claim?.reviewerId).toBe(ALICE.id);
   });
 
@@ -55,11 +55,11 @@ describe("claiming", () => {
 
     const outcome = await c.claim(id, BOB.id, BOB.name);
 
-    expect(outcome.status).toBe("refused");
-    if (outcome.status !== "refused") throw new Error("expected a refusal");
+    expect(outcome.kind).toBe("held_by_other");
+    if (outcome.kind !== "held_by_other") throw new Error("expected a refusal");
     // "Someone else has it" is not actionable. A name and a time is.
-    expect(outcome.heldBy.displayName).toBe(ALICE.name);
-    expect(outcome.heldBy.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(outcome.claim.displayName).toBe(ALICE.name);
+    expect(outcome.claim.expiresAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it("refreshes rather than refusing when the holder re-claims", async () => {
@@ -70,12 +70,12 @@ describe("claiming", () => {
 
     // A reviewer who reloads the page has not lost their claim, and a system
     // that says "you cannot have this, you have it" is one people distrust.
-    expect(second.status).toBe("refreshed");
-    if (first.status === "refused" || second.status === "refused") {
+    expect(second.kind).toBe("already_yours");
+    if (first.kind === "held_by_other" || second.kind === "held_by_other") {
       throw new Error("expected the holder to keep the case");
     }
     // The window moves; the moment they took it does not.
-    expect(second.claim.claimedAt).toBe(first.claim.claimedAt);
+    expect(second.claim.heldSince).toBe(first.claim.heldSince);
   });
 
   it("lets go only for the holder", async () => {
@@ -97,7 +97,7 @@ describe("claiming", () => {
     await c.claim(id, ALICE.id, ALICE.name);
     await c.release(id, ALICE.id);
 
-    expect((await c.claim(id, BOB.id, BOB.name)).status).toBe("granted");
+    expect((await c.claim(id, BOB.id, BOB.name)).kind).toBe("granted");
   });
 });
 

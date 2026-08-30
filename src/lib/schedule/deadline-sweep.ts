@@ -7,7 +7,7 @@ import {
   anyReactionSerious,
   expeditedClock,
   expeditedDeadline,
-  standingListedness,
+  ruledListedness,
   type Case,
   type IsoDate,
 } from "@/lib/schemas";
@@ -78,7 +78,7 @@ export async function runDeadlineSweep(today: IsoDate): Promise<SweepReport> {
      * teach reviewers that red does not mean what it says.
      */
     const listed =
-      assessment === undefined ? null : standingListedness(assessment);
+      assessment === undefined ? null : ruledListedness(assessment);
     const applies = listed === "unlisted" && anyReactionSerious(record.reactions);
 
     // UPSERT-on-conflict, in the sense CLAUDE.md means: running this twice

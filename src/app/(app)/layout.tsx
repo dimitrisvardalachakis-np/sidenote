@@ -42,7 +42,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const rows = buildRows({
     entries: await loadQueue(today),
     today,
-    claims: await getClaimStore().all(),
+    claims: await (await getClaimStore()).all(),
     // Null, not this reviewer's real last visit: reading it here would stamp
     // it on every page load, and the queue's "arrived since your last visit"
     // dot would be spent before the queue rendered.

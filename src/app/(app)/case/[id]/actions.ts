@@ -17,6 +17,10 @@ import { getClaimStore } from "@/lib/store/claim-store";
 // Importing this installs the audit journal the History panel reads.
 import "@/lib/store/audit-store";
 import { canRelease, canWrite, claimOutcome } from "@/lib/case/claim";
+import type { IsoDateTime } from "@/lib/schemas";
+
+/** The instant a claim check is made against. Named so it reads at the call site. */
+const nowIso = (): IsoDateTime => new Date().toISOString() as IsoDateTime;
 import {
   Assessment,
   ReviewerRuling,
@@ -209,7 +213,7 @@ export async function claimCase(
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) return INITIAL_CLAIM_STATE;
 
-  const store = getClaimStore();
+  const store = await getClaimStore();
   const outcome = claimOutcome({
     current: await store.get(caseId),
     reviewerId: session.reviewerId,
@@ -253,9 +257,9 @@ export async function releaseCase(
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) return INITIAL_CLAIM_STATE;
 
-  const store = getClaimStore();
+  const store = await getClaimStore();
   const current = await store.get(caseId);
-  if (!canRelease(current, session.reviewerId)) {
+  if (!canRelease(current, session.reviewerId, nowIso())) {
     audit({
       actor: session.reviewerId,
       action: "release_case",
@@ -313,8 +317,8 @@ export async function recordRuling(
     return { status: "rejected", error: "That case no longer exists." };
   }
 
-  const claim = await getClaimStore().get(caseId);
-  if (!canWrite(claim, session.reviewerId)) {
+  const claim = await (await getClaimStore()).get(caseId);
+  if (!canWrite(claim, session.reviewerId, nowIso())) {
     audit({
       actor: session.reviewerId,
       action: "rule_case",

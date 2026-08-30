@@ -101,7 +101,7 @@ export async function saveDocument(
     // document is exactly the one someone will want to run OCR over later,
     // and discarding the bytes would mean asking the reviewer to find the
     // file again.
-    await getDocumentStore().put(objectKey, bytes, {
+    await (await getDocumentStore()).put(objectKey, bytes, {
       contentType: file.type === "" ? "application/octet-stream" : file.type,
       filename: file.name,
     });

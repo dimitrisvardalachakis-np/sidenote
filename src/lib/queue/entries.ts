@@ -45,7 +45,7 @@ export const loadQueue = cache(async function loadQueue(
     assessment: s.assessment,
   }));
 
-  const submitted = await getCaseStore().list();
+  const submitted = await (await getCaseStore()).list();
   const store = getAssessmentStore();
 
   /*

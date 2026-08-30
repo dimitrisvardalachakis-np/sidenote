@@ -24,6 +24,7 @@ import { aiEnv } from "@/lib/assess/env";
 import { passageContext } from "@/lib/library/context";
 import { coverageFor, isUncovered } from "@/lib/library/coverage";
 import { writeBlockedReason } from "@/lib/case/claim";
+import type { IsoDateTime } from "@/lib/schemas";
 import { getClaimStore } from "@/lib/store/claim-store";
 import { readAuditTrail } from "@/lib/store/audit-store";
 import { loadCorpus } from "@/lib/store/corpus";
@@ -134,8 +135,12 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
   const previous = position > 0 ? all[position - 1] : undefined;
   const next = position >= 0 ? all[position + 1] : undefined;
 
-  const claim = await getClaimStore().get(record.id);
-  const blockedReason = writeBlockedReason(claim, session.reviewerId);
+  const claim = await (await getClaimStore()).get(record.id);
+  const blockedReason = writeBlockedReason(
+    claim,
+    session.reviewerId,
+    new Date().toISOString() as IsoDateTime,
+  );
   const history = await readAuditTrail(record.reference);
 
   // Whether a model is reachable at all, so the control can say what pressing

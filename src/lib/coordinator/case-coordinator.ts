@@ -1,11 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import { audit } from "@/lib/audit";
 import {
-  CLAIM_TTL_MINUTES,
+  claimExpiryFrom,
   claimIsLive,
   type CaseClaim,
   type ClaimOutcome,
-} from "@/lib/schemas/claim";
+} from "@/lib/case/claim";
 import type { ReviewerRuling } from "@/lib/schemas/assessment";
 import type { IsoDate } from "@/lib/schemas/primitives";
 
@@ -119,18 +119,15 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
         outcome: "rejected",
         detail: { heldBy: existing.reviewerId },
       });
-      return { status: "refused", heldBy: existing };
+      return { kind: "held_by_other", claim: existing };
     }
 
     const claim: CaseClaim = {
-      caseId,
       reviewerId,
       displayName,
-      claimedAt: existing?.claimedAt ?? now,
-      expiresAt: new Date(
-        new Date(now).getTime() + CLAIM_TTL_MINUTES * 60_000,
-      ).toISOString(),
-    } as CaseClaim;
+      heldSince: existing?.heldSince ?? now,
+      expiresAt: claimExpiryFrom(now),
+    };
 
     await this.ctx.storage.put(STORAGE_KEY.claim, claim);
 
@@ -143,8 +140,8 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     });
 
     return existing === null
-      ? { status: "granted", claim }
-      : { status: "refreshed", claim };
+      ? { kind: "granted", claim }
+      : { kind: "already_yours", claim };
   }
 
   /**

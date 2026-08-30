@@ -2,11 +2,11 @@ import "server-only";
 import { audit } from "@/lib/audit";
 import { getCloudflareEnv } from "@/lib/platform/env";
 import {
-  CLAIM_TTL_MINUTES,
+  claimExpiryFrom,
   claimIsLive,
   type CaseClaim,
   type ClaimOutcome,
-} from "@/lib/schemas/claim";
+} from "@/lib/case/claim";
 import type { ReviewerRuling } from "@/lib/schemas/assessment";
 import type { IsoDate } from "@/lib/schemas/primitives";
 import type { CoordinatorState, RuleOutcome } from "./case-coordinator";
@@ -172,23 +172,20 @@ class UnarbitratedCoordination implements CaseCoordination {
     const existing = this.#live(caseId, now);
 
     if (existing !== null && existing.reviewerId !== reviewerId) {
-      return { status: "refused", heldBy: existing };
+      return { kind: "held_by_other", claim: existing };
     }
 
-    const claim = {
-      caseId,
+    const claim: CaseClaim = {
       reviewerId,
       displayName,
-      claimedAt: existing?.claimedAt ?? now,
-      expiresAt: new Date(
-        Date.parse(now) + CLAIM_TTL_MINUTES * 60_000,
-      ).toISOString(),
-    } as CaseClaim;
+      heldSince: existing?.heldSince ?? now,
+      expiresAt: claimExpiryFrom(now),
+    };
 
     this.#claims.set(caseId, claim);
     return existing === null
-      ? { status: "granted", claim }
-      : { status: "refreshed", claim };
+      ? { kind: "granted", claim }
+      : { kind: "already_yours", claim };
   }
 
   async release(
