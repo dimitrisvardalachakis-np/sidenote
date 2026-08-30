@@ -42,3 +42,18 @@ next-env.d.ts
 
 # local data store (Cluster A only; Cluster D replaces this with D1/R2)
 /.data
+
+# cloudflare workers (Cluster C)
+# .open-next is the generated Worker bundle; .wrangler is the local workerd
+# state directory. Both are build output.
+/.open-next
+/.wrangler
+# Local secrets for `wrangler dev`. TURNSTILE_SECRET_KEY lives here in
+# development and in `wrangler secret put` everywhere else. Never committed.
+.dev.vars
+.dev.vars.*
+# ...except the template, which is the whole point of having one. `.dev.vars.*`
+# is there to catch real per-environment secret files (.dev.vars.production and
+# friends), and it swallowed the example too — so the file existed on disk,
+# explained every setting, and was invisible to everyone who cloned the repo.
+!.dev.vars.example

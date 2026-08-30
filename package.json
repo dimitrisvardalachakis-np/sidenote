@@ -12,10 +12,20 @@
     "test:watch": "vitest",
     "evals": "vitest run src/lib/evals",
     "embed:seed": "SIDENOTE_EMBED_SEED=1 vitest run src/lib/fixtures/embed-seed.test.ts",
-    "embed:backfill": "SIDENOTE_EMBED_BACKFILL=1 vitest run src/lib/retrieval/backfill.test.ts"
+    "embed:backfill": "SIDENOTE_EMBED_BACKFILL=1 vitest run src/lib/retrieval/backfill.test.ts",
+    "build:worker": "npm run lint && npm run test && opennextjs-cloudflare build",
+    "preview": "opennextjs-cloudflare preview",
+    "deploy": "node scripts/preflight-deploy.mjs && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv",
+    "cf:setup": "./scripts/cloudflare-setup.sh",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote"
   },
   "dependencies": {
-    "next": "16.3.2",
+    "aws4fetch": "^1.0.20",
+    "drizzle-orm": "^0.45.2",
+    "next": "16.3.3",
     "pdfjs-dist": "^6.2.108",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -23,6 +33,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.2",
     "@tailwindcss/postcss": "^4",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^7.0.1",
@@ -32,11 +43,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.0",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^9",
-    "eslint-config-next": "16.3.2",
+    "eslint-config-next": "16.3.3",
     "jsdom": "^30.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "wrangler": "^4.125.0"
   }
 }
