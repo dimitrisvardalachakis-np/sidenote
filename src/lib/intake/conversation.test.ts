@@ -1,68 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { ChunkId, DocumentId, type DocumentChunk } from "@/lib/schemas";
 import {
   EMPTY_SLOTS,
   advance,
-  assessAgainstDocuments,
   extractAge,
   extractDrug,
   extractSeriousness,
   extractSex,
+  prefillFromSlots,
   remainingSlots,
+  reopen,
   startConversation,
   type IntakeState,
 } from "./conversation";
 
-const DOC = DocumentId.parse("00000001-0000-4000-8000-000000000001");
 const PRODUCTS = ["Hepalex", "hepalexin", "Covaxil", "covaxilin", "Dermacil"];
 
-let n = 0;
-function chunk(text: string, sourceType: "company" | "public"): DocumentChunk {
-  n += 1;
-  return {
-    id: ChunkId.parse(`${sourceType}#${n}`),
-    documentId: DOC,
-    sourceType,
-    section: "4.8 Undesirable effects",
-    ordinal: n,
-    text,
-    charStart: 0,
-    charEnd: text.length,
-    tokenEstimate: Math.ceil(text.length / 4),
-  };
-}
-
-const CORPUS: readonly DocumentChunk[] = [
-  chunk(
-    "Cutaneous reactions including erythema and urticaria were reported in 3% of subjects receiving covaxilin.",
-    "company",
-  ),
-  chunk("Injection site erythema was the most common adverse reaction.", "public"),
-  chunk("Jaundice has been reported rarely with hepalexin.", "company"),
-];
-
 const step = (state: IntakeState, reply: string) =>
-  advance({
-    state,
-    reply,
-    corpus: CORPUS,
-    knownProducts: PRODUCTS,
-    audience: "public",
-  });
+  advance({ state, reply, knownProducts: PRODUCTS });
 
 const lastAssistant = (state: IntakeState) =>
   [...state.messages].reverse().find((m) => m.role === "assistant")?.text ?? "";
-
-/** The model-only slots, empty. The fallback path leaves every one of these. */
-const EMPTY_SLOTS_EXTRAS = {
-  dose: null,
-  route: null,
-  outcome: null,
-  therapyStart: null,
-  therapyEnd: null,
-  reactionOnset: null,
-  seriousnessEvidence: [],
-} as const;
 
 describe("extraction", () => {
   it("reads ages the way people write them", () => {
@@ -143,7 +100,7 @@ describe("the conversation", () => {
     expect(state.messages.length).toBeGreaterThan(before);
   });
 
-  it("reaches a verdict once everything is collected", () => {
+  it("reaches review once everything is collected, and files nothing", () => {
     let state = step(startConversation(), "Rash on both hands after Covaxil.");
     state = step(state, "rash on both hands");
     state = step(state, "34");
@@ -152,9 +109,11 @@ describe("the conversation", () => {
     state = step(state, "Dr A Weber");
     state = step(state, "a.weber@example.org");
 
-    expect(state.phase).toBe("complete");
-    expect(state.verdict).not.toBeNull();
+    // `review`, not `complete`. The case is written by the Server Action when
+    // the reporter presses send, and by nothing else.
+    expect(state.phase).toBe("review");
     expect(remainingSlots(state.slots)).toEqual([]);
+    expect(lastAssistant(state)).toMatch(/nothing has been sent yet/i);
   });
 
   it("ignores an empty reply", () => {
@@ -162,7 +121,7 @@ describe("the conversation", () => {
     expect(step(state, "   ")).toBe(state);
   });
 
-  it("stops accepting input once complete", () => {
+  it("stops accepting typed answers once the questions are done", () => {
     let state = step(startConversation(), "Rash after Covaxil.");
     state = step(state, "rash");
     state = step(state, "34");
@@ -170,178 +129,116 @@ describe("the conversation", () => {
     state = step(state, "none");
     state = step(state, "A Weber");
     state = step(state, "a@example.org");
-    const afterComplete = step(state, "one more thing");
-    expect(afterComplete).toBe(state);
+    // In review, the way to change something is the change control, which
+    // goes through `reopen` — not another message into the box.
+    expect(state.phase).toBe("review");
+    expect(step(state, "one more thing")).toBe(state);
   });
 });
 
-describe("the grounded verdict", () => {
-  const slots = {
-    narrative: "rash after the vaccine",
-    drug: "covaxilin",
-    reaction: "rash on both hands",
-    age: 34,
-    sex: "female" as const,
+describe("a carried answer is a suggestion, not an answer", () => {
+  /*
+    THE AMOXIL BUG, as a test. A form report submitted days earlier sat in
+    localStorage — a submitted draft is deliberately exempt from the 24-hour
+    expiry — and was merged into `slots` on the first turn. Every slot was then
+    full, so the conversation ended after one question and filed a case against
+    "amoxil" over a narrative that named abacavir. Nothing the reporter typed
+    was ever consulted, and nothing was shown back to them.
+  */
+  const carried = prefillFromSlots({
+    ...EMPTY_SLOTS,
+    drug: "amoxil",
+    age: 37,
+    sex: "male",
     seriousness: [],
-    reporterName: "Dr A Weber",
-    reporterContact: "a.weber@example.org",
-    ...EMPTY_SLOTS_EXTRAS,
-  };
-
-  it("finds a reaction the documents do describe, and cites it", () => {
-    const verdict = assessAgainstDocuments(slots, CORPUS, "reviewer");
-    expect(verdict.alreadyDescribed).toBe(true);
-    expect(verdict.companyCitations.length).toBeGreaterThan(0);
-    expect(verdict.companyCitations[0]?.quote).toContain("erythema");
+    reporterName: "john doe",
+    reporterContact: "johndoe3@gmail.com",
   });
 
-  it("keeps company and public citations in their own namespaces", () => {
-    const verdict = assessAgainstDocuments(slots, CORPUS, "reviewer");
-    expect(
-      verdict.companyCitations.every((c) => c.sourceType === "company"),
-    ).toBe(true);
-    expect(verdict.publicCitations.every((c) => c.sourceType === "public")).toBe(
-      true,
+  it("still asks every question", () => {
+    const state = step(
+      startConversation(carried),
+      "i took ABACAVIR SULFATE and i have a big headache",
     );
+
+    expect(state.phase).toBe("collecting");
+    // Not one of the carried values reached the record by arriving.
+    expect(state.slots.drug).toBeNull();
+    expect(state.slots.reporterName).toBeNull();
+    expect(remainingSlots(state.slots)).toEqual([
+      "drug",
+      "reaction",
+      "age",
+      "sex",
+      "seriousness",
+      "reporterName",
+      "reporterContact",
+    ]);
   });
 
-  it("reports honestly when nothing describes the reaction", () => {
-    const verdict = assessAgainstDocuments(
-      { ...slots, reaction: "hair turned green" },
-      CORPUS,
-      "reviewer",
-    );
-    expect(verdict.alreadyDescribed).toBe(false);
-    expect(verdict.companyCitations).toEqual([]);
-    expect(verdict.publicCitations).toEqual([]);
+  it("loses to the medicine the reporter types", () => {
+    let state = step(startConversation(carried), "i had a bad headache");
+    state = step(state, "abacavir sulfate");
+    expect(state.slots.drug).toBe("abacavir sulfate");
   });
 
-  it("never claims a reaction is known without a passage to show", () => {
-    const verdict = assessAgainstDocuments(
-      { ...slots, reaction: "hair turned green" },
-      CORPUS,
-      "reviewer",
-    );
-    // The guarantee: alreadyDescribed can only be true when citations exist.
-    expect(verdict.alreadyDescribed).toBe(
-      verdict.companyCitations.length + verdict.publicCitations.length > 0,
-    );
+  it("offers text its own parsers accept", () => {
+    // The suggestion is round-tripped: whatever it says must parse back to the
+    // value it came from, or a tapped chip fills nothing and says nothing.
+    const prefill = prefillFromSlots({
+      ...EMPTY_SLOTS,
+      age: 37,
+      sex: "unknown",
+      seriousness: ["hospitalisation", "death"],
+    });
+    expect(extractAge(prefill.age ?? "")).toBe(37);
+    expect(extractSex(prefill.sex ?? "")).toBe("unknown");
+    expect(extractSeriousness(prefill.seriousness ?? "")).toEqual([
+      "death",
+      "hospitalisation",
+    ]);
+    expect(extractSeriousness(prefillFromSlots({ ...EMPTY_SLOTS, seriousness: [] }).seriousness ?? "")).toEqual([]);
   });
+});
 
-  it("NEVER quotes a confidential company document to the public", () => {
-    // The public chat has no login. The corpus contains CCDS text. An
-    // anonymous reporter must not see it, no matter how well it matches.
-    const verdict = assessAgainstDocuments(slots, CORPUS, "public");
-    expect(verdict.companyCitations).toEqual([]);
-    for (const citation of [
-      ...verdict.companyCitations,
-      ...verdict.publicCitations,
-    ]) {
-      expect(citation.sourceType).toBe("public");
-    }
-  });
-
-  it("still lets a signed-in reviewer see the company passage", () => {
-    const asReviewer = assessAgainstDocuments(slots, CORPUS, "reviewer");
-    expect(asReviewer.companyCitations.length).toBeGreaterThan(0);
-  });
-
-  it("does not leak company text into the public conversation transcript", () => {
+describe("changing an answer from the review screen", () => {
+  const collected = () => {
     let state = step(startConversation(), "Rash on both hands after Covaxil.");
     state = step(state, "rash on both hands");
     state = step(state, "34");
     state = step(state, "female");
-    state = step(state, "none");
+    state = step(state, "none of those");
     state = step(state, "A Weber");
     state = step(state, "a@example.org");
-    const everyCitation = state.messages.flatMap((m) => m.citations);
-    expect(everyCitation.every((c) => c.sourceType === "public")).toBe(true);
+    return state;
+  };
+
+  it("re-asks exactly one question and returns to review when it is answered", () => {
+    const reopened = reopen(collected(), "drug");
+    expect(reopened.phase).toBe("collecting");
+    expect(reopened.pending).toBe("drug");
+    // Cleared, not merely re-asked: while the question stands unanswered the
+    // record does not claim an answer.
+    expect(reopened.slots.drug).toBeNull();
+    expect(remainingSlots(reopened.slots)).toEqual(["drug"]);
+
+    const answered = step(reopened, "Hepalex");
+    expect(answered.slots.drug).toBe("Hepalex");
+    expect(answered.phase).toBe("review");
   });
 
-  it("tells the reporter it is submitted either way", () => {
-    let state = step(startConversation(), "Hair turned green after Hepalex.");
-    state = step(state, "hair turned green");
-    state = step(state, "50");
-    state = step(state, "male");
-    state = step(state, "none");
-    state = step(state, "T Cole");
-    state = step(state, "t@example.org");
-    expect(lastAssistant(state)).toMatch(/submitting it for review/i);
-  });
-});
-
-describe("what the public chat is allowed to tell a reporter", () => {
-  const say = (reaction: string, drug: string, scope?: ReadonlySet<string> | null) =>
-    assessAgainstDocuments(
-      { ...EMPTY_SLOTS_EXTRAS, ...EMPTY_SLOTS, reaction, drug, seriousness: [] },
-      CORPUS,
-      "public",
-      (scope ?? null) as never,
-    );
-
-  it("does not call a reaction described on the strength of the drug name alone", () => {
-    /*
-      The bug: the query was `[reaction, drug].join(" ")`, so a chunk that
-      mentioned only the medicine's own name scored a hit and the reporter was
-      told their reaction "does appear in the published information". Telling
-      somebody their novel reaction is already known is the answer most likely
-      to make them decide not to bother reporting it.
-    */
-    const verdict = say("hair turned bright green", "Covaxil");
-    expect(verdict.alreadyDescribed).toBe(false);
-    expect(verdict.publicCitations).toHaveLength(0);
+  it("keeps every other answer", () => {
+    const answered = step(reopen(collected(), "age"), "51");
+    expect(answered.slots.age).toBe(51);
+    expect(answered.slots.reporterName).toBe("A Weber");
+    expect(answered.slots.reaction).toBe("rash on both hands");
   });
 
-  it("still says so when the reaction really is described", () => {
-    const verdict = say("rash", "Covaxil");
-    expect(verdict.alreadyDescribed).toBe(true);
-  });
-
-  it("never quotes a company document to an anonymous reporter", () => {
-    const verdict = say("rash", "Covaxil");
-    expect(verdict.companyCitations).toHaveLength(0);
-  });
-
-  it("says nothing at all when no reaction has been given yet", () => {
-    const verdict = say("", "Covaxil");
-    expect(verdict.alreadyDescribed).toBe(false);
+  it("does nothing while the reporter is still answering questions", () => {
+    const midway = step(startConversation(), "Rash after Covaxil.");
+    expect(reopen(midway, "drug")).toBe(midway);
   });
 });
-
-
-describe("the third state: nothing was consulted", () => {
-  /*
-    A real reporter hit this. They described dizziness after a Moderna COVID
-    vaccine; openFDA's drug label dataset holds no vaccines at all, so nothing
-    was fetched and nothing was in scope. The chat told them their reaction was
-    not in the published information for that medicine — an assertion about a
-    document nobody opened.
-  */
-  it("says the label was not held, not that the reaction is absent from it", () => {
-    const verdict = assessAgainstDocuments(
-      { ...EMPTY_SLOTS, drug: "moderna", reaction: "dizziness" },
-      // Nothing in scope: no label is held for this medicine.
-      [],
-      "public",
-      new Set(),
-    );
-    expect(verdict.consulted).toBe(false);
-    expect(verdict.alreadyDescribed).toBe(false);
-  });
-
-  it("marks a real search as consulted even when it matches nothing", () => {
-    // The distinction that matters: this one DID open the document.
-    const verdict = assessAgainstDocuments(
-      { ...EMPTY_SLOTS, drug: "Covaxil", reaction: "tachycardia" },
-      [chunk("Jaundice has been reported rarely.", "public")],
-      "public",
-      new Set([DOC]),
-    );
-    expect(verdict.consulted).toBe(true);
-    expect(verdict.alreadyDescribed).toBe(false);
-  });
-});
-
 
 describe("the reporter's answer always beats the model's", () => {
   /*
@@ -374,9 +271,7 @@ describe("the reporter's answer always beats the model's", () => {
     const state = advance({
       state: { ...startConversation(), pending: "drug" as const },
       reply: "moderna coronovirus injection",
-      corpus: [],
       knownProducts: PRODUCTS,
-      audience: "public",
       extraction,
     });
     expect(state.slots.drug).toBe("moderna coronovirus injection");
@@ -387,9 +282,7 @@ describe("the reporter's answer always beats the model's", () => {
     const aged = advance({
       state: { ...startConversation(), pending: "age" as const },
       reply: "37",
-      corpus: [],
       knownProducts: PRODUCTS,
-      audience: "public",
       extraction,
     });
     expect(aged.slots.age).toBe(37);
@@ -400,9 +293,7 @@ describe("the reporter's answer always beats the model's", () => {
     const state = advance({
       state: { ...startConversation(), pending: "narrative" as const },
       reply: "I took something and came out in a rash",
-      corpus: [],
       knownProducts: PRODUCTS,
-      audience: "public",
       extraction,
     });
     expect(state.slots.drug).toBe("Covaxil");

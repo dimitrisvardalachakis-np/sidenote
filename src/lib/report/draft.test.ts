@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_SLOTS, type IntakeSlots } from "@/lib/intake/conversation";
 import { EMPTY_DRAFT, type ReportDraft } from "@/lib/schemas/report";
-import { draftFromSlots, slotsFromDraft } from "./draft";
+import { draftFromSlots, slotsFromDraft, slotsToCarry } from "./draft";
 
 const slots = (over: Partial<IntakeSlots>): IntakeSlots => ({
   ...EMPTY_SLOTS,
@@ -203,5 +203,35 @@ describe("a round trip loses nothing the form can hold", () => {
       const parsed: ReportDraft = draft;
       return parsed;
     }).not.toThrow();
+  });
+});
+
+describe("a sent report carries nothing into the next one", () => {
+  /*
+    The amoxil bug's other half. A submitted draft is deliberately exempt from
+    the store's 24-hour expiry so the confirmation survives a reload, which
+    means it lives in localStorage indefinitely. Carried into a fresh
+    conversation it pre-filled a medicine the new reporter had never named —
+    every time, for as long as the browser kept it.
+  */
+  const draft: ReportDraft = {
+    ...EMPTY_DRAFT,
+    medicineName: answered("Amoxil"),
+    yourName: answered("john doe"),
+  };
+
+  it("carries an unsent draft", () => {
+    const carried = slotsToCarry({ draft, submitted: null });
+    expect(carried?.drug).toBe("Amoxil");
+    expect(carried?.reporterName).toBe("john doe");
+  });
+
+  it("carries nothing at all once it has been sent", () => {
+    expect(
+      slotsToCarry({
+        draft,
+        submitted: { reference: "SN-2026-500008", caseId: "abc" },
+      }),
+    ).toBeNull();
   });
 });

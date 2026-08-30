@@ -15,7 +15,7 @@ import {
   type IntakeMessage,
 } from "@/lib/intake/conversation";
 import type { Citation } from "@/lib/schemas";
-import { draftFromSlots, slotsFromDraft } from "@/lib/report/draft";
+import { draftFromSlots, slotsToCarry } from "@/lib/report/draft";
 import {
   clearDraft,
   readDraft,
@@ -26,6 +26,7 @@ import { RequiredChecklist } from "@/components/report/orientation";
 import { missingElements } from "@/lib/schemas/report";
 import { SentConfirmation } from "@/components/report/sent";
 import { QuickAnswers } from "./quick-answers";
+import { ReviewPanel } from "./review-panel";
 
 /**
  * The slots in the order they are asked, so the checklist reads the same way
@@ -53,9 +54,15 @@ const SLOT_ORDER = [
 let carriedCache: { draft: unknown; json: string } = { draft: null, json: "" };
 
 function readCarriedSlots(): string {
-  const draft = readDraft().draft;
-  if (draft !== carriedCache.draft) {
-    carriedCache = { draft, json: JSON.stringify(slotsFromDraft(draft)) };
+  const saved = readDraft();
+  // A sent report is a receipt, not an in-progress report. `slotsToCarry`
+  // holds the reasoning and the test.
+  const carried = slotsToCarry(saved);
+  if (saved.draft !== carriedCache.draft) {
+    carriedCache = {
+      draft: saved.draft,
+      json: carried === null ? "" : JSON.stringify(carried),
+    };
   }
   return carriedCache.json;
 }
@@ -145,13 +152,24 @@ export function ChatPanel() {
     lives in this browser.
   */
   const slots = state.intake.slots;
+  const sent = state.submitted !== null;
   useEffect(() => {
+    /*
+      Once the report is sent the draft has done its job, and keeping it would
+      make this report the next one's suggestions — the stale-draft fault, one
+      lap later. The confirmation below is rendered from the action's own
+      state, so clearing the store takes nothing away from the screen.
+    */
+    if (sent) {
+      clearDraft();
+      return;
+    }
     const current = readDraft();
     writeDraft({
       ...current,
       draft: draftFromSlots(slots, current.draft),
     });
-  }, [slots]);
+  }, [slots, sent]);
 
   const missing = missingElements(draftFromSlots(slots));
 
@@ -217,6 +235,23 @@ export function ChatPanel() {
             }}
           />
         </div>
+      ) : state.intake.phase === "review" ? (
+        /*
+          The same action, a different set of controls.
+
+          Every button in here submits this form, so a change and a send travel
+          the same path as every answer the reporter typed — one reducer, one
+          copy of the conversation. A second `useActionState` for the review
+          would hold its own, and the two would disagree the moment either was
+          used.
+        */
+        <form ref={formRef} action={formAction}>
+          <ReviewPanel
+            slots={slots}
+            review={state.review}
+            pending={pending}
+          />
+        </form>
       ) : (
         <form
           ref={formRef}
@@ -268,6 +303,11 @@ export function ChatPanel() {
           */}
           <QuickAnswers
             slot={state.intake.pending}
+            prefill={
+              state.intake.pending === null
+                ? undefined
+                : state.intake.prefill[state.intake.pending]
+            }
             onAnswer={answerWith}
             disabled={pending}
           />
@@ -282,8 +322,15 @@ export function ChatPanel() {
           */}
           <div className="mt-5 border-t border-rule pt-4">
             <p className="font-mono text-micro uppercase tracking-label text-slate">
-              Question {Math.min(answeredCount + 1, INTAKE_QUESTION_COUNT)} of{" "}
-              {INTAKE_QUESTION_COUNT}
+              {/*
+                A correction is not question N of eight. Once the reporter has
+                seen the review, the count is measuring the wrong thing: they
+                are not working through a script any more, they are fixing one
+                answer and going straight back.
+              */}
+              {state.intake.reviewed
+                ? "Changing one answer"
+                : `Question ${Math.min(answeredCount + 1, INTAKE_QUESTION_COUNT)} of ${INTAKE_QUESTION_COUNT}`}
             </p>
             {/*
               Eight segments, one per question, so two-done and six-done are
