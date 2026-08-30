@@ -9,7 +9,7 @@
 export default function AppLoading() {
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 py-10">
-      <p className="text-micro uppercase tracking-label text-slate">Loading</p>
+      <p className="font-mono text-micro uppercase tracking-label text-slate">Loading</p>
     </div>
   );
 }

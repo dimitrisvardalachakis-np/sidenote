@@ -53,7 +53,7 @@ export default function AppError({
         <button
           type="button"
           onClick={reset}
-          className="cursor-pointer rounded-soft border border-rule px-3 py-1.5 text-base hover:bg-row-hover hover:text-steady"
+          className="cursor-pointer rounded-soft border border-rule px-3 py-1.5 text-base hover:bg-surface-sunken hover:text-steady"
         >
           Try again
         </button>

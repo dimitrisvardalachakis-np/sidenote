@@ -35,7 +35,7 @@ export function SourcePassage({
         <p className="text-base font-medium">
           {document?.title ?? "Document no longer held"}
         </p>
-        <p className="mt-0.5 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
+        <p className="mt-0.5 flex flex-wrap gap-x-3 font-mono text-micro uppercase tracking-label text-slate">
           <span className={chunk.sourceType === "company" ? "text-steady" : ""}>
             {chunk.sourceType}
           </span>
@@ -48,7 +48,7 @@ export function SourcePassage({
       </div>
 
       {chunk.section !== null && (
-        <p className="mt-3 text-micro uppercase tracking-label text-slate">
+        <p className="mt-3 font-mono text-micro uppercase tracking-label text-slate">
           {chunk.section}
         </p>
       )}
@@ -73,7 +73,7 @@ export function SourcePassage({
       </div>
 
       <div className="mt-4 border-t border-rule pt-2">
-        <p className="flex flex-wrap items-baseline gap-x-3 text-micro uppercase tracking-label text-slate">
+        <p className="flex flex-wrap items-baseline gap-x-3 font-mono text-micro uppercase tracking-label text-slate">
           <span className="font-mono normal-case tracking-normal">{chunk.id}</span>
           <span>
             passage {position} of {total}

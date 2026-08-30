@@ -121,7 +121,7 @@ export function HowBadDidItGet({
       {redFlag && (
         <div
           role="status"
-          className="mt-4 border-l-2 border-ink bg-row-hover px-3 py-2"
+          className="mt-4 border-l-2 border-ink bg-surface-sunken px-3 py-2"
         >
           <p className="text-prose">
             {isYes(draft.died)

@@ -37,12 +37,14 @@
   --signal: #b02a37; /* expedited or overdue. Nothing else. Ever. */
   --signal-wash: #fbeaec;
 
-  /* Derived, so no component invents a hue. Rows sit on --surface now, not on
-     --paper, so the mixes are re-based onto it — a hover computed against the
-     page ground is invisible on a white card. */
-  --row-hover: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  /* Derived, so no component invents a hue. Re-based onto --surface, because
+     rows sit on white now, not on the page ground — a fill computed against
+     --paper is invisible on a card.
+
+     Only --row-active survives the redesign: hovers are --surface-sunken now,
+     and --ink-muted had no caller left. A token file that defines colours
+     nothing asks for is a palette pretending to be a contract. */
   --row-active: color-mix(in srgb, var(--ink) 6%, var(--surface));
-  --ink-muted: color-mix(in srgb, var(--ink) 55%, var(--surface));
 }
 
 /* --- Dark ---------------------------------------------------------------
@@ -110,9 +112,7 @@
   --color-steady-line: var(--steady-line);
   --color-signal: var(--signal);
   --color-signal-wash: var(--signal-wash);
-  --color-row-hover: var(--row-hover);
   --color-row-active: var(--row-active);
-  --color-ink-muted: var(--ink-muted);
 }
 
 /* --- Type, spacing, line work ------------------------------------------

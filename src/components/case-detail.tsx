@@ -206,7 +206,7 @@ function SeriousnessList({
                     <span className="text-slate"> ({flag.kind})</span>
                   )}
                 </span>
-                <span className="shrink-0 text-micro uppercase tracking-label text-slate">
+                <span className="shrink-0 font-mono text-micro uppercase tracking-label text-slate">
                   {/*
                     Three states, not two. A rejected flag is kept on the
                     record and shown as rejected rather than removed: it no

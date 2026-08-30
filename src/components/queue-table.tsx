@@ -496,13 +496,13 @@ function ShortcutSheet({ onClose }: { onClose: () => void }) {
       className="mb-3 border border-rule px-3 py-2 rounded-soft"
     >
       <div className="flex items-baseline justify-between gap-3">
-        <p className="text-micro uppercase tracking-label text-slate">
+        <p className="font-mono text-micro uppercase tracking-label text-slate">
           Keyboard
         </p>
         <button
           type="button"
           onClick={onClose}
-          className="cursor-pointer text-micro uppercase tracking-label text-slate hover:text-steady"
+          className="cursor-pointer font-mono text-micro uppercase tracking-label text-slate hover:text-steady"
         >
           Close ✕
         </button>

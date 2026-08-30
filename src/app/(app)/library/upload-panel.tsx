@@ -223,8 +223,8 @@ export function UploadPanel() {
       )}
 
       {phase.kind === "refused" && (
-        <div className="mt-4 border-l-2 border-ink bg-row-hover px-3 py-2">
-          <p className="text-micro uppercase tracking-label text-slate">
+        <div className="mt-4 border-l-2 border-ink bg-surface-sunken px-3 py-2">
+          <p className="font-mono text-micro uppercase tracking-label text-slate">
             {phase.filename} was not accepted
           </p>
           <p className="mt-1 text-base font-medium">{phase.message}</p>
@@ -399,7 +399,7 @@ function ChunkPreview({
   return (
     <section className="mt-6" aria-label="Chunk preview">
       <div className="flex items-baseline justify-between gap-4 border-b border-rule pb-1">
-        <h3 className="text-micro uppercase tracking-label text-slate">
+        <h3 className="font-mono text-micro uppercase tracking-label text-slate">
           Chunks
         </h3>
         <p className="text-meta text-slate">
@@ -419,7 +419,7 @@ function ChunkPreview({
               <div>{chunk.tokenEstimate}t</div>
             </div>
             <div>
-              <p className="text-micro uppercase tracking-label text-slate">
+              <p className="font-mono text-micro uppercase tracking-label text-slate">
                 {chunk.section ?? "no section"}
               </p>
               <p className="mt-0.5 text-meta">

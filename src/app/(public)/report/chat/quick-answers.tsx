@@ -204,7 +204,7 @@ function Row({
 }) {
   return (
     <div className="mt-2">
-      <p className="text-micro uppercase tracking-label text-slate">{label}</p>
+      <p className="font-mono text-micro uppercase tracking-label text-slate">{label}</p>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">{children}</div>
     </div>
   );
@@ -235,7 +235,7 @@ function Chip({
           ? "border-steady bg-steady-wash text-steady"
           : primary
             ? "border-ink bg-ink text-paper hover:border-steady hover:bg-steady"
-            : "border-rule text-ink hover:border-ink hover:bg-row-hover",
+            : "border-rule text-ink hover:border-ink hover:bg-surface-sunken",
       ].join(" ")}
     >
       {children}
