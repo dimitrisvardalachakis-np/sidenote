@@ -27,8 +27,8 @@
   --paper: #f7f8f8; /* page */
   --surface: #ffffff; /* cards, rails, panels — the reading plane */
   --surface-sunken: #fbfcfc; /* recessed within a surface */
-  --ink: #101418; /* primary text */
-  --slate: #5a6672; /* secondary text, labels */
+  --ink: #0e1417; /* primary text */
+  --slate: #5f6b73; /* secondary text, labels */
   --slate-quiet: #69737c; /* the quietest text that is still text */
   --rule: #e3e7ea; /* hairlines — the only divider, 1px */
   --steady: #12666e; /* assessed, listed, resolved */
