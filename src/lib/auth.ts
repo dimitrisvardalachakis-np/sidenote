@@ -16,19 +16,77 @@ import { ReviewerId } from "@/lib/schemas";
  * obtained. `server-only` makes importing it from a client component a build
  * error rather than a leaked secret.
  *
- * There is no password, and there is not going to be one in this build. A
- * "session" here is which shared role you are currently wearing, held in a
- * cookie so the sign-out control in the rail is a real control rather than a
- * button that lies. Calling that authentication would be overselling it, so
- * the sign-in screen says what it actually is.
+ * There IS a password now, and it is checked. It is one shared password for
+ * the whole build, not per-person authentication: the email says which of the
+ * three shared identities you are wearing, and the password says you are
+ * allowed to wear any of them. That is a real gate — you cannot reach the
+ * queue without it — and it is emphatically not per-user credentials, so the
+ * sign-in screen names which of the two it is rather than letting the presence
+ * of a password field imply the stronger claim.
+ *
+ * A "session" is still which shared role you are wearing, held in a cookie, so
+ * the sign-out control in the rail remains a real control rather than a button
+ * that lies.
  */
 
-/** Cleared on sign-in, set on sign-out. Absence means signed in. */
+/**
+ * The session cookie. Its ABSENCE means signed out.
+ *
+ * It used to mean the opposite — the cookie was written on sign-out and
+ * cleared on sign-in, so a browser that had never been here was signed in.
+ * That was defensible while signing in was a single button with nothing to
+ * type, and it is not defensible now: a password in front of a door that
+ * stands open by default is decoration.
+ *
+ * The value is `<reviewerId>.<hmac>`. A bare marker would be forgeable by
+ * anyone who can set a header, which would make "the queue is behind a
+ * password" untrue in the one way that matters, and a bare id would let a
+ * visitor name themselves anything on an audit line — the one place a name
+ * has to be worth something.
+ */
 export const SESSION_COOKIE = "sidenote-session";
-const SIGNED_OUT = "out";
 
-/** Which shared reviewer identity you are currently wearing. */
-export const REVIEWER_COOKIE = "sidenote-reviewer";
+/**
+ * The key the session cookie is signed with.
+ *
+ * Defaulted so a fresh clone runs, and overridable because a signing key
+ * printed in a public repository signs nothing. SETUP.md says both, and says
+ * which of the two a deployment needs.
+ */
+const DEFAULT_SESSION_SECRET = "sidenote-demo-session-key";
+
+function sessionSecret(): string {
+  const configured = process.env["SIDENOTE_SESSION_SECRET"];
+  return configured === undefined || configured.length === 0
+    ? DEFAULT_SESSION_SECRET
+    : configured;
+}
+
+/** Every byte read, whatever the first mismatch. Same reason as checkPassword. */
+function constantTimeEquals(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    difference |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  }
+  return difference === 0;
+}
+
+async function sign(value: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(sessionSecret()),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const mac = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
+  return btoa(String.fromCharCode(...new Uint8Array(mac)))
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
 
 /**
  * The reviewers this demo can be.
@@ -39,16 +97,86 @@ export const REVIEWER_COOKIE = "sidenote-reviewer";
  * identity it is unreachable — you could seed a held case, but never be the
  * person who loses the race for it.
  *
- * `reviewer-demo` stays first and stays the default, so nothing changes for
- * anyone who never touches the switcher. The other two are the holders seeded
- * in `claim-store.ts`, so switching to one of them and back demonstrates both
- * sides of the same case.
+ * `reviewer-demo` stays first and stays the default. The other two are the
+ * holders seeded in `claim-store.ts`, so signing in as one of them and back
+ * demonstrates both sides of the same case.
+ *
+ * The addresses are on `.example`, which is reserved and can never resolve. An
+ * identity list in a demo should not read as a list of real mailboxes.
  */
-export const DEMO_REVIEWERS: readonly { id: string; displayName: string }[] = [
-  { id: "reviewer-demo", displayName: "Demo Reviewer" },
-  { id: "reviewer-ao", displayName: "A. Okonkwo" },
-  { id: "reviewer-mb", displayName: "M. Bergström" },
+export const DEMO_REVIEWERS: readonly {
+  id: string;
+  displayName: string;
+  email: string;
+}[] = [
+  {
+    id: "reviewer-demo",
+    displayName: "Demo Reviewer",
+    email: "demo@sidenote.example",
+  },
+  {
+    id: "reviewer-ao",
+    displayName: "A. Okonkwo",
+    email: "a.okonkwo@sidenote.example",
+  },
+  {
+    id: "reviewer-mb",
+    displayName: "M. Bergström",
+    email: "m.bergstrom@sidenote.example",
+  },
 ];
+
+/**
+ * The one shared password for this build.
+ *
+ * Overridable, so a deployment is not stuck with a value printed in a public
+ * repository, and defaulted, so a fresh clone reaches the queue without a
+ * setup step. SETUP.md documents both.
+ */
+const DEFAULT_PASSWORD = "sidenote-demo";
+
+export function reviewerPassword(): string {
+  const configured = process.env["SIDENOTE_REVIEWER_PASSWORD"];
+  return configured === undefined || configured.length === 0
+    ? DEFAULT_PASSWORD
+    : configured;
+}
+
+/** Which shared identity an address names, or null. Case and space forgiving. */
+export function findReviewerByEmail(
+  email: string,
+): { id: string; displayName: string; email: string } | null {
+  const wanted = email.trim().toLowerCase();
+  return DEMO_REVIEWERS.find((r) => r.email === wanted) ?? null;
+}
+
+/**
+ * Is this the password, without leaking how nearly it was?
+ *
+ * Both sides are hashed first so the comparison is over two equal-length byte
+ * arrays, then every byte is read regardless of where they first differ. A
+ * plain `===` on strings returns the moment it finds a mismatch, and how long
+ * that takes is a measurement of how much of the password was right.
+ *
+ * WebCrypto rather than `node:crypto`.timingSafeEqual, because CLAUDE.md puts
+ * this on Workers eventually and that module is not there.
+ */
+export async function checkPassword(candidate: string): Promise<boolean> {
+  const encoder = new TextEncoder();
+  const [a, b] = await Promise.all([
+    crypto.subtle.digest("SHA-256", encoder.encode(candidate)),
+    crypto.subtle.digest("SHA-256", encoder.encode(reviewerPassword())),
+  ]);
+  const left = new Uint8Array(a);
+  const right = new Uint8Array(b);
+  if (left.length !== right.length) return false;
+
+  let difference = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    difference |= (left[i] ?? 0) ^ (right[i] ?? 0);
+  }
+  return difference === 0;
+}
 
 export interface Session {
   readonly reviewerId: ReviewerId;
@@ -59,29 +187,34 @@ export interface Session {
 /**
  * The signed-in reviewer, or null.
  *
- * Async on purpose even though the stub is synchronous: the real
- * implementation will read a cookie and verify it, and a function that
- * changes from sync to async later forces every caller to change with it.
+ * Async on purpose: verifying a signature is asynchronous, and a function that
+ * changes from sync to async later forces every caller to change with it. It
+ * was already async for exactly this reason before there was anything to
+ * verify.
  *
- * Set SIDENOTE_SIGNED_OUT=1 to make this return null. That is not a feature —
- * it is how the gate in the (app) layout gets tested without a browser. The
- * cookie does the same thing for somebody who is actually clicking around.
+ * Set SIDENOTE_SIGNED_OUT=1 to force null. That is not a feature — it is how
+ * the gate in the (app) layout gets tested without a browser.
  */
 export async function getSession(): Promise<Session | null> {
   if (process.env["SIDENOTE_SIGNED_OUT"] === "1") return null;
 
   const jar = await cookies();
-  if (jar.get(SESSION_COOKIE)?.value === SIGNED_OUT) return null;
+  const raw = jar.get(SESSION_COOKIE)?.value;
+  if (raw === undefined) return null;
 
   /*
-    Only an id from the known list is accepted. A cookie is user-controlled
-    input, and reading an arbitrary value out of it would let anyone name
-    themselves anything on an audit line — which is the one place a name has to
-    be worth something.
+    A cookie is user-controlled input, so nothing in it is believed until the
+    signature over it checks out — and then only an id from the known list is
+    accepted, because a valid signature over an unknown id would still be an
+    unknown id.
   */
-  const wanted = jar.get(REVIEWER_COOKIE)?.value;
-  const reviewer =
-    DEMO_REVIEWERS.find((r) => r.id === wanted) ?? DEMO_REVIEWERS[0];
+  const cut = raw.lastIndexOf(".");
+  if (cut <= 0) return null;
+  const reviewerId = raw.slice(0, cut);
+  const presented = raw.slice(cut + 1);
+  if (!constantTimeEquals(presented, await sign(reviewerId))) return null;
+
+  const reviewer = DEMO_REVIEWERS.find((r) => r.id === reviewerId);
   if (reviewer === undefined) return null;
 
   return {
@@ -90,35 +223,28 @@ export async function getSession(): Promise<Session | null> {
   };
 }
 
-/** Switch which shared identity this browser is wearing. */
-export async function setReviewer(reviewerId: string): Promise<void> {
-  if (!DEMO_REVIEWERS.some((r) => r.id === reviewerId)) return;
-  const jar = await cookies();
-  jar.set(REVIEWER_COOKIE, reviewerId, {
-    httpOnly: true,
-    sameSite: "lax",
-    path: "/",
-  });
-}
-
 /**
  * Adopt the shared reviewer role, or put it down.
  *
  * Separate from `getSession` because a read and a write are different powers
  * and a caller that only needs to know who you are should not be able to
- * change it by mistake.
+ * change it by mistake. Only ever called after the password has been checked;
+ * `session-actions.ts` is the one place that ordering exists.
  */
-export async function setSignedOut(signedOut: boolean): Promise<void> {
+export async function startSession(reviewerId: string): Promise<void> {
+  if (!DEMO_REVIEWERS.some((r) => r.id === reviewerId)) return;
   const jar = await cookies();
-  if (signedOut) {
-    jar.set(SESSION_COOKIE, SIGNED_OUT, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-    });
-  } else {
-    jar.delete(SESSION_COOKIE);
-  }
+  jar.set(SESSION_COOKIE, `${reviewerId}.${await sign(reviewerId)}`, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+  });
+}
+
+export async function endSession(): Promise<void> {
+  const jar = await cookies();
+  jar.delete(SESSION_COOKIE);
 }
 
 /**

@@ -40,6 +40,17 @@ export interface WindowPolicy {
 export const SUBMIT_POLICY: WindowPolicy = { limit: 5, windowSeconds: 600 };
 export const CONVERSE_POLICY: WindowPolicy = { limit: 60, windowSeconds: 600 };
 
+/**
+ * Sign-in gets the tightest ceiling of the three.
+ *
+ * There is one shared password in front of every case in the queue, which
+ * means guessing it is the whole attack. Ten attempts in five minutes is
+ * generous for somebody who has mistyped and useless for a script. A password
+ * with nothing counting the attempts is worse than no password, because it
+ * invites the belief that the queue is protected.
+ */
+export const SIGNIN_POLICY: WindowPolicy = { limit: 10, windowSeconds: 300 };
+
 interface Bucket {
   count: number;
   windowStartMs: number;
@@ -86,6 +97,7 @@ export class InMemoryRateLimiter implements RateLimiter {
 
 const submitLimiter: RateLimiter = new InMemoryRateLimiter(SUBMIT_POLICY);
 const converseLimiter: RateLimiter = new InMemoryRateLimiter(CONVERSE_POLICY);
+const signInLimiter: RateLimiter = new InMemoryRateLimiter(SIGNIN_POLICY);
 
 /** The lines Cluster C changes to the real binding. */
 export function getSubmitRateLimiter(): RateLimiter {
@@ -93,4 +105,7 @@ export function getSubmitRateLimiter(): RateLimiter {
 }
 export function getConverseRateLimiter(): RateLimiter {
   return converseLimiter;
+}
+export function getSignInRateLimiter(): RateLimiter {
+  return signInLimiter;
 }

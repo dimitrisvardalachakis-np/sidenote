@@ -1,9 +1,13 @@
 import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
-import { signOut, switchReviewer } from "@/app/session-actions";
-import { DemoBanner } from "@/components/demo-banner";
+import { signOut } from "@/app/session-actions";
 import { ReviewerRail } from "@/components/reviewer-rail";
-import { DEMO_REVIEWERS, getSession } from "@/lib/auth";
+import { getSession } from "@/lib/auth";
+import { loadQueue } from "@/lib/queue/entries";
+import { buildRows } from "@/lib/queue/view";
+import { countAll } from "@/lib/queue/filter";
+import { getClaimStore } from "@/lib/store/claim-store";
+import type { IsoDate } from "@/lib/schemas";
 
 /**
  * The single authentication gate, and the reviewer chrome.
@@ -17,30 +21,44 @@ import { DEMO_REVIEWERS, getSession } from "@/lib/auth";
  * these routes, not something a reviewer should see in the URL. The queue is
  * at /queue, not /app/queue.
  *
- * The rail lives here rather than in the root layout, which is the whole of
- * the navigation change. A reporter is under `(public)` and never renders it;
- * the signed-in strip it used to need has folded into the rail's footer,
- * where the reviewer's identity sits beside the control that ends it.
+ * Unauthenticated goes to `/signin`, not to `/`. It used to land on the front
+ * door, which had no field to type a credential into — so the gate bounced you
+ * to a page that could not resolve the reason you were bounced.
  */
 export const dynamic = "force-dynamic";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const session = await getSession();
-  if (session === null) redirect("/");
+  if (session === null) redirect("/signin");
+
+  /*
+    The rail's count line, computed with the same functions the queue page
+    uses rather than with a second tally. `countAll` is the one implementation
+    of what "overdue" means, and a sidebar quietly disagreeing with the screen
+    beside it about how many cases are late is worse than a sidebar with no
+    number at all.
+  */
+  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const rows = buildRows({
+    entries: await loadQueue(today),
+    today,
+    claims: await getClaimStore().all(),
+    // Null, not this reviewer's real last visit: reading it here would stamp
+    // it on every page load, and the queue's "arrived since your last visit"
+    // dot would be spent before the queue rendered.
+    lastVisit: null,
+  });
+  const counts = countAll(rows, { reviewerId: session.reviewerId });
 
   return (
     <div className="flex min-h-full flex-col lg:flex-row">
       <ReviewerRail
         displayName={session.displayName}
-        reviewerId={session.reviewerId}
-        reviewers={DEMO_REVIEWERS}
         signOut={signOut}
-        switchReviewer={switchReviewer}
+        caseCount={rows.length}
+        overdueCount={counts.overdue}
       />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <DemoBanner />
-        <div className="flex flex-1 flex-col">{children}</div>
-      </div>
+      <div className="flex min-w-0 flex-1 flex-col">{children}</div>
     </div>
   );
 }

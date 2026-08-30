@@ -58,6 +58,38 @@ CLOUDFLARE_API_TOKEN=your-token-from-step-2
 
 `.env.local` is already gitignored. **Never commit the token.**
 
+## Signing in as a reviewer
+
+The queue is behind a password. There is **one shared password for the whole
+build** — the email address chooses which of three shared identities you are
+wearing, and the password decides whether you may wear one at all. That is a
+real gate: `/queue`, `/case/*` and `/library` are unreachable without it. It is
+not per-person authentication, and the sign-in screen says so rather than
+letting a password field imply the stronger claim.
+
+Out of the box, at `/signin`:
+
+| Address | Signs you in as |
+|---|---|
+| `demo@sidenote.example` | Demo Reviewer |
+| `a.okonkwo@sidenote.example` | A. Okonkwo |
+| `m.bergstrom@sidenote.example` | M. Bergström |
+
+The default password is `sidenote-demo`. Override it with:
+
+```
+SIDENOTE_REVIEWER_PASSWORD=something-else
+```
+
+Three identities rather than one because the screen a second reviewer sees when
+a case is already claimed is the interaction CLAUDE.md calls the central
+conflict this app exists to resolve — and with a single identity it cannot be
+reached. Sign in as one, claim a case, sign out, sign in as another.
+
+Attempts are rate limited to ten in five minutes per address, in memory. Like
+the other limiters in `src/lib/protection/`, that resets when the server
+restarts and counts nothing that happened on another instance.
+
 ## Step 4 — Check it worked
 
 ```bash

@@ -77,25 +77,36 @@ export function JumpToCase() {
   }, []);
 
   return (
-    <form method="get" action="/goto" className="px-3 py-2">
-      <label
-        htmlFor="jump-ref"
-        className="block text-micro uppercase tracking-label text-slate"
-      >
-        Go to case
+    <form method="get" action="/goto">
+      <label htmlFor="jump-ref" className="sr-only">
+        Go to case by reference
       </label>
-      <input
-        id="jump-ref"
-        ref={input}
-        name="ref"
-        type="search"
-        autoComplete="off"
-        placeholder="SN-2026-000104"
-        aria-describedby="jump-hint"
-        className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
-      />
-      <p id="jump-hint" className="mt-1 text-micro text-slate">
-        Reference or number. Press <kbd className="font-mono">/</kbd> to focus.
+      <div className="relative">
+        <input
+          id="jump-ref"
+          ref={input}
+          name="ref"
+          type="search"
+          autoComplete="off"
+          placeholder="Jump to SN-…"
+          aria-describedby="jump-hint"
+          className="min-h-9 w-full rounded-soft border border-rule bg-surface py-1.5 pr-12 pl-3 text-meta placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+        />
+        {/*
+          The binding that actually works, printed where the mockup drew ⌘K.
+          ⌘K is not wired to anything here, and a key hint on a control is a
+          promise about the keyboard — `g` then `c` reaches this box from
+          anywhere, including the queue, where `/` belongs to the search.
+        */}
+        <kbd
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 rounded-[4px] border border-rule px-1.5 py-0.5 font-mono text-micro text-slate-quiet"
+        >
+          g c
+        </kbd>
+      </div>
+      <p id="jump-hint" className="sr-only">
+        Type a reference or a case number. Press g then c to focus this box.
       </p>
     </form>
   );

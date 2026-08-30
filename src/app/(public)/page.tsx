@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { signIn } from "@/app/session-actions";
 
 /**
  * The front door: one door per job.
@@ -53,29 +52,12 @@ export default function LandingPage() {
           body="For patients, carers and clinicians. No account needed. Tell us what happened in your own words and we will ask for the rest."
           action="Start a report"
         />
-        {/*
-          A form rather than a Link: signing in is a state change, and there is
-          no password to type. It sets the shared reviewer role and goes to the
-          queue, which is honest about what this build does.
-        */}
-        <form action={signIn} className="contents">
-          <button
-            type="submit"
-            className="group block cursor-pointer rounded-soft border border-rule p-4 text-left hover:bg-row-hover"
-          >
-            <span className="block text-base font-medium group-hover:text-steady">
-              I am a safety reviewer
-            </span>
-            <span className="mt-1 block text-meta text-slate">
-              Triage incoming cases against the company safety documents and the
-              public label, with the 15-day clock enforced. One shared role, no
-              password — this is a demo.
-            </span>
-            <span className="mt-3 block text-meta text-steady">
-              Open the queue →
-            </span>
-          </button>
-        </form>
+        <Choice
+          href="/signin"
+          title="I am a safety reviewer"
+          body="Triage incoming cases against the company safety documents and the public label, with the 15-day clock enforced. Access is granted by your safety lead."
+          action="Sign in to the queue"
+        />
       </div>
 
       {/*
