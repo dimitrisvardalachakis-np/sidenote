@@ -13,8 +13,14 @@ import { isTypingTarget, queueShortcut } from "@/lib/queue/shortcuts";
  *
  * Rows were 92px tall in a 900px column, so at 1600px a third of the window
  * was empty margin while the drug and the reaction truncated inside it. This
- * is an aligned table at roughly 36px a row: rail, clock, reference, reaction,
- * drug, seriousness, listedness, status, age, owner.
+ * is an aligned table in one card: rail, clock, reference, reaction, drug,
+ * seriousness, listedness, status, age, owner.
+ *
+ * Below `lg` the same rows become stacked cards. A ten-column table on a phone
+ * is a table with eight columns hidden, and what is left — a clock and a
+ * reaction — is not a worklist. The card puts the reference and the clock on
+ * one line, the reaction under them, and everything else in a single quiet
+ * line, which is the order somebody triaging on a phone reads them in.
  *
  * A client component, and only this leaf is. The page stays a Server Component
  * and does the filtering and sorting; what crosses the boundary is the rows it
@@ -123,7 +129,7 @@ export function QueueTable({
 
   if (rows.length === 0) {
     return (
-      <div className="border-y border-rule px-3 py-8 text-center">
+      <div className="rounded-card border border-rule bg-surface px-3 py-10 text-center shadow-card">
         <p className="text-base">{emptyMessage}</p>
         {clearHref !== null && (
           <p className="mt-2 text-meta">
@@ -147,10 +153,15 @@ export function QueueTable({
         <tr> cannot be wrapped in an <a>. Roles restore what the markup gives
         up, so it is still announced as a table with sortable columns.
       */}
-      <div role="table" aria-label="Case queue" aria-rowcount={rows.length}>
+      <div
+        role="table"
+        aria-label="Case queue"
+        aria-rowcount={rows.length}
+        className="overflow-hidden rounded-card border border-rule bg-surface shadow-card"
+      >
         <div
           role="row"
-          className="hidden border-b border-rule pb-1 lg:grid lg:grid-cols-[3px_5.5rem_9rem_1fr_9rem_4.5rem_5.5rem_6rem_3rem_7rem] lg:gap-x-3"
+          className={`hidden border-b border-rule bg-surface-sunken px-3 py-2 lg:grid ${COLUMNS} lg:gap-x-3`}
         >
           <span />
           <SortHeader
@@ -200,7 +211,7 @@ export function QueueTable({
           aria-label="Cases"
           aria-activedescendant={activeId}
           tabIndex={0}
-          className="focus:outline-2 focus:outline-offset-2 focus:outline-steady"
+          className="focus:outline-2 focus:-outline-offset-2 focus:outline-steady"
         >
           {rows.map((row, index) => (
             <Row
@@ -224,7 +235,29 @@ export function QueueTable({
   );
 }
 
-const HEAD = "text-micro uppercase tracking-label text-slate";
+/**
+ * One column template, used by the header and every row.
+ *
+ * They were two copies of the same ten tracks, which is one edit away from a
+ * header that no longer sits over its column.
+ *
+ * The widths are tighter than the brief's, and they had to be. Its tracks add
+ * up to 875px of fixed width plus 108px of gaps, which at 1280 — a width the
+ * responsive pass explicitly covers — left the reaction column about nine
+ * pixels wide: every reaction on the screen truncated to one letter while the
+ * status pill sat in 7rem of space. These fit the content instead. A
+ * reference in 12.5px mono measures about 105px, not 152.
+ *
+ * `minmax(9rem,1fr)` rather than `1fr`, and the floor is the point: a bare
+ * `1fr` has an automatic minimum of its content, so a long reaction stops
+ * truncating and shoves the owner off the right edge; a floor of 0 lets the
+ * fixed columns crush it to nothing. Nine rem is the narrowest a reaction can
+ * be and still be worth reading.
+ */
+const COLUMNS =
+  "lg:grid-cols-[3px_5.5rem_8rem_minmax(9rem,1fr)_7rem_4.5rem_5.5rem_6rem_3rem_6.5rem]";
+
+const HEAD = "font-mono text-micro uppercase tracking-label text-slate";
 
 function SortHeader({
   column,
@@ -274,6 +307,27 @@ function Row({
       ? { text: row.serious ? "assess now" : "not assessed", urgent: false }
       : clockLabel(clock);
 
+  /*
+    The rail's three states, and they are three now rather than two.
+
+    It used to be --signal for any live clock, which spent the red on every
+    case with a deadline and left nothing louder for the ones already late.
+    Overdue keeps the red; a clock that is merely running gets --steady-line;
+    everything else gets nothing. CLAUDE.md reserves --signal for "expedited or
+    overdue" — a running expedited clock still qualifies, so this is a change
+    of emphasis inside the rule rather than a narrowing of it, and the clock
+    text beside it still turns red the moment the case is on a deadline.
+  */
+  const rail =
+    clock === null || clock.state === "not_applicable"
+      ? "bg-transparent"
+      : clock.state === "overdue"
+        ? "bg-signal"
+        : "bg-steady-line";
+
+  const reaction = row.record.reactions[0]?.verbatimTerm ?? "No reaction recorded";
+  const drug = row.record.drugs[0]?.reportedName ?? "—";
+
   return (
     <Link
       href={`/case/${row.record.id}`}
@@ -286,42 +340,59 @@ function Row({
       tabIndex={-1}
       onMouseEnter={onFocus}
       className={[
-        "grid grid-cols-[3px_1fr] items-baseline gap-x-3 border-b border-rule py-1.5",
-        "lg:grid-cols-[3px_5.5rem_9rem_1fr_9rem_4.5rem_5.5rem_6rem_3rem_7rem]",
-        active ? "bg-row-active" : "hover:bg-row-hover",
+        "relative block border-b border-rule px-3 py-3 last:border-b-0",
+        `lg:grid ${COLUMNS} lg:min-h-[52px] lg:items-center lg:gap-x-3 lg:py-2`,
+        active ? "bg-surface-sunken" : "hover:bg-surface-sunken",
       ].join(" ")}
     >
       {/*
         The rail is the left edge of the row, not a badge: a reviewer scanning
         a queue reads down the left margin, so urgency there is legible without
         reading a word and costs no horizontal space.
-      */}
-      {/*
-        Below lg only three cells are visible — rail, clock, reaction — and a
-        two-column grid places the third back in column one, which is 3px
-        wide. The rail spans both rows and the reaction is pinned to column
-        two, so the narrow layout is two stacked lines beside one rail rather
-        than a reaction clipped to a sliver.
+
+        Absolutely positioned rather than a grid cell, because it has to be the
+        full height of the row in BOTH layouts — as a cell it would stretch in
+        the grid and collapse in the stacked card. The 3px first column is what
+        keeps the text clear of it at lg; the card gets `pl-3` from the padding
+        above.
       */}
       <span
         aria-hidden="true"
-        className={[
-          "row-span-2 h-full w-[3px] self-stretch lg:row-span-1",
-          clock !== null && clock.state !== "not_applicable"
-            ? "bg-signal"
-            : "bg-transparent",
-        ].join(" ")}
+        className={`absolute top-0 left-0 h-full w-[3px] ${rail}`}
       />
+      <span className="hidden lg:block" />
 
+      {/* ---- the phone card: reference and clock on one line ---- */}
+      <span className="flex items-baseline justify-between gap-3 lg:hidden">
+        <span className="font-mono text-meta text-slate">
+          {row.record.reference}
+          {row.isNew && (
+            <span className="ml-1 text-steady" title="Arrived since your last visit">
+              •
+            </span>
+          )}
+        </span>
+        <span
+          className={[
+            "shrink-0 font-mono text-meta tabular-nums",
+            label.urgent ? "font-medium text-signal" : "text-slate",
+          ].join(" ")}
+        >
+          {label.text}
+        </span>
+      </span>
+
+      {/* ---- clock, at lg ---- */}
       <span
         className={[
-          "text-meta tabular-nums",
-          label.urgent ? "text-signal" : "text-slate",
+          "hidden font-mono text-meta tabular-nums lg:block",
+          label.urgent ? "font-medium text-signal" : "text-slate",
         ].join(" ")}
       >
         {label.text}
       </span>
 
+      {/* ---- reference, at lg ---- */}
       <span className="hidden font-mono text-meta text-slate lg:block">
         {row.record.reference}
         {row.isNew && (
@@ -331,34 +402,41 @@ function Row({
         )}
       </span>
 
-      <span className="col-start-2 min-w-0 text-base lg:col-start-auto">
-        <span className="block truncate">
-          {row.record.reactions[0]?.verbatimTerm ?? "No reaction recorded"}
-        </span>
+      {/* ---- reaction, in both layouts ---- */}
+      <span className="mt-1 block min-w-0 lg:mt-0">
+        <span className="block truncate text-body lg:text-base">{reaction}</span>
         {/*
-          Promoted from the quietest text in the row to a hairline marker in
-          the reaction cell. CLAUDE.md says a disagreement IS the case; it used
-          to render smaller than the reference number.
+          A disagreement is the case, per CLAUDE.md, and it used to render
+          smaller than the reference number. Chips rather than bare text, and
+          the disagreement carries --ink where the incomplete note carries
+          --slate — the same hierarchy the case screen uses for the two.
         */}
-        <span className="flex flex-wrap gap-x-2 text-micro">
-          {row.disagrees && (
-            <span className="border-l-2 border-ink pl-1 text-ink">
-              Sources disagree
-            </span>
-          )}
-          {row.missing.length > 0 && (
-            <span className="border-l-2 border-slate pl-1 text-slate">
-              Incomplete — missing {row.missing.join(", ").replace(/_/g, " ")}
-            </span>
-          )}
-        </span>
+        {(row.disagrees || row.missing.length > 0) && (
+          <span className="mt-1 flex flex-wrap gap-1.5">
+            {row.disagrees && <Chip tone="ink">Sources disagree</Chip>}
+            {row.missing.length > 0 && (
+              <Chip tone="slate">
+                Incomplete — missing{" "}
+                {row.missing.join(", ").replace(/_/g, " ")}
+              </Chip>
+            )}
+          </span>
+        )}
       </span>
 
+      {/* ---- the phone card's single quiet line ---- */}
+      <span className="mt-1.5 block text-meta text-slate lg:hidden">
+        {drug}
+        {row.seriousCount > 0 && ` · ${row.seriousCount} of 6 serious`}
+        {` · ${row.claim?.displayName ?? "unclaimed"}`}
+      </span>
+
+      {/* ---- the remaining columns, at lg only ---- */}
       <span className="hidden truncate text-meta text-slate lg:block">
-        {row.record.drugs[0]?.reportedName ?? "—"}
+        {drug}
       </span>
 
-      <span className="hidden text-meta tabular-nums text-slate lg:block">
+      <span className="hidden font-mono text-meta tabular-nums text-slate lg:block">
         {row.seriousCount > 0 ? `${row.seriousCount} of 6` : "—"}
       </span>
 
@@ -366,13 +444,15 @@ function Row({
         {row.listedness ?? (row.assessed ? "not ruled" : "—")}
       </span>
 
-      <span className="hidden text-meta text-slate lg:block">
-        {row.record.status.replace("_", " ")}
+      <span className="hidden lg:block">
+        <span className="inline-flex rounded-pill border border-rule px-2 py-0.5 text-meta text-slate">
+          {row.record.status.replace("_", " ")}
+        </span>
       </span>
 
       {/* Age, so staleness needs no arithmetic against the received date. */}
       <span
-        className="hidden text-meta tabular-nums text-slate lg:block"
+        className="hidden font-mono text-meta tabular-nums text-slate lg:block"
         title={`Received ${row.record.receivedAt}`}
       >
         {row.ageDays}d
@@ -382,6 +462,29 @@ function Row({
         {row.claim?.displayName ?? "unclaimed"}
       </span>
     </Link>
+  );
+}
+
+/**
+ * A marker under a reaction. Filled, so it reads as a label on the case rather
+ * than as a second sentence about it.
+ */
+function Chip({
+  tone,
+  children,
+}: {
+  tone: "ink" | "slate";
+  children: React.ReactNode;
+}) {
+  return (
+    <span
+      className={[
+        "inline-flex rounded-[5px] bg-surface-sunken px-1.5 py-0.5 text-micro",
+        tone === "ink" ? "text-ink" : "text-slate",
+      ].join(" ")}
+    >
+      {children}
+    </span>
   );
 }
 

@@ -131,24 +131,52 @@ export default async function QueuePage({
 
   const filtered = filters.length > 0 || query.length > 0;
 
+  /*
+    Where to start, as a link rather than a number.
+
+    `planSentence` says what is there; this says which row to open first. It is
+    the top of the clock-sorted queue — the same ordering the table uses, so
+    the sentence cannot point at a case the list does not put first — and it
+    only appears when something is actually on a deadline, because "start
+    with" is advice and there is none to give on a clear queue.
+  */
+  const startWith =
+    counts.on_clock > 0 ? (sortRows(rows, "clock")[0] ?? null) : null;
+
   return (
     <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="text-h1 font-medium">Queue</h1>
+        <h1 className="text-h1 font-semibold">Queue</h1>
         <p className="text-meta text-slate">{session.displayName}</p>
       </div>
 
       {/*
         What to do first, in a sentence, above the figures rather than instead
-        of them. Five numbers tell a reviewer what is there; this tells them
+        of them. The figures tell a reviewer what is there; this tells them
         where to start.
       */}
-      <p className="mt-1 text-base">{planSentence(rows, counts)}</p>
+      <p className="mt-1.5 text-body">
+        {planSentence(rows, counts)}
+        {startWith !== null && (
+          <>
+            {" "}
+            <Link
+              href={`/case/${startWith.record.id}`}
+              className="font-mono font-semibold text-signal hover:underline"
+            >
+              Start with {startWith.record.reference}
+            </Link>
+            <span aria-hidden="true" className="text-signal">
+              {" →"}
+            </span>
+          </>
+        )}
+      </p>
 
       {jump !== null && (
         <p
           role="status"
-          className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2 text-meta"
+          className="mt-3 rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-3 py-2 text-meta shadow-card"
         >
           {jump.kind === "ambiguous" ? (
             <>
@@ -166,37 +194,7 @@ export default async function QueuePage({
         </p>
       )}
 
-      {/*
-        The figures, as filters. `flex-wrap` with a small gap rather than the
-        old `gap-x-8`, which wrapped into an unreadable stagger at about 800px.
-      */}
-      <div className="mt-3 flex flex-wrap items-stretch gap-2 border-y border-rule py-2">
-        {QUEUE_FILTERS.map((filter) => (
-          <FilterChip
-            key={filter}
-            href={toggleHref(filter)}
-            label={FILTER_LABELS[filter]}
-            count={counts[filter]}
-            on={filters.includes(filter)}
-            // --signal is the regulatory clock, and Overdue IS that clock.
-            urgent={filter === "overdue" && counts.overdue > 0}
-          />
-        ))}
-        <span className="flex items-center text-micro uppercase tracking-label text-slate">
-          {visible.length} of {rows.length} shown
-        </span>
-        {/* Only when there is something to clear. */}
-        {filtered && (
-          <Link
-            href="/queue"
-            className="flex items-center rounded-soft border border-rule px-2 text-micro uppercase tracking-label text-slate hover:border-ink hover:text-ink"
-          >
-            Clear
-          </Link>
-        )}
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3">
+      <div className="mt-4 max-w-[280px]">
         <QueueSearch
           defaultValue={query}
           hidden={{
@@ -204,6 +202,44 @@ export default async function QueuePage({
             ...(sort !== "clock" ? { sort } : {}),
           }}
         />
+      </div>
+
+      {/*
+        The figures, as filters and as cards.
+
+        They scroll sideways below lg rather than wrapping into a stagger:
+        seven cards on a phone is three ragged rows, and the order they are in
+        is the order of urgency, which wrapping destroys.
+      */}
+      <div className="mt-3 -mx-4 overflow-x-auto px-4 lg:mx-0 lg:overflow-visible lg:px-0">
+        <div className="flex items-stretch gap-2 lg:flex-wrap">
+          {QUEUE_FILTERS.map((filter) => (
+            <FilterCard
+              key={filter}
+              href={toggleHref(filter)}
+              label={FILTER_LABELS[filter]}
+              count={counts[filter]}
+              on={filters.includes(filter)}
+              // --signal is the regulatory clock, and Overdue IS that clock.
+              urgent={filter === "overdue" && counts.overdue > 0}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="font-mono text-micro uppercase tracking-label text-slate">
+          {visible.length} of {rows.length} shown
+        </span>
+        {/* Only when there is something to clear. */}
+        {filtered && (
+          <Link
+            href="/queue"
+            className="font-mono text-micro uppercase tracking-label text-slate hover:text-steady hover:underline"
+          >
+            Clear filters
+          </Link>
+        )}
       </div>
 
       <div className="mt-3">
@@ -244,7 +280,15 @@ function readJumpResult(params: {
   return { kind, typed };
 }
 
-function FilterChip({
+/**
+ * One figure, as a card you can press.
+ *
+ * The count is mono and large, the label small beside it, because the number
+ * is what the eye is scanning for down a row of seven. Pressed state is a
+ * --steady-wash fill with a --steady-line edge rather than a heavier border,
+ * so an active filter reads as filled rather than as merely outlined.
+ */
+function FilterCard({
   href,
   label,
   count,
@@ -262,15 +306,15 @@ function FilterChip({
       href={href}
       aria-pressed={on}
       className={[
-        "flex items-baseline gap-2 rounded-soft border px-2 py-1",
+        "flex shrink-0 items-baseline gap-2 rounded-soft border px-3 py-2",
         on
-          ? "border-steady bg-steady-wash"
-          : "border-rule hover:border-ink hover:bg-row-hover",
+          ? "border-steady-line bg-steady-wash"
+          : "border-rule bg-surface hover:border-steady-line",
       ].join(" ")}
     >
       <span
         className={[
-          "text-base tabular-nums",
+          "font-mono text-[17px] leading-none tabular-nums",
           urgent ? "text-signal" : on ? "text-steady" : "text-ink",
         ].join(" ")}
       >
@@ -278,7 +322,7 @@ function FilterChip({
       </span>
       <span
         className={[
-          "text-micro uppercase tracking-label",
+          "text-meta whitespace-nowrap",
           on ? "text-steady" : "text-slate",
         ].join(" ")}
       >
