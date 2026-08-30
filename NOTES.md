@@ -402,6 +402,65 @@ mistake in the other direction.
 ranking alone, and only then add dense retrieval. The ranking was never the
 problem on that path.
 
+### Done, and the order held
+
+All three, in that order, and the shape fix turned out to be bigger than a
+third state. What forced it was a real report: somebody typed *"i took ABACAVIR
+SULFATE and i have a big headache"*, was asked one question, and had a case
+filed against **amoxil** — with a dose and a reporter name they had never given.
+
+The cause was not retrieval at all. `report-draft-store` deliberately exempts a
+*submitted* draft from its 24-hour expiry so that reloading the confirmation
+still shows the reference number; the consequence is that a report sent days
+ago never leaves localStorage. `mergeCarriedSlots` folded it into
+`IntakeState.slots` on the first turn, `nextMissing` found nothing missing, and
+`advance` went straight to the branch that composes a verdict — which was the
+same server-action turn that wrote the case. One stale field, and the whole
+eight-question intake collapsed into one question and a wrong-product safety
+report.
+
+So three things changed together, because each one is what makes the next
+honest:
+
+1. **A carried answer is a suggestion.** It lands in `IntakeState.prefill`,
+   never in `slots`, and is offered as a one-tap chip under the question it
+   answers. It is stored as the *reply text* a reporter would have typed, so
+   accepting one runs through `parseAgeAnswer` / `extractSex` /
+   `extractSeriousness` exactly as typing it would — there is no second way for
+   an answer to enter the record. And a submitted draft carries nothing at all
+   (`slotsToCarry`), because a receipt is not an in-progress report.
+
+2. **The conversation ends in review, not in a write.** `phase: "review"` is
+   the state in which everything is collected and nothing is stored. The
+   reporter sees every answer with a `change` control beside it, and the case is
+   written by a separate `submit` intent and by nothing else.
+
+3. **The assertion got its model.** The review calls `answerPublicQuestion` —
+   the public search page's own function — so the chat now inherits the
+   verbatim-span check, the single retry, the recommendation filter, the honest
+   degraded state, and a public-only namespace filter enforced twice inside
+   that function. `assessAgainstDocuments` and `composeVerdict` are gone;
+   `lib/intake/review.ts` maps the answer onto four states a reporter can be
+   told, and the third one — *no public label is held for this medicine* —
+   counts **public documents in scope**, not the size of the scope set, because
+   `documentsForDrug` filters by product and a company-only scope is not a
+   public label.
+
+The tests moved with the code, and they got stronger rather than weaker:
+`answer.test.ts` already holds the confidentiality boundary and the
+wrong-product rule against the very function this path now calls, which is more
+than the deleted `assessAgainstDocuments` tests were checking.
+
+**What this cost, and it is worth naming.** The reason this section originally
+dismissed "a confident wrong answer discourages reporting" was that there was
+no step left to drop out of — the report was already written by the time the
+reporter read the verdict. That is no longer true. There is now a step, and a
+reporter can read "this is already described" and walk away. The mitigation is
+ordering: on the review screen, what will be filed and the send control come
+first, and the label reading sits below them and closes with the search page's
+line — finding it there does not mean it does not matter. That is a mitigation,
+not a proof, and it is the thing to watch on this screen.
+
 ---
 
 ## The stub agreed with the schema, and both were wrong
@@ -854,10 +913,11 @@ is reading the whole screen the way the person in front of it does.
   no R2, no Queues. Vectorize has a real REST client now but is opt-in; the
   default vector store is a local file. Stores are in-memory or on disk, and
   every one of these is one line to change and marked where it sits.
-- **The intake chat is still lexical-only, on purpose.** See "The surface that
-  should not get the better retriever" below. `IntakeVerdict` needs a third
-  state and the assertion needs a model behind it before a better ranking is an
-  improvement rather than a louder guess.
+- ~~**The intake chat is still lexical-only, on purpose.**~~ Fixed, in the
+  order that section set out: the third state first, then a model between the
+  ranking and the sentence, then the hybrid ranking — which arrived for free,
+  because the review step calls `answerPublicQuestion`. See "Done, and the
+  order held".
 - **The cosine floor is doing less work than hoped, now measured.** Against the
   real model on the seeded corpus: a true positive ("my muscles ached all over"
   → the *myalgia* chunk) scores **0.604**, and an unrelated passage ("heart was

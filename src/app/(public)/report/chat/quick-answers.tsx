@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import type { IntakeSlot } from "@/lib/intake/conversation";
+import {
+  NO_SERIOUSNESS,
+  SERIOUSNESS_PHRASES,
+  type IntakeSlot,
+} from "@/lib/intake/conversation";
 
 /**
  * Buttons for the questions that are not really free text.
@@ -42,25 +46,44 @@ const SEX_OPTIONS: readonly Option[] = [
  * recognises, which is what keeps the buttons and the typed path in agreement.
  */
 const SERIOUSNESS_OPTIONS: readonly Option[] = [
-  { label: "They went into hospital", text: "they went into hospital" },
-  { label: "Their life was in danger", text: "their life was in danger" },
+  {
+    label: "They went into hospital",
+    text: SERIOUSNESS_PHRASES.hospitalisation,
+  },
+  {
+    label: "Their life was in danger",
+    text: SERIOUSNESS_PHRASES.life_threatening,
+  },
   {
     label: "They were left with a lasting problem",
-    text: "they were left with a lasting disability",
+    text: SERIOUSNESS_PHRASES.persistent_disability,
   },
-  { label: "A baby was born with a problem", text: "a baby was born with a birth defect" },
-  { label: "They died", text: "they died" },
+  {
+    label: "A baby was born with a problem",
+    text: SERIOUSNESS_PHRASES.congenital_anomaly,
+  },
+  { label: "They died", text: SERIOUSNESS_PHRASES.death },
 ];
 
 const DONT_KNOW = "I don't know";
 
 export function QuickAnswers({
   slot,
+  prefill,
   onAnswer,
   disabled,
 }: {
   /** The slot the last question was about. Null once the intake is done. */
   slot: IntakeSlot | null;
+  /**
+   * What another page already knew about this slot, if anything.
+   *
+   * A SUGGESTION, and the distinction is the point: it is offered as one more
+   * chip alongside the others, so accepting it types the same text into the
+   * same box and runs the same parser. Nothing reaches the record without the
+   * reporter pressing something.
+   */
+  prefill: string | undefined;
   /** Writes the text into the reply box and sends it. */
   onAnswer: (text: string) => void;
   disabled: boolean;
@@ -69,33 +92,56 @@ export function QuickAnswers({
 
   if (slot === null) return null;
 
-  if (slot === "sex") {
-    return (
-      <Row label="Or choose one">
-        {SEX_OPTIONS.map((option) => (
-          <Chip
-            key={option.text}
-            disabled={disabled}
-            onClick={() => onAnswer(option.text)}
-          >
-            {option.label}
-          </Chip>
-        ))}
-        <Chip disabled={disabled} onClick={() => onAnswer(DONT_KNOW)}>
-          {DONT_KNOW}
+  /*
+    The suggestion sits above the slot's own controls rather than inside them,
+    because every slot can have one — including the four that have no quick
+    answers at all. For the medicine, a name and a way to be reached, this row
+    is the whole of the saved typing that crossing from the form used to give
+    away for free, and it now costs one tap and gives the reporter the chance
+    to say no.
+  */
+  const suggestion =
+    prefill === undefined ? null : (
+      <Row label="You told us before">
+        <Chip disabled={disabled} onClick={() => onAnswer(prefill)}>
+          {truncate(prefill)}
         </Chip>
       </Row>
+    );
+
+  if (slot === "sex") {
+    return (
+      <>
+        {suggestion}
+        <Row label="Or choose one">
+          {SEX_OPTIONS.map((option) => (
+            <Chip
+              key={option.text}
+              disabled={disabled}
+              onClick={() => onAnswer(option.text)}
+            >
+              {option.label}
+            </Chip>
+          ))}
+          <Chip disabled={disabled} onClick={() => onAnswer(DONT_KNOW)}>
+            {DONT_KNOW}
+          </Chip>
+        </Row>
+      </>
     );
   }
 
   if (slot === "age") {
     return (
-      <Row label="Or pick an age">
-        <AgeEntry disabled={disabled} onAnswer={onAnswer} />
-        <Chip disabled={disabled} onClick={() => onAnswer(DONT_KNOW)}>
-          {DONT_KNOW}
-        </Chip>
-      </Row>
+      <>
+        {suggestion}
+        <Row label="Or pick an age">
+          <AgeEntry disabled={disabled} onAnswer={onAnswer} />
+          <Chip disabled={disabled} onClick={() => onAnswer(DONT_KNOW)}>
+            {DONT_KNOW}
+          </Chip>
+        </Row>
+      </>
     );
   }
 
@@ -108,39 +154,52 @@ export function QuickAnswers({
       );
 
     return (
-      <Row label="Or tick any that happened">
-        {SERIOUSNESS_OPTIONS.map((option) => {
-          const on = picked.includes(option.text);
-          return (
-            <Chip
-              key={option.text}
-              disabled={disabled}
-              pressed={on}
-              onClick={() => toggle(option.text)}
-            >
-              {option.label}
-            </Chip>
-          );
-        })}
-        <span className="w-full" />
-        <Chip
-          disabled={disabled || picked.length === 0}
-          onClick={() => {
-            onAnswer(picked.join(", and "));
-            setPicked([]);
-          }}
-          primary
-        >
-          Send {picked.length > 0 ? `(${picked.length})` : ""}
-        </Chip>
-        <Chip disabled={disabled} onClick={() => onAnswer("none of those")}>
-          None of those
-        </Chip>
-      </Row>
+      <>
+        {suggestion}
+        <Row label="Or tick any that happened">
+          {SERIOUSNESS_OPTIONS.map((option) => {
+            const on = picked.includes(option.text);
+            return (
+              <Chip
+                key={option.text}
+                disabled={disabled}
+                pressed={on}
+                onClick={() => toggle(option.text)}
+              >
+                {option.label}
+              </Chip>
+            );
+          })}
+          <span className="w-full" />
+          <Chip
+            disabled={disabled || picked.length === 0}
+            onClick={() => {
+              onAnswer(picked.join(", and "));
+              setPicked([]);
+            }}
+            primary
+          >
+            Send {picked.length > 0 ? `(${picked.length})` : ""}
+          </Chip>
+          <Chip disabled={disabled} onClick={() => onAnswer(NO_SERIOUSNESS)}>
+            None of those
+          </Chip>
+        </Row>
+      </>
     );
   }
 
-  return null;
+  return suggestion;
+}
+
+/**
+ * A chip is a chip, not a paragraph. A carried narrative can be hundreds of
+ * words, and the whole of it inside a button would push the reply box off the
+ * screen — the exact fault the scroll target below the form was moved to fix.
+ */
+function truncate(text: string): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  return collapsed.length <= 60 ? collapsed : `${collapsed.slice(0, 57)}…`;
 }
 
 /**
@@ -204,7 +263,9 @@ function Row({
 }) {
   return (
     <div className="mt-2">
-      <p className="font-mono text-micro uppercase tracking-label text-slate">{label}</p>
+      <p className="font-mono text-micro uppercase tracking-label text-slate">
+        {label}
+      </p>
       <div className="mt-1 flex flex-wrap items-center gap-1.5">{children}</div>
     </div>
   );

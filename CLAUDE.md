@@ -194,16 +194,25 @@ dropped — the store contributes an id and a rank, never text, never a citation
 never scope. The public search answer (`lib/assess/answer.ts`) is hybrid too,
 and scoped to the medicine the reporter names — unscoped, it answered an
 atorvastatin question from the Covaxil fixture.
-**The intake chat is not, and deliberately so** — it is the one surface that
-asserts what a document says with no model reading the passage, so a better
-retriever there would only make it more confident. That is a shape problem to
-fix before a ranking problem; SETUP.md and NOTES.md both say so.
+**And so is the intake chat, now that its shape allows it.** It used to be the
+one surface that asserted what a document says with no model reading the
+passage — a bare hit count, in the same turn that filed the case — so a better
+retriever there would only have made it more confident. The shape was fixed
+first: the conversation ends in a REVIEW step that retrieves, has a model read
+the passages, shows the reporter what it found and what will be filed, and
+writes nothing until they press send. It reaches that reading through
+`answerPublicQuestion`, the same function the public search page calls, so the
+verbatim check, the single retry, the recommendation filter, the honest
+degraded state and the public-only namespace lock all apply here unchanged.
 
 **Generated, and fenced in.** Two model calls per case, one per source
 namespace, after fusion, plus at most one retry each — so four generations is
 the ceiling, not two (`lib/assess/`), and one embedding of the query before any
-of them, shared by both namespaces. One call per public report, on the
-reporter's own account (`lib/extract/`). Both return strict JSON, are
+of them, shared by both namespaces. Two per public report, on the
+reporter's own account: one extraction of their opening account
+(`lib/extract/`), and one read of the label at the review step, which is the
+same pair of calls `answerPublicQuestion` makes anywhere else and is cached
+against the medicine and the reaction so correcting a name costs nothing. Both return strict JSON, are
 zod-validated, retry once against a stricter instruction naming the failed
 check, and degrade to an explicit unavailable state rather than a finding.
 Retrieval is scoped to the case's own product first, so another drug's CCDS
@@ -226,7 +235,8 @@ document and public label disagreeing — is the case the demo exists to show.
 **Wired, and it runs.** `assessCase` is called by a server action behind the
 "Assess this case" control on the case screen, and the result is stored and
 rendered in place of the fixture. The public search page asks the same
-question of the public labels and answers it with a verified quotation. Both
+question of the public labels and answers it with a verified quotation, and so
+does the intake chat's review step before the reporter sends anything. Both
 are reviewer/visitor-triggered rather than automatic, because an inference has
 a cost and a button makes it obvious one was spent; the queue consumer that
 does this on arrival is still Cluster E.

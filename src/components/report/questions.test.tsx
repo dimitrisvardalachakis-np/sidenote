@@ -314,3 +314,83 @@ describe("labels", () => {
     }
   });
 });
+
+describe("saying an answer is the wrong shape", () => {
+  /*
+    Held back until focus leaves the box. Judging as they type means telling
+    somebody their email address is wrong after the first letter of it — true,
+    useless, and the thing that makes a form feel like it is arguing.
+  */
+  it("stays quiet while the box is being typed into", async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness<string>
+        initial={UNANSWERED}
+        render={(value, set) => (
+          <TextQuestion
+            label="What is your email address?"
+            value={value}
+            onChange={set}
+            problem="That email address does not look complete."
+          />
+        )}
+      />,
+    );
+
+    const box = screen.getByLabelText("What is your email address?");
+    await user.click(box);
+    await user.type(box, "sam");
+    expect(screen.queryByText(/does not look complete/)).toBeNull();
+
+    await user.tab();
+    expect(screen.getByText(/does not look complete/)).toBeDefined();
+    expect(box).toHaveAttribute("aria-invalid", "true");
+    // And it is wired to the box, not just sitting near it.
+    expect(box.getAttribute("aria-describedby")).toContain(
+      screen.getByText(/does not look complete/).id,
+    );
+  });
+
+  it("takes the note down as soon as the answer is fixed", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <Harness<string>
+        initial={UNANSWERED}
+        render={(value, set) => (
+          <TextQuestion label="Email" value={value} onChange={set} problem="Not right." />
+        )}
+      />,
+    );
+    const box = screen.getByLabelText("Email");
+    await user.click(box);
+    await user.tab();
+    expect(screen.getByText("Not right.")).toBeDefined();
+
+    rerender(
+      <Harness<string>
+        initial={UNANSWERED}
+        render={(value, set) => (
+          <TextQuestion label="Email" value={value} onChange={set} />
+        )}
+      />,
+    );
+    expect(screen.queryByText("Not right.")).toBeNull();
+  });
+
+  it("will not take more characters than its field can hold", () => {
+    render(
+      <Harness<string>
+        initial={UNANSWERED}
+        render={(value, set) => (
+          <TextQuestion
+            label="Phone"
+            value={value}
+            onChange={set}
+            maxLength={40}
+          />
+        )}
+      />,
+    );
+    expect(screen.getByLabelText("Phone")).toHaveAttribute("maxlength", "40");
+  });
+});

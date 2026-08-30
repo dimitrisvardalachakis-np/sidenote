@@ -187,9 +187,7 @@ describe("the fallback path is real", () => {
     state = advance({
       state,
       reply: REPORT,
-      corpus: [],
       knownProducts: ["Hepalex"],
-      audience: "public",
       extraction: null,
     });
     expect(state.slots.drug).toBe("Hepalex");
@@ -207,9 +205,7 @@ describe("the fallback path is real", () => {
     state = advance({
       state,
       reply: REPORT,
-      corpus: [],
       knownProducts: ["Hepalex"],
-      audience: "public",
       extraction: null,
     });
     expect(state.slots.age).toBeNull();
@@ -226,9 +222,7 @@ describe("the fallback path is real", () => {
     state = advance({
       state,
       reply: REPORT,
-      corpus: [],
       knownProducts: ["Hepalex"],
-      audience: "public",
       extraction: out.extraction,
     });
     expect(state.slots.dose).toBe("two tablets a day");
@@ -248,9 +242,7 @@ describe("a narrative flag finally reaches a real case", () => {
     state = advance({
       state,
       reply: REPORT,
-      corpus: [],
       knownProducts: ["Hepalex"],
-      audience: "public",
       extraction: out.extraction,
     });
     const slots = {

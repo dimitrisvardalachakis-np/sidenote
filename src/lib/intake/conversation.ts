@@ -9,31 +9,21 @@
  * criteria in CLAUDE.md, which is exactly what a model would have to be
  * prompted to collect anyway.
  *
- * The RETRIEVAL half is real. When the reporter has said enough, this searches
- * the chunks actually ingested through the library and returns actual
- * citations — chunk ids and quoted spans from real uploaded documents. So the
- * "is this already known?" answer is genuinely grounded, and non-negotiable #3
- * holds: no claim is shown without the passage behind it.
- *
- * Where a model goes: replace `interpret()` with an extraction call and
- * `composeVerdict()` with a grounded generation call. The state machine, the
- * retrieval, the citations and the submission path all stay as they are —
- * which is the point of keeping this pure and testable.
+ * RETRIEVAL NO LONGER LIVES HERE. It used to: this file searched the corpus
+ * itself and composed a sentence from a hit count, which made it the only
+ * surface in the system that asserted what a document says with no model
+ * having read the passage. That assertion now belongs to the review step
+ * (`lib/intake/review.ts` and the chat's Server Action), where a model reads
+ * every retrieved passage first and can answer "none of these is about this".
+ * What is left here is the part that was always pure: which question comes
+ * next, and what the reporter's answers mean.
  *
  * Non-negotiable #4 still governs the outcome: this never decides anything.
- * Every completed conversation is submitted for review regardless of what
- * retrieval found. The only difference a "known" verdict makes is what the
- * reporter is told while they wait.
+ * The reporter is shown what was found and then presses send, and the send
+ * control is offered in exactly the same words whatever the reading said.
  */
-import type {
-  Citation,
-  DocumentChunk,
-  DocumentId,
-  SeriousnessCriterion,
-} from "@/lib/schemas";
+import type { Citation, SeriousnessCriterion } from "@/lib/schemas";
 import { SERIOUSNESS_CRITERIA } from "@/lib/schemas";
-import { lexicalSearch, toCitation } from "@/lib/retrieval/search";
-import { MATCHED_ANY_TERM } from "@/lib/retrieval/thresholds";
 import type { Extraction, SeriousnessEvidence } from "@/lib/extract/schema";
 
 export type IntakeSlot =
@@ -99,50 +89,69 @@ export interface IntakeMessage {
   readonly citations: readonly Citation[];
 }
 
-export interface IntakeVerdict {
-  /** True when retrieval found the reaction described in a safety document. */
-  readonly alreadyDescribed: boolean;
-  /**
-   * False when there was no document to search at all.
-   *
-   * THE THIRD STATE, and it exists because its absence told a real reporter
-   * something untrue. They reported dizziness after a Moderna COVID vaccine.
-   * openFDA's drug label dataset holds no vaccines — only OTC drugs,
-   * prescription drugs and cellular therapies — so nothing was fetched and
-   * nothing was in scope. The chat replied: "I could not find dizziness in the
-   * published information for moderna coronovirus injection."
-   *
-   * That is an assertion about a document nobody opened. The two-state boolean
-   * could not tell "searched the label and it is not there" from "there was no
-   * label to search", so it said the first while the second was true. It is
-   * the same collapse `source_unavailable` exists to prevent on the reviewer
-   * side, and it leaned the safe way — over-encouraging a report — which is
-   * exactly why it survived so long unnoticed.
-   */
-  readonly consulted: boolean;
-  readonly companyCitations: readonly Citation[];
-  readonly publicCitations: readonly Citation[];
-}
+/**
+ * Answers an earlier page already knew, as the TEXT a reply would contain.
+ *
+ * Text rather than parsed values, and that is the whole design. A suggestion
+ * the reporter accepts is typed into the same box and parsed by the same
+ * `parseAgeAnswer` / `extractSex` / `extractSeriousness` as one they type
+ * themselves — the invariant `quick-answers.tsx` already states about its own
+ * options. A parsed prefill would be a second way for an answer to enter the
+ * record, and second ways are how the two halves come to disagree.
+ */
+export type IntakePrefill = Readonly<Partial<Record<IntakeSlot, string>>>;
 
 export interface IntakeState {
   readonly messages: readonly IntakeMessage[];
+  /** Answers given IN THIS CONVERSATION. Nothing else ever writes here. */
   readonly slots: IntakeSlots;
+  /**
+   * What a previous page thought it knew, offered as one-tap suggestions.
+   *
+   * Kept rigidly apart from `slots`, because merging the two is what filed a
+   * report against the wrong medicine. A form draft carrying "amoxil" was
+   * folded into `slots` on the first turn; `nextMissing` then found nothing
+   * missing and the conversation ended after one question, filing amoxil
+   * against a narrative that named abacavir. A submitted draft never expires,
+   * so that value would have led every future conversation too.
+   *
+   * A suggestion is not an answer. It is asked about like everything else.
+   */
+  readonly prefill: IntakePrefill;
   /** The slot the last assistant question was asking about. */
   readonly pending: IntakeSlot | null;
-  readonly phase: "collecting" | "complete";
-  readonly verdict: IntakeVerdict | null;
+  /**
+   * `review` is the state in which everything has been collected and NOTHING
+   * has been written. The reporter reads what was found and what will be
+   * filed, and presses send — or changes an answer, which returns here.
+   */
+  readonly phase: "collecting" | "review" | "complete";
+  /**
+   * True once the conversation has reached review at least once.
+   *
+   * The progress readout needs it. Answering the eight questions and
+   * correcting one of them are both `collecting` with one slot outstanding,
+   * and the count cannot tell them apart — so a reporter re-asked for the
+   * medicine was told "Question 8 of 8" above the second question in the
+   * script. A count of what is left is the wrong readout for a correction.
+   */
+  readonly reviewed: boolean;
 }
 
 const OPENING =
   "Tell me what happened, in your own words. Who is it about, what went wrong, and which medicine were they taking? You can write it however you like.";
 
-export function startConversation(): IntakeState {
+const CLOSING =
+  "That is everything I need. Nothing has been sent yet — below is what I found in the published information for that medicine, and exactly what I am about to file. Read it, change anything that is wrong, and send it when you are ready.";
+
+export function startConversation(prefill: IntakePrefill = {}): IntakeState {
   return {
     messages: [{ role: "assistant", text: OPENING, citations: [] }],
     slots: EMPTY_SLOTS,
+    prefill,
     pending: "narrative",
     phase: "collecting",
-    verdict: null,
+    reviewed: false,
   };
 }
 
@@ -363,6 +372,61 @@ const QUESTIONS: Readonly<Record<IntakeSlot, string>> = {
     "And an email address or phone number, in case a reviewer needs to ask you one more thing.",
 };
 
+/**
+ * One phrase per criterion, in words `extractSeriousness` recognises.
+ *
+ * The canonical list, exported, because there are now two places that need to
+ * turn a criterion back into something a reporter could have typed: the quick
+ * answer chips and the prefill below. Two copies of these strings would be two
+ * chances for a phrase to stop matching the regex it is meant to trip, and the
+ * failure would be silent — a tapped chip that fills nothing.
+ */
+export const SERIOUSNESS_PHRASES: Readonly<
+  Record<SeriousnessCriterion, string>
+> = {
+  death: "they died",
+  life_threatening: "their life was in danger",
+  hospitalisation: "they went into hospital",
+  persistent_disability: "they were left with a lasting disability",
+  congenital_anomaly: "a baby was born with a birth defect",
+  other_medically_important: "it was serious",
+};
+
+/** What "none of those" is, in the one place both the chips and prefill read. */
+export const NO_SERIOUSNESS = "none of those";
+
+/**
+ * Answers another page already holds, as suggested reply text.
+ *
+ * Every value here is round-tripped through this module's own parsers when the
+ * reporter accepts it, so a suggestion that would not parse is a bug this
+ * function is responsible for — which is why the seriousness phrases come from
+ * the map above rather than being written out again.
+ */
+export function prefillFromSlots(slots: IntakeSlots): IntakePrefill {
+  const prefill: Record<string, string> = {};
+  if (slots.narrative !== null) prefill["narrative"] = slots.narrative;
+  if (slots.drug !== null) prefill["drug"] = slots.drug;
+  if (slots.reaction !== null) prefill["reaction"] = slots.reaction;
+  if (slots.age !== null) prefill["age"] = String(slots.age);
+  if (slots.sex !== null) {
+    prefill["sex"] = slots.sex === "unknown" ? "prefer not to say" : slots.sex;
+  }
+  if (slots.seriousness !== null) {
+    prefill["seriousness"] =
+      slots.seriousness.length === 0
+        ? NO_SERIOUSNESS
+        : slots.seriousness
+            .map((criterion) => SERIOUSNESS_PHRASES[criterion])
+            .join(", and ");
+  }
+  if (slots.reporterName !== null) prefill["reporterName"] = slots.reporterName;
+  if (slots.reporterContact !== null) {
+    prefill["reporterContact"] = slots.reporterContact;
+  }
+  return prefill;
+}
+
 function nextMissing(slots: IntakeSlots): IntakeSlot | null {
   for (const slot of ORDER) {
     if (slot === "seriousness") {
@@ -375,164 +439,14 @@ function nextMissing(slots: IntakeSlots): IntakeSlot | null {
 }
 
 // ---------------------------------------------------------------------------
-// Verdict
-// ---------------------------------------------------------------------------
-
-/**
- * Who is going to read the answer.
- *
- * This is not a preference, it is a confidentiality boundary. The public
- * intake chat has no login by design — anyone can open it. The company
- * library holds CCDS and Investigator's Brochure text, which CLAUDE.md is
- * explicit are confidential. Quoting a CCDS passage back to an anonymous
- * member of the public would be a disclosure incident dressed up as a helpful
- * answer, and it is exactly the mistake a naive "search everything and show
- * what you find" implementation makes.
- *
- * So the audience is a required argument rather than an option with a default.
- * Every call site has to say who is asking.
- */
-export type Audience = "public" | "reviewer";
-
-/**
- * Search the ingested documents for the reported reaction.
- *
- * Company and public namespaces are searched separately and never merged: a
- * citation must state which it came from, and the two answer different
- * questions — listedness and expectedness.
- */
-export function assessAgainstDocuments(
-  slots: IntakeSlots,
-  corpus: readonly DocumentChunk[],
-  audience: Audience,
-  /**
-   * Documents held for the medicine the reporter named. Retrieval never leaves
-   * this set; an empty set means nothing is quoted.
-   */
-  scope: ReadonlySet<DocumentId> | null = null,
-): IntakeVerdict {
-  /*
-    The query is the reaction, and the corpus is scoped to the product.
-
-    Both halves used to be wrong together and the effect was worse than either.
-    The drug name went into the query as a term, so a chunk matching only the
-    medicine's own name scored a hit; and the corpus was every document in the
-    library, so that hit could come from a different product entirely. A
-    reporter describing a novel reaction to Covaxil could therefore be told
-    their reaction "does appear in the published information" — on the strength
-    of a Hepalex label passage that matched the word "Covaxil" nowhere and
-    their symptom nowhere either.
-
-    Telling a member of the public their reaction is already known is the one
-    thing this screen must not get wrong: it is the answer most likely to make
-    somebody decide not to bother.
-  */
-  const query = slots.reaction ?? "";
-  if (query.trim().length === 0) {
-    return {
-      alreadyDescribed: false,
-      consulted: false,
-      companyCitations: [],
-      publicCitations: [],
-    };
-  }
-
-  const inScope =
-    scope === null ? corpus : corpus.filter((c) => scope.has(c.documentId));
-  // Same floor, same reasoning, one definition — see thresholds.ts. The
-  // safeguard on this path is not the threshold: it is that the reporter is
-  // shown the passage and can see for themselves what it says.
-  const options = { limit: 2, minScore: MATCHED_ANY_TERM } as const;
-
-  // The public namespace is readable by anyone; the FDA label is on the web.
-  const publicHits = lexicalSearch(inScope, query, {
-    ...options,
-    sourceType: "public",
-  });
-
-  // The company namespace is searched ONLY for a signed-in reviewer.
-  const company =
-    audience === "reviewer"
-      ? lexicalSearch(inScope, query, { ...options, sourceType: "company" })
-      : [];
-
-  return {
-    alreadyDescribed: company.length > 0 || publicHits.length > 0,
-    // Whether any document was available to search, which is a different
-    // question from whether the search matched.
-    consulted: inScope.length > 0,
-    companyCitations: company.map(toCitation),
-    publicCitations: publicHits.map(toCitation),
-  };
-}
-
-function composeVerdict(verdict: IntakeVerdict, slots: IntakeSlots): IntakeMessage[] {
-  const citations = [...verdict.companyCitations, ...verdict.publicCitations];
-
-  /*
-    Nothing was consulted, so nothing may be claimed about what a label says.
-
-    Not published information "we searched and it is silent" — we hold no
-    published information for this medicine at all. Vaccines are the case that
-    made this visible: openFDA's drug label dataset carries none of them, so a
-    reporter naming a COVID vaccine was told their reaction is not in the
-    published information for it, on the strength of a search over an empty
-    set.
-  */
-  if (!verdict.consulted) {
-    return [
-      {
-        role: "assistant",
-        citations: [],
-        text:
-          `Thank you. I looked for the published information for ${slots.drug ?? "this medicine"} and could not find any, so there was nothing for me to check your report against. ` +
-          "That is a gap in what I can see, not a finding about what happened to you — a safety reviewer will read this and can check sources I do not have. I am submitting it for review now.",
-      },
-    ];
-  }
-
-  if (!verdict.alreadyDescribed) {
-    return [
-      {
-        role: "assistant",
-        citations: [],
-        text:
-          `Thank you. I could not find ${slots.reaction ?? "this reaction"} in the published information for ${slots.drug ?? "this medicine"}. ` +
-          "That does not mean it was not caused by the medicine — it means there is no existing record of it, which is exactly the kind of report a safety reviewer needs to see. I am submitting it for review now.",
-      },
-    ];
-  }
-
-  return [
-    {
-      role: "assistant",
-      citations,
-      text:
-        `Thank you. ${slots.reaction ?? "This reaction"} does appear in the published information for ${slots.drug ?? "this medicine"}. Here is the passage I found:`,
-    },
-    {
-      role: "assistant",
-      citations: [],
-      text:
-        "That does not close your report. A reviewer still reads every one, and a known reaction can still matter — how severe it was, and how often it is happening. I am submitting it for review now.",
-    },
-  ];
-}
-
-// ---------------------------------------------------------------------------
 // The machine
 // ---------------------------------------------------------------------------
 
 export interface AdvanceInput {
   readonly state: IntakeState;
   readonly reply: string;
-  readonly corpus: readonly DocumentChunk[];
   /** Substance and brand names already in the library, for drug matching. */
   readonly knownProducts: readonly string[];
-  /** Documents held for the named medicine. Null means the whole corpus. */
-  readonly scope?: ReadonlySet<DocumentId> | null | undefined;
-  /** Who is reading. Decides whether confidential documents may be quoted. */
-  readonly audience: Audience;
   /**
    * A verified model extraction of this message, when one was produced.
    *
@@ -546,14 +460,15 @@ export interface AdvanceInput {
 /**
  * Apply one reporter message and produce the next assistant turn.
  *
- * Pure. Given the same state, reply and corpus it always produces the same
- * next state, which is what makes the whole conversation testable without a
- * browser or a network.
+ * Pure, and now pure in a stronger sense than before: it takes no corpus, no
+ * scope and no audience, because it no longer searches anything. Given the
+ * same state and reply it always produces the same next state, which is what
+ * makes the whole conversation testable without a browser or a network.
  */
 export function advance(input: AdvanceInput): IntakeState {
-  const { state, reply, corpus, knownProducts, audience } = input;
+  const { state, reply, knownProducts } = input;
   const trimmed = reply.trim();
-  if (trimmed.length === 0 || state.phase === "complete") return state;
+  if (trimmed.length === 0 || state.phase !== "collecting") return state;
 
   const reporterMessage: IntakeMessage = {
     role: "reporter",
@@ -626,18 +541,57 @@ export function advance(input: AdvanceInput): IntakeState {
     };
   }
 
-  const verdict = assessAgainstDocuments(
-    slots,
-    corpus,
-    audience,
-    input.scope ?? null,
-  );
+  /*
+    Everything is collected, and nothing is written.
+
+    This branch used to compose a verdict AND the caller used to store the case
+    in the same turn — the reporter read "does appear in the published
+    information" and their reference number in one render, with the reply form
+    already gone. There was no step to drop out of, which is what made the
+    unread assertion tolerable. Now there is a step, so the assertion has to be
+    earned: the Server Action retrieves and hands the passages to a model
+    before anything is claimed, and the reporter presses send.
+  */
   return {
+    ...state,
     slots,
     pending: null,
-    phase: "complete",
-    verdict,
-    messages: [...state.messages, reporterMessage, ...composeVerdict(verdict, slots)],
+    phase: "review",
+    reviewed: true,
+    messages: [
+      ...state.messages,
+      reporterMessage,
+      { role: "assistant", text: CLOSING, citations: [] },
+    ],
+  };
+}
+
+/**
+ * Ask one question again, from the review screen.
+ *
+ * Returns to `collecting` with exactly one slot cleared, so `nextMissing`
+ * finds that slot and only that slot — answering it lands straight back in
+ * review. Clearing rather than leaving the old value in place is what makes
+ * the returned state honest: while the question stands unanswered, the record
+ * does not claim an answer.
+ */
+export function reopen(state: IntakeState, slot: IntakeSlot): IntakeState {
+  if (state.phase !== "review") return state;
+
+  const cleared: IntakeSlots =
+    slot === "narrative"
+      ? { ...state.slots, narrative: null }
+      : { ...state.slots, [slot]: null };
+
+  return {
+    ...state,
+    slots: cleared,
+    pending: slot,
+    phase: "collecting",
+    messages: [
+      ...state.messages,
+      { role: "assistant", text: QUESTIONS[slot], citations: [] },
+    ],
   };
 }
 
@@ -646,4 +600,16 @@ export function remainingSlots(slots: IntakeSlots): readonly IntakeSlot[] {
   return ORDER.filter((slot) =>
     slot === "seriousness" ? slots.seriousness === null : slots[slot] === null,
   );
+}
+
+/**
+ * The order the review lists answers in, and the only list of slots a caller
+ * outside this module should iterate. `narrative` first because it is what the
+ * reporter actually wrote; the rest as they were asked.
+ */
+export const REVIEW_ORDER: readonly IntakeSlot[] = ["narrative", ...ORDER];
+
+/** The question behind one slot, for a screen that offers to re-ask it. */
+export function questionFor(slot: IntakeSlot): string {
+  return QUESTIONS[slot];
 }

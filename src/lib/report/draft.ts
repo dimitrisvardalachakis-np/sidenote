@@ -213,3 +213,24 @@ export function slotsFromDraft(draft: ReportDraft): IntakeSlots {
     outcome: state === null ? null : (STATE_TO_OUTCOME[state] ?? null),
   };
 }
+
+/**
+ * The answers a saved draft may carry into a fresh conversation — or nothing.
+ *
+ * A SENT report carries nothing, and that is the whole of this function.
+ * `report-draft-store` deliberately exempts a submitted draft from its
+ * 24-hour expiry so that reloading the confirmation still shows the reference
+ * number; the consequence is that a report sent last week is still in
+ * localStorage today. Feeding it to a new conversation put a medicine nobody
+ * had named into a new report — "amoxil", against a narrative naming abacavir
+ * — and kept doing it, because nothing ever cleared it.
+ *
+ * The store cannot make this call: it holds the receipt on purpose. The
+ * crossing can, and this is where the crossing lives.
+ */
+export function slotsToCarry(saved: {
+  readonly draft: ReportDraft;
+  readonly submitted: unknown | null;
+}): IntakeSlots | null {
+  return saved.submitted === null ? slotsFromDraft(saved.draft) : null;
+}

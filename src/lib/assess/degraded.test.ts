@@ -81,9 +81,7 @@ describe("a report is still accepted and still structured", () => {
     state = advance({
       state,
       reply: REPORT,
-      corpus: SEED_CHUNKS,
       knownProducts: ["Hepalex"],
-      audience: "public",
       extraction: null, // what the disabled path supplies
     });
     expect(state.slots.narrative).toBe(REPORT);

@@ -2,8 +2,8 @@
 
 import { ChoiceQuestion, NumberQuestion } from "./questions";
 import { pronounsFor, type ReportAbout } from "@/lib/schemas/pronouns";
-import { isAnswered } from "@/lib/schemas/answer";
-import type { ReportDraft, Sex } from "@/lib/schemas/report";
+import { UNANSWERED, answered, isAnswered, type Answer } from "@/lib/schemas/answer";
+import { formatProblems, type ReportDraft, type Sex } from "@/lib/schemas/report";
 
 /**
  * Step 1. Who this is about.
@@ -27,6 +27,35 @@ export function StepAbout({
 }) {
   const about = isAnswered(draft.about) ? draft.about.value : null;
   const p = pronounsFor(about ?? "someone_else");
+  const problems = formatProblems(draft);
+  const ageProblem = problems.find((problem) => problem.field === "age");
+
+  /**
+   * Answering this answers step 5's "how are you involved?" too, so it is
+   * written here and step 5 does not ask again.
+   *
+   * They were two questions with the same first option, worded identically —
+   * "It happened to me" appeared on step 1 and again on step 5 — and a
+   * reporter reasonably read the second as the form having forgotten the
+   * first. They are two regulatory facts (who the patient is, who the reporter
+   * is) but for someone reporting their own reaction they are one answer, and
+   * asking for it twice is our bookkeeping leaking onto them.
+   *
+   * "Someone else" clears a role of `self` rather than leaving it standing:
+   * the answer that justified it has just been withdrawn, and step 5 will ask
+   * how they are connected instead.
+   */
+  const chooseAbout = (next: Answer<ReportAbout>) => {
+    if (isAnswered(next) && next.value === "self") {
+      update({ about: next, yourRole: answered("self") });
+      return;
+    }
+    const roleWasSelf =
+      isAnswered(draft.yourRole) && draft.yourRole.value === "self";
+    update(
+      roleWasSelf ? { about: next, yourRole: UNANSWERED } : { about: next },
+    );
+  };
 
   return (
     <div>
@@ -42,7 +71,7 @@ export function StepAbout({
           { value: "someone_else", label: "It happened to someone else" },
         ]}
         value={draft.about}
-        onChange={(next) => update({ about: next })}
+        onChange={chooseAbout}
         allowUnknown={false}
       />
 
@@ -58,6 +87,9 @@ export function StepAbout({
             hint="Your best guess is fine. Age in years."
             value={draft.age}
             onChange={(next) => update({ age: next })}
+            {...(ageProblem === undefined
+              ? {}
+              : { problem: ageProblem.message })}
           />
 
           <ChoiceQuestion<Sex>
