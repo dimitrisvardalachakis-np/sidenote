@@ -211,6 +211,20 @@ hr {
   border-top: 1px solid var(--rule);
 }
 
+/*
+  The modal scrim.
+
+  Written here as a literal rather than as a `backdrop:bg-ink/40` utility on
+  the dialog. `::backdrop` is not a descendant of the element that opens it and
+  its inheritance rules have changed more than once, so a token-derived colour
+  resolved to nothing — which rendered a white panel on a white page with only
+  its shadow to say it was modal. A dim is not a themed surface: the same scrim
+  is correct in both themes.
+*/
+dialog::backdrop {
+  background-color: rgba(16, 20, 24, 0.45);
+}
+
 /* A reviewer who has asked the OS to stop moving things gets no transitions.
    Nothing here animates by default anyway; this is a guard for later. */
 @media (prefers-reduced-motion: reduce) {
