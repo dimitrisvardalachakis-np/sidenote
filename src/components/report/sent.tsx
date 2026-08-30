@@ -33,7 +33,7 @@ export function SentConfirmation({
 
   return (
     <div>
-      <h2 className="text-title font-medium">Thank you. Your report is in.</h2>
+      <h2 className="text-h2 font-medium">Thank you. Your report is in.</h2>
       <p className="mt-2 text-prose">
         A trained person reads every report. You do not need to do anything
         else.

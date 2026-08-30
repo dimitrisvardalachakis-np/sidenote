@@ -1,55 +1,77 @@
 /* ==========================================================================
    SideNote design tokens
-   An instrument panel someone reads for eight hours. Dense, calm, legible.
-   Everything a component needs is here; nothing here is decorative.
+   A clinical instrument someone reads for eight hours. Calm, dense, legible —
+   and now layered: a --paper ground with white cards standing on it.
 
    Structure: the raw palette lives in plain custom properties so a theme can
    swap it, and @theme inline maps Tailwind's colour utilities onto those
    references rather than copying their values. That indirection is the whole
-   trick — `bg-paper` compiles to `background-color: var(--paper)`, so it
+   trick — `bg-surface` compiles to `background-color: var(--surface)`, so it
    re-resolves when the theme changes instead of being frozen at build time.
+
+   The earlier version of this file had no elevation and one radius of 2px,
+   and argued for both. That austerity flattened the distinction the product
+   exists to draw: a case where the two documents disagree looked exactly like
+   a case where they agree. There is a card layer now, and the shadows are
+   near-invisible on purpose — they separate planes, they do not decorate.
    ========================================================================== */
 
-/* --- Light: the six from CLAUDE.md, unchanged --------------------------- */
+/* --- Light --------------------------------------------------------------
+   Three grounds, not one. --paper is the page, --surface is what sits on it,
+   --surface-sunken is what is recessed into a surface (table headers, quoted
+   insets). Every component reads through these; nothing else names a colour. */
 
 :root {
   color-scheme: light;
 
-  --paper: #fafaf8; /* page */
-  --ink: #14171a; /* primary text */
-  --slate: #5b6570; /* secondary text, labels */
-  --rule: #e4e6e4; /* hairlines — the only divider, 1px */
-  --steady: #2f6b72; /* assessed, listed, resolved */
+  --paper: #f7f8f8; /* page */
+  --surface: #ffffff; /* cards, rails, panels — the reading plane */
+  --surface-sunken: #fbfcfc; /* recessed within a surface */
+  --ink: #101418; /* primary text */
+  --slate: #5a6672; /* secondary text, labels */
+  --slate-quiet: #69737c; /* the quietest text that is still text */
+  --rule: #e3e7ea; /* hairlines — the only divider, 1px */
+  --steady: #12666e; /* assessed, listed, resolved */
+  --steady-wash: #eaf2f2; /* the fill behind a steady state */
+  --steady-line: #8fbfc2; /* a steady edge, where a fill would be too loud */
   --signal: #b02a37; /* expedited or overdue. Nothing else. Ever. */
+  --signal-wash: #fbeaec;
 
-  /* Derived, so no component invents a hue. These reference --ink and --paper
-     rather than hard-coding a result, which means the dark theme gets correct
-     mixes for free by overriding only the six above. */
-  --row-hover: color-mix(in srgb, var(--ink) 3%, var(--paper));
-  --row-active: color-mix(in srgb, var(--ink) 6%, var(--paper));
-  --steady-wash: color-mix(in srgb, var(--steady) 10%, var(--paper));
-  --signal-wash: color-mix(in srgb, var(--signal) 10%, var(--paper));
-  --ink-muted: color-mix(in srgb, var(--ink) 55%, var(--paper));
+  /* Derived, so no component invents a hue. Rows sit on --surface now, not on
+     --paper, so the mixes are re-based onto it — a hover computed against the
+     page ground is invisible on a white card. */
+  --row-hover: color-mix(in srgb, var(--ink) 3%, var(--surface));
+  --row-active: color-mix(in srgb, var(--ink) 6%, var(--surface));
+  --ink-muted: color-mix(in srgb, var(--ink) 55%, var(--surface));
 }
 
 /* --- Dark ---------------------------------------------------------------
-   Not specified in CLAUDE.md, so this is derived rather than given, and every
-   pair is checked against the background: ink 14.7:1, slate 6.8:1,
-   steady 7.0:1, signal 5.2:1 — all past the 4.5:1 body-text bar.
+   Derived, not inverted, and every pair checked against the ground it sits
+   on: ink 15.0:1 on surface, slate 7.9:1, slate-quiet 5.0:1, steady 6.3:1,
+   signal 5.1:1 — all past the 4.5:1 body-text bar.
 
-   The teal and the red are lifted, not just inverted. #2F6B72 on a dark
+   The teal and the red are lifted rather than flipped. #12666E on a dark
    ground reads as a smudge; #B02A37 reads as brown. A palette that is
-   literally inverted is a palette that was never checked.               */
+   literally inverted is a palette that was never checked. --surface-sunken
+   goes DARKER than --surface here, because recession is away from the light
+   in both themes and simply mirroring the light values would make it read as
+   raised.                                                                  */
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --paper: #15181a;
-    --ink: #e8eae7;
-    --slate: #98a1a9;
-    --rule: #2b3033;
-    --steady: #63aeb5;
+    --paper: #0d1215;
+    --surface: #121a1e;
+    --surface-sunken: #0e161a;
+    --ink: #e9edee;
+    --slate: #a3b0b6;
+    --slate-quiet: #7d8a92;
+    --rule: #232c31;
+    --steady: #4fa8b0;
+    --steady-wash: #12262a;
+    --steady-line: #2f5f65;
     --signal: #e0616d;
+    --signal-wash: #2a1418;
   }
 }
 
@@ -58,12 +80,18 @@
    reviewer who deliberately picked light. */
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --paper: #15181a;
-  --ink: #e8eae7;
-  --slate: #98a1a9;
-  --rule: #2b3033;
-  --steady: #63aeb5;
+  --paper: #0d1215;
+  --surface: #121a1e;
+  --surface-sunken: #0e161a;
+  --ink: #e9edee;
+  --slate: #a3b0b6;
+  --slate-quiet: #7d8a92;
+  --rule: #232c31;
+  --steady: #4fa8b0;
+  --steady-wash: #12262a;
+  --steady-line: #2f5f65;
   --signal: #e0616d;
+  --signal-wash: #2a1418;
 }
 
 /* --- Tailwind mapping ---------------------------------------------------
@@ -71,15 +99,19 @@
 
 @theme inline {
   --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-sunken: var(--surface-sunken);
   --color-ink: var(--ink);
   --color-slate: var(--slate);
+  --color-slate-quiet: var(--slate-quiet);
   --color-rule: var(--rule);
   --color-steady: var(--steady);
+  --color-steady-wash: var(--steady-wash);
+  --color-steady-line: var(--steady-line);
   --color-signal: var(--signal);
+  --color-signal-wash: var(--signal-wash);
   --color-row-hover: var(--row-hover);
   --color-row-active: var(--row-active);
-  --color-steady-wash: var(--steady-wash);
-  --color-signal-wash: var(--signal-wash);
   --color-ink-muted: var(--ink-muted);
 }
 
@@ -89,39 +121,66 @@
    utility happens to reference, and a token file that only sometimes defines
    its tokens is not a contract.
 
-   Base is 14px, not 16px. A queue row set at 16px is roughly 15% taller,
-   which costs two or three cases per screen — and the reviewer's job is
-   scanning a list, so the density belongs where the data is.             */
+   TWO SCALES, ONE FILE. A reviewer scanning sixteen rows and a frightened
+   person reading a paragraph want opposite things, and one compromise size
+   served neither. Reviewer surfaces stay at 14px and below; public reading
+   surfaces start at 15px and run to 16.5px prose.
+
+   MONO IS LOAD-BEARING. Every number, reference, chunk id, timestamp and
+   micro-label is monospace; prose never is. The one deliberate exception is
+   the quoted span inside a generated narrative, which is mono because that
+   block uses typeface to separate what a model wrote from what a document
+   says — see narrative.tsx.                                               */
 
 @theme static {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
 
-  --text-micro: 0.6875rem; /* 11px — column labels, uppercase, tracked */
-  --text-micro--line-height: 1.3;
-  --text-meta: 0.75rem; /*  12px — timestamps, ids, secondary detail */
-  --text-meta--line-height: 1.4;
-  --text-base: 0.875rem; /*  14px — the workhorse: rows, fields, labels */
+  --text-micro: 0.625rem; /*    10px — column and field labels, mono, tracked */
+  --text-micro--line-height: 1.4;
+  --text-meta: 0.78125rem; /* 12.5px — timestamps, ids, secondary detail */
+  --text-meta--line-height: 1.45;
+  --text-base: 0.875rem; /*     14px — the workhorse: rows, fields, labels */
   --text-base--line-height: 1.45;
-  --text-prose: 0.9375rem; /* 15px — narrative only, where you read sentences */
+  --text-quote: 0.90625rem; /* 14.5px — a document quotation on a dense screen */
+  --text-quote--line-height: 1.65;
+  --text-body: 0.9375rem; /*    15px — public body copy */
+  --text-body--line-height: 1.55;
+  --text-prose: 1.03125rem; /* 16.5px — public lede and narrative */
   --text-prose--line-height: 1.6;
-  --text-title: 1.125rem; /* 18px — panel and screen headings */
-  --text-title--line-height: 1.3;
-  --text-figure: 1.75rem; /*  28px — one number per screen, e.g. days remaining */
+  --text-h2: 1.125rem; /*       18px — panel headings */
+  --text-h2--line-height: 1.35;
+  --text-h1: 1.625rem; /*       26px — screen titles */
+  --text-h1--line-height: 1.2;
+  --text-h1--letter-spacing: -0.02em;
+  --text-hero: 1.875rem; /*     30px — public page titles */
+  --text-hero--line-height: 1.2;
+  --text-hero--letter-spacing: -0.025em;
+  --text-display: 2.5rem; /*    40px — the landing question, once */
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.025em;
+  --text-figure: 1.375rem; /*   22px — mono: the clock, one per screen */
   --text-figure--line-height: 1.1;
+  --text-figure-lg: 2.125rem; /* 34px — mono: the reference number, once */
+  --text-figure-lg--line-height: 1.1;
 
-  --tracking-label: 0.06em; /* only for --text-micro uppercase labels */
+  --tracking-label: 0.1em; /* only for --text-micro uppercase labels */
 
   /* 4px base. Tailwind's numeric utilities read straight off this, so p-2 is
      8px. Sanctioned steps are 1, 2, 3, 4, 6, 8 and 12 (to 48px); anything
      else is drift. Dense UI lives almost entirely in 1–4. */
   --spacing: 0.25rem;
 
-  /* One divider weight, one radius, no elevation. There are deliberately no
-     shadow tokens: a shadow is a gradient with extra steps, and CLAUDE.md
-     rules both out. */
-  --radius-sharp: 0px; /* rows, cells, rails */
-  --radius-soft: 2px; /* inputs, buttons, badges — the most we ever round */
+  /* One divider weight, three radii, two elevations — and the elevations are
+     deliberately near the floor of what is perceptible. A card is separated
+     from the page by its ground and its edge; the shadow only stops the two
+     whites from welding together. */
+  --radius-soft: 8px; /* inputs, buttons, chips */
+  --radius-card: 12px; /* panels and cards */
+  --radius-pill: 999px; /* status pills */
+
+  --shadow-card: 0 1px 2px rgba(16, 20, 24, 0.04);
+  --shadow-float: 0 6px 24px rgba(16, 20, 24, 0.06);
 }
 
 /* --- Base ---------------------------------------------------------------

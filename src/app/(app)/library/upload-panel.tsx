@@ -45,7 +45,7 @@ type Phase =
 
 function fieldClass(invalid: boolean): string {
   return [
-    "mt-1 w-full rounded-soft border bg-paper px-2 py-1.5 text-base",
+    "mt-1 w-full rounded-soft border bg-surface px-2 py-1.5 text-base",
     invalid ? "border-ink" : "border-rule",
   ].join(" ");
 }

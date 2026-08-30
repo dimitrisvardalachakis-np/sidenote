@@ -73,9 +73,9 @@ export function SourceDialog({
           case. Reset here rather than at each call site, so the dialog is
           correct wherever it is placed.
         */
-        className="m-auto max-h-[85vh] w-[min(72ch,92vw)] overflow-y-auto rounded-soft border border-rule bg-paper p-0 text-ink normal-case tracking-normal backdrop:bg-ink/40"
+        className="m-auto max-h-[85vh] w-[min(72ch,92vw)] overflow-y-auto rounded-soft border border-rule bg-surface p-0 text-ink normal-case tracking-normal backdrop:bg-ink/40"
       >
-        <div className="sticky top-0 flex items-baseline justify-between gap-3 border-b border-rule bg-paper px-4 py-2">
+        <div className="sticky top-0 flex items-baseline justify-between gap-3 border-b border-rule bg-surface px-4 py-2">
           <p id={titleId} className="min-w-0 text-micro uppercase tracking-label text-slate">
             Source passage
           </p>

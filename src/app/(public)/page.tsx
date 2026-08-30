@@ -21,7 +21,7 @@ import { signIn } from "@/app/session-actions";
 export default function LandingPage() {
   return (
     <main className="mx-auto w-full max-w-[70ch] px-4 py-10">
-      <h1 className="text-title font-medium">SideNote</h1>
+      <h1 className="text-h1 font-medium">SideNote</h1>
       <p className="mt-1 text-meta uppercase tracking-label text-slate">
         Drug safety case triage
       </p>

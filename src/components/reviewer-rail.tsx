@@ -66,7 +66,7 @@ export function ReviewerRail({
   return (
     <nav
       aria-label="Reviewer"
-      className="shrink-0 border-b border-rule bg-paper lg:w-[236px] lg:border-r lg:border-b-0"
+      className="shrink-0 border-b border-rule bg-surface lg:w-[236px] lg:border-r lg:border-b-0"
     >
       <div className="flex flex-col lg:sticky lg:top-0 lg:max-h-screen lg:overflow-y-auto">
         <div className="flex items-center justify-between gap-2 border-rule px-3 py-2 lg:block lg:border-b lg:py-3">
@@ -194,7 +194,7 @@ export function ReviewerRail({
                 key={reviewerId}
                 defaultValue={reviewerId}
                 onChange={(e) => e.currentTarget.form?.requestSubmit()}
-                className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+                className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
               >
                 {reviewers.map((reviewer) => (
                   <option key={reviewer.id} value={reviewer.id}>

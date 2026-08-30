@@ -274,7 +274,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
             </div>
 
             <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h1 className="text-title font-medium">
+              <h1 className="text-h1 font-medium">
                 {record.reactions[0]?.verbatimTerm ?? "No reaction recorded"}
                 <span className="ml-2 text-base font-normal text-slate">
                   {record.drugs[0]?.reportedName ?? "no drug recorded"}

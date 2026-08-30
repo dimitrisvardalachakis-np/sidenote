@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 export default function ReportPage() {
   return (
     <main className="mx-auto w-full max-w-[62ch] px-4 py-8">
-      <h1 className="text-title font-medium">Report a side effect</h1>
+      <h1 className="text-hero font-medium">Report a side effect</h1>
       <p className="mt-2 text-prose">
         Tell us what happened after someone took a medicine.
       </p>

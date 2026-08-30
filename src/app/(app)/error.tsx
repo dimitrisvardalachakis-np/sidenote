@@ -35,7 +35,7 @@ export default function AppError({
 
   return (
     <div className="mx-auto w-full max-w-[68ch] px-4 py-10">
-      <h1 className="text-title font-medium">This screen could not load</h1>
+      <h1 className="text-h1 font-medium">This screen could not load</h1>
       <p className="mt-2 text-prose text-slate">
         Nothing was saved or changed. The case is untouched.
       </p>

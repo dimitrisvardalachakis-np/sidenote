@@ -239,7 +239,7 @@ export function ChatPanel() {
               rows={2}
               autoComplete="off"
               placeholder="Type here…"
-              className="min-w-0 flex-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-prose focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+              className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-prose focus:outline-2 focus:outline-offset-1 focus:outline-steady"
             />
             <input type="hidden" name="known" value={carried} />
             <button

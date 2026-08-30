@@ -84,7 +84,7 @@ export function QueueSearch({
           data-primary-search="queue"
           defaultValue={defaultValue}
           placeholder="Reference, reaction, drug or reporter"
-          className="min-w-0 flex-1 rounded-soft border border-rule bg-paper px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+          className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
         />
         <button
           type="submit"

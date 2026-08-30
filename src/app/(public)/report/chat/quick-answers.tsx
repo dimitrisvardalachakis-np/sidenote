@@ -186,7 +186,7 @@ function AgeEntry({
           }
         }}
         placeholder="years"
-        className="w-20 rounded-soft border border-rule bg-paper px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+        className="w-20 rounded-soft border border-rule bg-surface px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
       />
       <Chip disabled={disabled || value.trim().length === 0} onClick={send}>
         Use this

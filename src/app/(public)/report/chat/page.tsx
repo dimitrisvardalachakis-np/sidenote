@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 export default function ChatIntakePage() {
   return (
     <main className="mx-auto w-full max-w-[70ch] px-4 py-8">
-      <h1 className="text-title font-medium">Report by chat</h1>
+      <h1 className="text-hero font-medium">Report by chat</h1>
       <p className="mt-2 text-prose text-slate">
         Describe what happened in your own words. We will ask for anything else
         we need, one question at a time.

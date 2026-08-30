@@ -92,7 +92,7 @@ export function JumpToCase() {
         autoComplete="off"
         placeholder="SN-2026-000104"
         aria-describedby="jump-hint"
-        className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+        className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
       />
       <p id="jump-hint" className="mt-1 text-micro text-slate">
         Reference or number. Press <kbd className="font-mono">/</kbd> to focus.

@@ -175,7 +175,7 @@ export function NumberQuestion({
           const parsed = Number(raw);
           onChange(Number.isFinite(parsed) ? answered(parsed) : UNANSWERED);
         }}
-        className="mt-2 w-32 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+        className="mt-2 w-32 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
       />
 
       <label className="mt-2 flex w-fit cursor-pointer items-center gap-2">
@@ -251,7 +251,7 @@ export function TextQuestion({
     placeholder,
     "aria-describedby": hint === undefined ? undefined : hintId,
     className:
-      "mt-2 w-full rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50",
+      "mt-2 w-full rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50",
   };
 
   return (
@@ -402,7 +402,7 @@ export function DateQuestion({
             disabled={unknown}
             value={year}
             onChange={(event) => rebuild(event.target.value, month, day)}
-            className="mt-1 w-24 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+            className="mt-1 w-24 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
           />
         </div>
 
@@ -416,7 +416,7 @@ export function DateQuestion({
             title={year === "" ? "Give the year first" : undefined}
             value={month}
             onChange={(event) => rebuild(year, event.target.value, day)}
-            className="mt-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
+            className="mt-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
           >
             <option value="">Not sure</option>
             {MONTH_NAMES.map((name, index) => (
@@ -437,7 +437,7 @@ export function DateQuestion({
             title={month === "" ? "Choose a month first" : undefined}
             value={day}
             onChange={(event) => rebuild(year, month, event.target.value)}
-            className="mt-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
+            className="mt-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
           >
             <option value="">Not sure</option>
             {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0")).map(

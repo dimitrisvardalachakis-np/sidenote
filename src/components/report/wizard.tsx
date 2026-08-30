@@ -147,7 +147,7 @@ export function ReportWizard() {
         <h2
           id="step-heading"
           tabIndex={-1}
-          className="text-title font-medium focus:outline-2 focus:outline-offset-2 focus:outline-steady"
+          className="text-h2 font-medium focus:outline-2 focus:outline-offset-2 focus:outline-steady"
         >
           {STEP_TITLES[stepId]}
           {OPTIONAL_STEPS[stepId] && (

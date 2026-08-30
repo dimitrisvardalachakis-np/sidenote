@@ -126,7 +126,7 @@ export function RulingForm({
           value={rationale}
           onChange={(e) => setRationale(e.target.value)}
           placeholder="Which passage decided it, and what the other source said."
-          className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+          className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
         />
 
         {/*

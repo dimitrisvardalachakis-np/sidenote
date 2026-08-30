@@ -82,7 +82,7 @@ export default async function LibraryPage({
 
   return (
     <main className="mx-auto w-full max-w-[1100px] flex-1 px-4 py-6">
-      <h1 className="text-title font-medium">Library</h1>
+      <h1 className="text-h1 font-medium">Library</h1>
       <p className="mt-1 text-meta text-slate">
         Company safety documents and public labels, kept separate.
       </p>
@@ -101,7 +101,7 @@ export default async function LibraryPage({
             type="search"
             defaultValue={query}
             placeholder="Title or active substance"
-            className="min-w-0 flex-1 rounded-soft border border-rule bg-paper px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+            className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-2 py-1 text-meta focus:outline-2 focus:outline-offset-1 focus:outline-steady"
           />
           <button
             type="submit"

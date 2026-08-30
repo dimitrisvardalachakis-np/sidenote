@@ -75,7 +75,7 @@ export default async function DocumentPage({
         </ol>
       </nav>
 
-      <h1 className="mt-1 text-title font-medium">{document.title}</h1>
+      <h1 className="mt-1 text-h1 font-medium">{document.title}</h1>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-rule py-3 sm:grid-cols-4">
         <Fact label="Kind">{DOCUMENT_KIND_LABELS[document.kind]}</Fact>

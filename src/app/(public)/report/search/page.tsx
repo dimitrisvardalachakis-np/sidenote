@@ -135,7 +135,7 @@ export default async function SearchPage({
 
   return (
     <main className="mx-auto w-full max-w-[70ch] px-4 py-8">
-      <h1 className="text-title font-medium">Search known effects</h1>
+      <h1 className="text-hero font-medium">Search known effects</h1>
       <p className="mt-2 text-prose text-slate">
         Look up whether a side effect is already described in a medicine&rsquo;s
         published information.
@@ -155,7 +155,7 @@ export default async function SearchPage({
           type="search"
           defaultValue={drug}
           placeholder="atorvastatin"
-          className="mt-1 w-full rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+          className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
         />
 
         <label htmlFor="q" className="mt-4 block text-base font-medium">
@@ -168,7 +168,7 @@ export default async function SearchPage({
             type="search"
             defaultValue={query}
             placeholder="my muscles ached all over"
-            className="min-w-0 flex-1 rounded-soft border border-rule bg-paper px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+            className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
           />
           <button
             type="submit"

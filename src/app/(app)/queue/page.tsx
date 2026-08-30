@@ -134,7 +134,7 @@ export default async function QueuePage({
   return (
     <main className="mx-auto w-full max-w-[1600px] flex-1 px-4 py-6">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="text-title font-medium">Queue</h1>
+        <h1 className="text-h1 font-medium">Queue</h1>
         <p className="text-meta text-slate">{session.displayName}</p>
       </div>
 
