@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { IdempotentForm } from "@/components/idempotent-form";
 import {
   EXPEDITED_WINDOW_DAYS,
   type ExpectednessDetermination,
@@ -86,7 +87,7 @@ export function RulingForm({
   const unlisted = listedness === "unlisted";
 
   return (
-    <form
+    <IdempotentForm
       action={submit}
       className="rounded-card border border-rule bg-surface p-5 shadow-card"
     >
@@ -219,7 +220,7 @@ export function RulingForm({
           </span>
         </p>
       )}
-    </form>
+    </IdempotentForm>
   );
 }
 

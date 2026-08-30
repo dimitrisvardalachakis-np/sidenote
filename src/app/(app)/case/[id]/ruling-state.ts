@@ -24,3 +24,4 @@ export const INITIAL_CLAIM_STATE: ClaimActionState = {
   status: "idle",
   message: null,
 };
+export const IDEMPOTENCY_FIELD = "idempotencyKey";

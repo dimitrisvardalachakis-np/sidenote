@@ -148,6 +148,69 @@ describe("the stand-in", () => {
   });
 });
 
+describe("idempotency keys", () => {
+  /*
+    The case the Durable Object does NOT already solve.
+
+    Serialisation stops two reviewers ruling at once. It does not stop one
+    reviewer's request arriving twice — a double-click, a browser retry, a
+    Server Action replayed after a timeout the client saw and the server did
+    not. Those get ordered, not merged.
+  */
+  it("collapses a replayed ruling instead of recording it twice", async () => {
+    const c = await getCaseCoordination();
+    const id = "case-idem-ruling";
+    await c.claim(id, ALICE.id, ALICE.name);
+
+    const key = "ruling-attempt-1";
+    const first = await c.rule(id, ruling(ALICE.id), key);
+    const replay = await c.rule(id, ruling(ALICE.id), key);
+
+    expect(first.ok).toBe(true);
+    // Not merely "also ok" — the SAME result object, because the second call
+    // must not have re-run the mutation at all.
+    expect(replay).toEqual(first);
+  });
+
+  it("collapses a double-clicked claim", async () => {
+    const c = await getCaseCoordination();
+    const id = "case-idem-claim";
+
+    const key = "claim-attempt-1";
+    const first = await c.claim(id, ALICE.id, ALICE.name, key);
+    const replay = await c.claim(id, ALICE.id, ALICE.name, key);
+
+    expect(first.kind).toBe("granted");
+    // Without the key this would come back "already_yours" with a moved
+    // expiry. A replay is not a second intent and must not read as one.
+    expect(replay).toEqual(first);
+  });
+
+  it("treats a different key as a different intent", async () => {
+    const c = await getCaseCoordination();
+    const id = "case-idem-distinct";
+
+    const first = await c.claim(id, ALICE.id, ALICE.name, "press-1");
+    const second = await c.claim(id, ALICE.id, ALICE.name, "press-2");
+
+    expect(first.kind).toBe("granted");
+    // A genuine second press, deliberately made: it extends rather than
+    // replays, which is what re-claiming your own case is supposed to do.
+    expect(second.kind).toBe("already_yours");
+  });
+
+  it("still refuses a second reviewer, key or no key", async () => {
+    const c = await getCaseCoordination();
+    const id = "case-idem-contested";
+
+    await c.claim(id, ALICE.id, ALICE.name, "alice-press");
+    const bob = await c.claim(id, BOB.id, BOB.name, "bob-press");
+
+    // The guarantee the whole class exists for is not weakened by any of this.
+    expect(bob.kind).toBe("held_by_other");
+  });
+});
+
 describe("minting references", () => {
   it("never returns the same number twice", async () => {
     const c = await getCaseCoordination();

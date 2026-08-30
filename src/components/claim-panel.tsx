@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { IdempotentForm } from "@/components/idempotent-form";
 import type { CaseClaim } from "@/lib/case/claim";
 import {
   INITIAL_CLAIM_STATE,
@@ -30,8 +31,14 @@ export function ClaimPanel({
 }: {
   claim: CaseClaim | null;
   reviewerId: string;
-  claimAction: (state: ClaimActionState) => Promise<ClaimActionState>;
-  releaseAction: (state: ClaimActionState) => Promise<ClaimActionState>;
+  claimAction: (
+    state: ClaimActionState,
+    formData: FormData,
+  ) => Promise<ClaimActionState>;
+  releaseAction: (
+    state: ClaimActionState,
+    formData: FormData,
+  ) => Promise<ClaimActionState>;
 }) {
   const [claimState, submitClaim, claiming] = useActionState(
     claimAction,
@@ -79,7 +86,7 @@ export function ClaimPanel({
             {timeOf(claim.heldSince)}
           </span>
         </p>
-        <form action={submitRelease}>
+        <IdempotentForm action={submitRelease}>
           <button
             type="submit"
             disabled={releasing}
@@ -87,13 +94,16 @@ export function ClaimPanel({
           >
             {releasing ? "Releasing…" : "Release"}
           </button>
-        </form>
+        </IdempotentForm>
       </div>
     );
   }
 
   return (
-    <form action={submitClaim} className="flex flex-wrap items-center gap-3">
+    <IdempotentForm
+      action={submitClaim}
+      className="flex flex-wrap items-center gap-3"
+    >
       <button
         type="submit"
         disabled={claiming}
@@ -105,7 +115,7 @@ export function ClaimPanel({
         Nobody has this case. Claiming it lets you record a ruling and tells
         your colleagues you are on it.
       </p>
-    </form>
+    </IdempotentForm>
   );
 }
 

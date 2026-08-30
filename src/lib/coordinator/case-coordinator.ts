@@ -46,6 +46,43 @@ const STORAGE_KEY = {
   clock: "clock",
 } as const;
 
+/**
+ * IDEMPOTENCY, AND WHY A SERIALISED OBJECT STILL NEEDS IT.
+ *
+ * The Durable Object already stops two reviewers claiming at once — that is
+ * what it is for. What it does not stop is the SAME reviewer's request
+ * arriving twice: a double-click, a browser retry on a flaky connection, a
+ * Server Action replayed after a timeout the client saw and the server did
+ * not. Serialisation orders those two; it does not merge them.
+ *
+ * Mostly that is harmless here, because claim and rule are close to
+ * idempotent by construction. `rule` is the one that is not: a reviewer who
+ * double-submits a ruling gets two audit lines, two `rule_case` records, and a
+ * regulatory trail that says a determination was made twice at different
+ * instants. In a system whose whole pitch is that every decision is logged, a
+ * duplicated decision is a defect in the log, not a cosmetic one.
+ *
+ * So every mutating method takes a key, the first result under that key is
+ * stored, and a replay returns it verbatim — without re-running the mutation
+ * and without emitting a second audit line.
+ */
+const IDEMPOTENCY_PREFIX = "idem:";
+
+/**
+ * How long a key is honoured.
+ *
+ * Long enough to cover a retry, a reload and a reviewer coming back from a
+ * broken connection; short enough that the object's storage does not grow
+ * without bound. Swept by an alarm rather than on read, so a key that is never
+ * asked about again is still collected.
+ */
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+interface StoredResult<T> {
+  readonly result: T;
+  readonly storedAt: number;
+}
+
 /** What the alarm was armed for, so a fired alarm can explain itself. */
 interface ArmedClock {
   readonly caseId: string;
@@ -68,6 +105,54 @@ export interface RuleOutcome {
 }
 
 export class CaseCoordinator extends DurableObject<CloudflareEnv> {
+  /**
+   * Run `work` once per key, or return what it returned the first time.
+   *
+   * `key` is optional so that a caller with nothing to be idempotent about —
+   * a read, a sweep — is not forced to invent one. Passing null runs the work
+   * every time, which is the old behaviour and is correct for those.
+   *
+   * The stored result is written BEFORE returning, inside the same
+   * single-threaded turn as the mutation, so there is no window in which the
+   * work has happened and the key does not yet record it.
+   */
+  async #once<T>(key: string | null, work: () => Promise<T>): Promise<T> {
+    if (key === null || key === "") return work();
+
+    const slot = `${IDEMPOTENCY_PREFIX}${key}`;
+    const seen = await this.ctx.storage.get<StoredResult<T>>(slot);
+    if (seen !== undefined) return seen.result;
+
+    const result = await work();
+    await this.ctx.storage.put(slot, {
+      result,
+      storedAt: Date.now(),
+    } satisfies StoredResult<T>);
+
+    // The sweep needs an alarm to exist. Only set one if nothing else has —
+    // the expedited clock's alarm is the other user of this slot and it is far
+    // more important, so it always wins.
+    const alarm = await this.ctx.storage.getAlarm();
+    if (alarm === null) {
+      await this.ctx.storage.setAlarm(Date.now() + IDEMPOTENCY_TTL_MS);
+    }
+
+    return result;
+  }
+
+  /** Drop keys past their window. Called from the alarm. */
+  async #sweepIdempotencyKeys(): Promise<number> {
+    const entries = await this.ctx.storage.list<StoredResult<unknown>>({
+      prefix: IDEMPOTENCY_PREFIX,
+    });
+    const cutoff = Date.now() - IDEMPOTENCY_TTL_MS;
+    const stale = [...entries]
+      .filter(([, value]) => value.storedAt < cutoff)
+      .map(([slot]) => slot);
+    if (stale.length > 0) await this.ctx.storage.delete(stale);
+    return stale.length;
+  }
+
   /**
    * The live claim, or null.
    *
@@ -108,40 +193,43 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     reviewerId: string,
     displayName: string,
     now: string,
+    idempotencyKey: string | null = null,
   ): Promise<ClaimOutcome> {
-    const existing = await this.#liveClaim(now);
+    return this.#once(idempotencyKey, async () => {
+      const existing = await this.#liveClaim(now);
 
-    if (existing !== null && existing.reviewerId !== reviewerId) {
+      if (existing !== null && existing.reviewerId !== reviewerId) {
+        audit({
+          actor: reviewerId,
+          action: "claim_case",
+          target: caseId,
+          outcome: "rejected",
+          detail: { heldBy: existing.reviewerId },
+        });
+        return { kind: "held_by_other", claim: existing };
+      }
+
+      const claim: CaseClaim = {
+        reviewerId,
+        displayName,
+        heldSince: existing?.heldSince ?? now,
+        expiresAt: claimExpiryFrom(now),
+      };
+
+      await this.ctx.storage.put(STORAGE_KEY.claim, claim);
+
       audit({
         actor: reviewerId,
         action: "claim_case",
         target: caseId,
-        outcome: "rejected",
-        detail: { heldBy: existing.reviewerId },
+        outcome: "success",
+        detail: { refreshed: existing !== null },
       });
-      return { kind: "held_by_other", claim: existing };
-    }
 
-    const claim: CaseClaim = {
-      reviewerId,
-      displayName,
-      heldSince: existing?.heldSince ?? now,
-      expiresAt: claimExpiryFrom(now),
-    };
-
-    await this.ctx.storage.put(STORAGE_KEY.claim, claim);
-
-    audit({
-      actor: reviewerId,
-      action: "claim_case",
-      target: caseId,
-      outcome: "success",
-      detail: { refreshed: existing !== null },
+      return existing === null
+        ? { kind: "granted", claim }
+        : { kind: "already_yours", claim };
     });
-
-    return existing === null
-      ? { kind: "granted", claim }
-      : { kind: "already_yours", claim };
   }
 
   /**
@@ -154,18 +242,21 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     caseId: string,
     reviewerId: string,
     now: string,
+    idempotencyKey: string | null = null,
   ): Promise<CoordinatorState> {
-    const existing = await this.#liveClaim(now);
-    if (existing !== null && existing.reviewerId === reviewerId) {
-      await this.ctx.storage.delete(STORAGE_KEY.claim);
-      audit({
-        actor: reviewerId,
-        action: "release_case",
-        target: caseId,
-        outcome: "success",
-      });
-    }
-    return this.state(now);
+    return this.#once(idempotencyKey, async () => {
+      const existing = await this.#liveClaim(now);
+      if (existing !== null && existing.reviewerId === reviewerId) {
+        await this.ctx.storage.delete(STORAGE_KEY.claim);
+        audit({
+          actor: reviewerId,
+          action: "release_case",
+          target: caseId,
+          outcome: "success",
+        });
+      }
+      return this.state(now);
+    });
   }
 
   /**
@@ -182,53 +273,64 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     caseId: string,
     ruling: ReviewerRuling,
     now: string,
+    idempotencyKey: string | null = null,
   ): Promise<RuleOutcome> {
-    const existing = await this.#liveClaim(now);
+    /*
+      The method this whole mechanism exists for.
 
-    if (existing === null) {
+      A double-submitted ruling is not a harmless repeat: it writes two
+      `rule_case` lines at different instants, so the audit trail says a
+      determination was made twice. In a system whose pitch is that every
+      decision is logged, that is a defect in the log itself.
+    */
+    return this.#once(idempotencyKey, async () => {
+      const existing = await this.#liveClaim(now);
+
+      if (existing === null) {
+        audit({
+          actor: ruling.decidedBy,
+          action: "rule_case",
+          target: caseId,
+          outcome: "rejected",
+          detail: { reason: "no_claim" },
+        });
+        return {
+          ok: false,
+          reason: "Claim this case before ruling on it.",
+          state: await this.state(now),
+        };
+      }
+
+      if (existing.reviewerId !== ruling.decidedBy) {
+        audit({
+          actor: ruling.decidedBy,
+          action: "rule_case",
+          target: caseId,
+          outcome: "rejected",
+          detail: { reason: "claimed_by_other", heldBy: existing.reviewerId },
+        });
+        return {
+          ok: false,
+          reason: `${existing.displayName} is holding this case.`,
+          state: await this.state(now),
+        };
+      }
+
+      await this.ctx.storage.put(STORAGE_KEY.ruling, ruling);
+
       audit({
         actor: ruling.decidedBy,
         action: "rule_case",
         target: caseId,
-        outcome: "rejected",
-        detail: { reason: "no_claim" },
+        outcome: "success",
+        detail: {
+          listedness: ruling.listedness,
+          expectedness: ruling.expectedness,
+        },
       });
-      return {
-        ok: false,
-        reason: "Claim this case before ruling on it.",
-        state: await this.state(now),
-      };
-    }
 
-    if (existing.reviewerId !== ruling.decidedBy) {
-      audit({
-        actor: ruling.decidedBy,
-        action: "rule_case",
-        target: caseId,
-        outcome: "rejected",
-        detail: { reason: "claimed_by_other", heldBy: existing.reviewerId },
-      });
-      return {
-        ok: false,
-        reason: `${existing.displayName} is holding this case.`,
-        state: await this.state(now),
-      };
-    }
-
-    await this.ctx.storage.put(STORAGE_KEY.ruling, ruling);
-
-    audit({
-      actor: ruling.decidedBy,
-      action: "rule_case",
-      target: caseId,
-      outcome: "success",
-      detail: {
-        listedness: ruling.listedness,
-        expectedness: ruling.expectedness,
-      },
+      return { ok: true, reason: null, state: await this.state(now) };
     });
-
-    return { ok: true, reason: null, state: await this.state(now) };
   }
 
   /**
@@ -272,9 +374,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     // End of the due day, UTC. The regulation counts days, not hours, so a
     // case is late the moment the day after the deadline begins — not 24 hours
     // after whatever time of day the report happened to arrive.
-    await this.ctx.storage.setAlarm(
-      Date.parse(`${dueOn}T23:59:59.999Z`) + 1,
-    );
+    await this.ctx.storage.setAlarm(Date.parse(`${dueOn}T23:59:59.999Z`) + 1);
 
     audit({
       actor: "system",
@@ -296,8 +396,38 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
    * subtraction.
    */
   override async alarm(): Promise<void> {
+    /*
+      The alarm slot is shared, so this handler must not assume why it fired.
+
+      An object may have an expedited deadline armed, or only idempotency keys
+      to collect, or both — there is one alarm per Durable Object and both
+      users want it. Sweeping first and unconditionally means a fired alarm is
+      never wasted, and the deadline branch below still runs when there is one.
+    */
+    const collected = await this.#sweepIdempotencyKeys();
+
     const armed = await this.ctx.storage.get<ArmedClock>(STORAGE_KEY.clock);
-    if (armed === undefined) return;
+    if (armed === undefined) {
+      // Nothing armed. Re-arm only if there are still keys to age out, so an
+      // idle object stops waking up entirely.
+      const remaining = await this.ctx.storage.list({
+        prefix: IDEMPOTENCY_PREFIX,
+        limit: 1,
+      });
+      if (remaining.size > 0) {
+        await this.ctx.storage.setAlarm(Date.now() + IDEMPOTENCY_TTL_MS);
+      }
+      if (collected > 0) {
+        audit({
+          actor: "system",
+          action: "sweep_idempotency_keys",
+          target: "case_coordinator",
+          outcome: "success",
+          detail: { collected },
+        });
+      }
+      return;
+    }
 
     const claim = await this.ctx.storage.get<CaseClaim>(STORAGE_KEY.claim);
     const ruling = await this.ctx.storage.get<ReviewerRuling>(

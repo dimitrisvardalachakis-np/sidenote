@@ -27,6 +27,19 @@
     "enabled": true
   },
 
+  // NOT reachable at sidenote.<subdomain>.workers.dev.
+  //
+  // The default is true, which publishes a guessable public hostname for a
+  // Worker serving a queue of confidential safety cases. The password in front
+  // of that queue is one shared string, so the workers.dev URL is a second
+  // front door nobody chose to open — and it stays open after a custom domain
+  // is attached, which is when people stop thinking about it.
+  //
+  // Cluster E's service-binding split needs this false on the RAG worker for
+  // the same reason: a service binding is private, and a worker that also
+  // answers on workers.dev is not.
+  "workers_dev": false,
+
   // ---------------------------------------------------------------- Cluster F
 
   // Both nightly, an hour apart so they never contend for the database.

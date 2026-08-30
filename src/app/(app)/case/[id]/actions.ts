@@ -13,14 +13,32 @@ import { documentsForDrug } from "@/lib/assess/scope";
 import { findQueueEntry } from "@/lib/queue/entries";
 import { loadCorpus } from "@/lib/store/corpus";
 import { getAssessmentStore } from "@/lib/store/assessment-store";
-import { getClaimStore } from "@/lib/store/claim-store";
 // Importing this installs the audit journal the History panel reads.
 import "@/lib/store/audit-store";
-import { canRelease, canWrite, claimOutcome } from "@/lib/case/claim";
+import { canRelease, canWrite } from "@/lib/case/claim";
+import { getCaseCoordination } from "@/lib/coordinator";
+import { IDEMPOTENCY_FIELD } from "./ruling-state";
 import type { IsoDateTime } from "@/lib/schemas";
 
 /** The instant a claim check is made against. Named so it reads at the call site. */
 const nowIso = (): IsoDateTime => new Date().toISOString() as IsoDateTime;
+
+/**
+ * The client's key for this intent, or null.
+ *
+ * Read from the form rather than minted here, because the point is to
+ * recognise a REPEAT of one press and only the browser knows that two requests
+ * are the same press. A key generated on the server would be new every time
+ * and would recognise nothing.
+ *
+ * Null is a legitimate answer — a caller that sends no key gets the old
+ * behaviour, which is correct rather than merely tolerated: nothing about the
+ * claim guarantee depends on this.
+ */
+function idempotencyKeyFrom(formData: FormData | undefined): string | null {
+  const raw = formData?.get(IDEMPOTENCY_FIELD);
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+}
 import {
   Assessment,
   ReviewerRuling,
@@ -206,6 +224,7 @@ export async function runAssessment(caseId: string): Promise<void> {
 export async function claimCase(
   caseId: string,
   _previous: ClaimActionState,
+  formData?: FormData,
 ): Promise<ClaimActionState> {
   const session = await requireSession();
   const today: IsoDate = new Date().toISOString().slice(0, 10);
@@ -213,17 +232,23 @@ export async function claimCase(
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) return INITIAL_CLAIM_STATE;
 
-  const store = await getClaimStore();
-  const outcome = claimOutcome({
-    current: await store.get(caseId),
-    reviewerId: session.reviewerId,
-    displayName: session.displayName,
-    now: new Date().toISOString(),
-  });
+  /*
+    Through the coordinator, not the store.
 
-  if (outcome.kind === "granted") {
-    await store.put(caseId, outcome.claim);
-  }
+    This is the line `claim-store.ts` has been advertising since Cluster A —
+    "one line for Cluster D to point at the Durable Object". The read-then-
+    write it documented is gone: `idFromName(caseId)` gives one object per case
+    whose methods cannot run concurrently, so the check and the write are one
+    turn. Where no Durable Object is bound the stand-in answers instead, and
+    says `arbitrates: false` so the screen can be honest about it.
+  */
+  const coordination = await getCaseCoordination();
+  const outcome = await coordination.claim(
+    caseId,
+    session.reviewerId,
+    session.displayName,
+    idempotencyKeyFrom(formData),
+  );
 
   audit({
     actor: session.reviewerId,
@@ -250,6 +275,7 @@ export async function claimCase(
 export async function releaseCase(
   caseId: string,
   _previous: ClaimActionState,
+  formData?: FormData,
 ): Promise<ClaimActionState> {
   const session = await requireSession();
   const today: IsoDate = new Date().toISOString().slice(0, 10);
@@ -257,8 +283,8 @@ export async function releaseCase(
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) return INITIAL_CLAIM_STATE;
 
-  const store = await getClaimStore();
-  const current = await store.get(caseId);
+  const coordination = await getCaseCoordination();
+  const current = (await coordination.state(caseId)).claim;
   if (!canRelease(current, session.reviewerId, nowIso())) {
     audit({
       actor: session.reviewerId,
@@ -273,7 +299,11 @@ export async function releaseCase(
     };
   }
 
-  await store.clear(caseId);
+  await coordination.release(
+    caseId,
+    session.reviewerId,
+    idempotencyKeyFrom(formData),
+  );
   audit({
     actor: session.reviewerId,
     action: "release_case",
@@ -317,7 +347,8 @@ export async function recordRuling(
     return { status: "rejected", error: "That case no longer exists." };
   }
 
-  const claim = await (await getClaimStore()).get(caseId);
+  const coordination = await getCaseCoordination();
+  const claim = (await coordination.state(caseId)).claim;
   if (!canWrite(claim, session.reviewerId, nowIso())) {
     audit({
       actor: session.reviewerId,
@@ -364,6 +395,35 @@ export async function recordRuling(
       status: "rejected",
       error:
         "This case has not been assessed, so there is no evidence to rule on. Press Assess this case first.",
+    };
+  }
+
+  /*
+    The coordinator is the authority; the assessment store is the queryable
+    copy.
+
+    Ordered this way on purpose. The coordinator re-checks the claim inside a
+    single-threaded turn, so a claim that lapsed between the check above and
+    this line is caught HERE rather than being written and discovered later —
+    which is the whole reason a lapse is safe to have at all. Only once it has
+    accepted is the mirror updated.
+  */
+  const ruled = await coordination.rule(
+    caseId,
+    parsed.data,
+    idempotencyKeyFrom(form),
+  );
+  if (!ruled.ok) {
+    audit({
+      actor: session.reviewerId,
+      action: "rule_case",
+      target: entry.record.reference,
+      outcome: "rejected",
+      detail: { reason: ruled.reason ?? "refused by the coordinator" },
+    });
+    return {
+      status: "rejected",
+      error: ruled.reason ?? "That ruling could not be recorded.",
     };
   }
 
