@@ -24,6 +24,7 @@ import {
   OPTIONAL_STEPS,
   STEP_IDS,
   STEP_TITLES,
+  formatProblems,
   missingElements,
   stepProgress,
   type ReportDraft,
@@ -107,6 +108,18 @@ export function ReportWizard() {
   }
 
   const missing = missingElements(draft);
+  /*
+    Answers that are present but the wrong shape — a mistyped email address,
+    an age of 700. Kept apart from `missing` and NOT shown in the alert box
+    below: each one is already displayed beside the box it belongs to, once
+    the reporter has left that box, and repeating it in a live region would
+    announce "that email address does not look complete" on every keystroke of
+    an email address being typed.
+
+    It still has to stop Send, because the server refuses these too, and
+    letting somebody press Send to be told is worse than not letting them.
+  */
+  const problems = formatProblems(draft);
   const onLastStep = stepIndex === STEP_IDS.length - 1;
   const canLeaveFirstStep = isAnswered(draft.about);
   const progress = stepProgress(draft, stepId);
@@ -230,13 +243,15 @@ export function ReportWizard() {
             <button
               type="button"
               onClick={() => void send()}
-              disabled={sending || missing.length > 0}
+              disabled={sending || missing.length > 0 || problems.length > 0}
               className="mt-4 min-h-11 cursor-pointer rounded-soft bg-steady px-5 py-2 text-body font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {sending ? "Sending" : "Send my report"}
             </button>
             <p className="mt-2 text-meta text-slate">
-              Nothing is sent until you press this.
+              {problems.length > 0
+                ? "One of your answers above needs another look before this can be sent."
+                : "Nothing is sent until you press this."}
             </p>
           </div>
         )}

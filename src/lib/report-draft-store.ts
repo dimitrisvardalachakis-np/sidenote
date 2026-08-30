@@ -29,6 +29,7 @@
  * the parsed value is cached against the raw string it came from.
  */
 import { EMPTY_DRAFT, ReportDraft } from "@/lib/schemas/report";
+import { UNANSWERED } from "@/lib/schemas/answer";
 
 const KEY = "sidenote-report-draft";
 const CHANGED = "sidenote:report-draft-changed";
@@ -70,6 +71,40 @@ const BLANK: SavedProgress = {
 let cachedRaw: string | null = null;
 let cachedValue: SavedProgress = BLANK;
 
+/**
+ * Recover a saved draft field by field, rather than all or nothing.
+ *
+ * It WAS all or nothing: one `ReportDraft.safeParse`, and anything that failed
+ * became a blank form at step one. That turned a single unparseable answer
+ * into the loss of every answer — and because the schema used to refuse a
+ * half-typed email address, "a single unparseable answer" happened on the
+ * second keystroke of the email box, mid-form, with a name already filled in.
+ *
+ * The schema no longer refuses what someone is still typing, so this should
+ * never fire now. It stays because the failure it produced was so much worse
+ * than its cause: whatever a future field rejects, the reporter should lose
+ * that answer and no other.
+ */
+function salvage(raw: unknown): ReportDraft | null {
+  const whole = ReportDraft.safeParse(raw);
+  if (whole.success) return whole.data;
+
+  const source =
+    typeof raw === "object" && raw !== null
+      ? (raw as Record<string, unknown>)
+      : null;
+  // Not an object at all: there is nothing here to keep.
+  if (source === null) return null;
+
+  const kept: Record<string, unknown> = {};
+  for (const [field, schema] of Object.entries(ReportDraft.shape)) {
+    const parsed = schema.safeParse(source[field]);
+    kept[field] = parsed.success ? parsed.data : UNANSWERED;
+  }
+  const recovered = ReportDraft.safeParse(kept);
+  return recovered.success ? recovered.data : null;
+}
+
 function read(): SavedProgress {
   let raw: string | null = null;
   try {
@@ -99,9 +134,9 @@ function read(): SavedProgress {
             submitted?: unknown;
           })
         : {};
-    // Validated, not cast. A draft saved by an older version of this form is
-    // discarded rather than rendered into a shape the UI no longer expects.
-    const draft = ReportDraft.safeParse(shape.draft);
+    // Validated, not cast, but field by field: a value the UI no longer
+    // expects is dropped on its own rather than taking the form with it.
+    const draft = salvage(shape.draft);
     const submitted = shape.submitted;
     const validSubmitted =
       typeof submitted === "object" &&
@@ -128,9 +163,9 @@ function read(): SavedProgress {
       validSubmitted === null && Date.now() - savedAt > DRAFT_TTL_MS;
 
     cachedValue =
-      draft.success && !expired
+      draft !== null && !expired
         ? {
-            draft: draft.data,
+            draft,
             stepIndex:
               typeof shape.stepIndex === "number" && shape.stepIndex >= 0
                 ? shape.stepIndex

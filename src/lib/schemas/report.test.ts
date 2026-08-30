@@ -20,6 +20,7 @@ import {
   ReportDraft,
   STEP_FIELDS,
   STEP_IDS,
+  formatProblems,
   missingElements,
   stepProgress,
   trimDraft,
@@ -126,13 +127,130 @@ describe("three-state answers", () => {
     }
   });
 
-  it("still rejects a bad value inside an answered field", () => {
+  it("still rejects a value of the wrong TYPE inside an answered field", () => {
     expect(
       ReportDraft.safeParse({
         ...EMPTY_DRAFT,
-        yourEmail: answered("not-an-email"),
+        yourEmail: answered(42),
       }).success,
     ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The bug that erased people's forms
+// ---------------------------------------------------------------------------
+
+describe("a draft holds an answer that is not finished yet", () => {
+  /*
+    THE regression, and the second of its family after the trim.
+
+    `yourEmail` was `answer(z.email())`, `yourPhone` demanded three characters
+    and `age` a number no greater than 130. The draft round-trips through
+    `ReportDraft.safeParse` on every keystroke, and the draft store discarded
+    the WHOLE saved form when it would not parse — so the second character of
+    an email address took the reporter's name, their medicine, their narrative
+    and their place in the form with it, and put them back on step one.
+
+    A draft has to hold what someone can type on the way to an answer. Shape
+    is judged at the gate, where they have said they are finished.
+  */
+  it("holds an email address halfway through being typed", () => {
+    for (const value of ["d", "di", "dimi@", "dimi@hot"]) {
+      expect(
+        ReportDraft.safeParse({ ...EMPTY_DRAFT, yourEmail: answered(value) })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  it("holds the first two digits of a phone number", () => {
+    for (const value of ["0", "08"]) {
+      expect(
+        ReportDraft.safeParse({ ...EMPTY_DRAFT, yourPhone: answered(value) })
+          .success,
+      ).toBe(true);
+    }
+  });
+
+  it("holds 131 on the way to a corrected 13", () => {
+    expect(
+      ReportDraft.safeParse({ ...EMPTY_DRAFT, age: answered(131) }).success,
+    ).toBe(true);
+  });
+
+  it("keeps every other answer while one is mid-typing", () => {
+    const parsed = ReportDraft.safeParse({
+      ...EMPTY_DRAFT,
+      about: answered("self"),
+      medicineName: answered("Amoxil"),
+      whatHappened: answered("A rash came up on both arms."),
+      yourName: answered("Sam Patel"),
+      yourEmail: answered("s"),
+    });
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.yourName).toEqual(answered("Sam Patel"));
+  });
+});
+
+describe("shape is judged once, at the gate", () => {
+  const complete = {
+    ...EMPTY_DRAFT,
+    about: answered("self" as const),
+    medicineName: answered("Amoxil"),
+    whatHappened: answered("A rash came up on both arms."),
+    yourName: answered("Sam Patel"),
+  };
+
+  it("finds nothing wrong with a form nobody has mistyped", () => {
+    expect(formatProblems(complete)).toEqual([]);
+    expect(Report.safeParse(complete).success).toBe(true);
+  });
+
+  it("names the field and refuses to send a malformed email", () => {
+    const draft = { ...complete, yourEmail: answered("not-an-email") };
+    expect(formatProblems(draft).map((p) => p.field)).toEqual(["yourEmail"]);
+    expect(Report.safeParse(draft).success).toBe(false);
+  });
+
+  it("accepts an ordinary address", () => {
+    const draft = { ...complete, yourEmail: answered("sam.patel@example.ie") };
+    expect(formatProblems(draft)).toEqual([]);
+    expect(Report.safeParse(draft).success).toBe(true);
+  });
+
+  it("refuses a phone number of one digit, and an impossible age", () => {
+    expect(
+      formatProblems({ ...complete, yourPhone: answered("0") }).map(
+        (p) => p.field,
+      ),
+    ).toEqual(["yourPhone"]);
+    expect(
+      formatProblems({ ...complete, age: answered(700) }).map((p) => p.field),
+    ).toEqual(["age"]);
+    expect(
+      formatProblems({ ...complete, age: answered(7.5) }).map((p) => p.field),
+    ).toEqual(["age"]);
+  });
+
+  it("has nothing to say about a blank or unknown answer", () => {
+    expect(formatProblems({ ...complete, yourEmail: UNANSWERED })).toEqual([]);
+    expect(formatProblems({ ...complete, yourEmail: NOT_KNOWN })).toEqual([]);
+  });
+
+  it("says it in words a frightened person can act on", () => {
+    const messages = formatProblems({
+      ...complete,
+      yourEmail: answered("nope"),
+      yourPhone: answered("1"),
+    }).map((p) => p.message);
+    expect(messages).toHaveLength(2);
+    for (const message of messages) {
+      for (const banned of ["invalid", "malformed", "error", "field"]) {
+        expect(message.toLowerCase()).not.toContain(banned);
+      }
+    }
   });
 });
 

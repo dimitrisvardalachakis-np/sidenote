@@ -151,6 +151,47 @@ export function ChoiceQuestion<T extends string>({
   );
 }
 
+/**
+ * Say that an answer is the wrong shape — but only once the person has left
+ * the box.
+ *
+ * Judging as they type means telling someone their email address is wrong
+ * after they have typed the first letter of it, which is both true and
+ * useless. `useFormatProblem` holds the note back until focus leaves, and
+ * takes it down the moment the answer is fixed.
+ */
+function useBlurredProblem(problem: string | undefined) {
+  const [focused, setFocused] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const show = problem !== undefined && touched && !focused;
+  return {
+    show,
+    handlers: {
+      onFocus: () => setFocused(true),
+      onBlur: () => {
+        setFocused(false);
+        setTouched(true);
+      },
+    },
+  };
+}
+
+/**
+ * Ink and a left rule, not --signal. --signal means expedited or overdue and
+ * nothing else, ever; a mistyped email address is neither, and spending the
+ * one alarming colour on it would spend it everywhere.
+ */
+function ProblemNote({ id, message }: { id: string; message: string }) {
+  return (
+    <p
+      id={id}
+      className="mt-2 border-l-2 border-ink pl-3 text-[13px] leading-relaxed text-ink"
+    >
+      {message}
+    </p>
+  );
+}
+
 export function NumberQuestion({
   label,
   hint,
@@ -159,6 +200,7 @@ export function NumberQuestion({
   min = 0,
   max = 130,
   unknownLabel = "I don't know",
+  problem,
 }: {
   label: string;
   hint?: string;
@@ -167,10 +209,13 @@ export function NumberQuestion({
   min?: number;
   max?: number;
   unknownLabel?: string;
+  problem?: string;
 }) {
   const id = useId();
   const hintId = `${id}-hint`;
+  const problemId = `${id}-problem`;
   const unknown = value.status === "unknown";
+  const { show: showProblem, handlers } = useBlurredProblem(problem);
 
   return (
     <div className="mt-6">
@@ -191,7 +236,13 @@ export function NumberQuestion({
         max={max}
         disabled={unknown}
         value={value.status === "answered" ? String(value.value) : ""}
-        aria-describedby={hint === undefined ? undefined : hintId}
+        aria-describedby={
+          [hint === undefined ? null : hintId, showProblem ? problemId : null]
+            .filter((each) => each !== null)
+            .join(" ") || undefined
+        }
+        aria-invalid={showProblem ? true : undefined}
+        {...handlers}
         onChange={(event) => {
           const raw = event.target.value.trim();
           if (raw === "") {
@@ -203,6 +254,10 @@ export function NumberQuestion({
         }}
         className="mt-2 w-32 min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
       />
+
+      {showProblem && problem !== undefined && (
+        <ProblemNote id={problemId} message={problem} />
+      )}
 
       <label className="mt-2 flex w-fit cursor-pointer items-center gap-2">
         <input
@@ -229,6 +284,8 @@ export function TextQuestion({
   placeholder,
   unknownLabel = "I don't know",
   type = "text",
+  problem,
+  maxLength,
 }: {
   label: string;
   hint?: string;
@@ -238,10 +295,15 @@ export function TextQuestion({
   placeholder?: string;
   unknownLabel?: string;
   type?: "text" | "email" | "tel";
+  problem?: string;
+  /** Must match the bound its field carries in the schema. */
+  maxLength?: number;
 }) {
   const id = useId();
   const hintId = `${id}-hint`;
+  const problemId = `${id}-problem`;
   const unknown = value.status === "unknown";
+  const { show: showProblem, handlers } = useBlurredProblem(problem);
 
   /**
    * Controlled by the answer, which is safe BECAUSE the answer is no longer
@@ -275,7 +337,18 @@ export function TextQuestion({
     // disabled control.
     value: unknown ? "" : text,
     placeholder,
-    "aria-describedby": hint === undefined ? undefined : hintId,
+    // The same bound the field's schema holds, enforced where the typing
+    // happens. A schema that refuses an over-long value can only refuse it
+    // once it is already stored, and refusing it there means dropping the
+    // answer; a box that simply will not take a 201st character costs the
+    // reporter nothing.
+    maxLength: maxLength ?? (multiline ? 5000 : 200),
+    "aria-describedby":
+      [hint === undefined ? null : hintId, showProblem ? problemId : null]
+        .filter((each) => each !== null)
+        .join(" ") || undefined,
+    "aria-invalid": showProblem ? true : undefined,
+    ...handlers,
     className:
       "mt-2 w-full min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50",
   };
@@ -304,6 +377,10 @@ export function TextQuestion({
           type={type}
           onChange={(event) => handle(event.target.value)}
         />
+      )}
+
+      {showProblem && problem !== undefined && (
+        <ProblemNote id={problemId} message={problem} />
       )}
 
       <label className="mt-2 flex w-fit cursor-pointer items-center gap-2">

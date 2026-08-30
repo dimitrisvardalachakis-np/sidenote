@@ -92,6 +92,31 @@ const longText = z
   .max(5000)
   .refine(notBlank, { message: BLANK_MESSAGE });
 
+/**
+ * A box someone is still typing into.
+ *
+ * Bounded so the store cannot be filled with an unbounded string, and refused
+ * if it is only whitespace, but it asserts NOTHING about the shape of what is
+ * in it. That is the point, and it is the second bug of this exact family this
+ * file has now had.
+ *
+ * `yourEmail` was `answer(z.email())`. The draft round-trips through
+ * `ReportDraft.safeParse` on every keystroke, and the first letter of an email
+ * address is not an email address — so the parse failed, and the draft store,
+ * which discarded the whole saved form when it would not parse, returned an
+ * empty form at step one. Somebody filling this in typed their name, started
+ * on their email, and watched every answer they had given disappear.
+ *
+ * `yourPhone` did the same on the first two digits, and `age` on the way past
+ * 130 to a corrected 13.
+ *
+ * So: a DRAFT holds what a person can type, including what they have not
+ * finished typing. Shape is judged once, at the submission gate below, when
+ * they have said they are finished. Same lesson as the trim above.
+ */
+const typedText = (max: number) =>
+  z.string().max(max).refine(notBlank, { message: BLANK_MESSAGE });
+
 // ---------------------------------------------------------------------------
 // The five steps
 // ---------------------------------------------------------------------------
@@ -106,7 +131,10 @@ const longText = z
 export const ReportDraft = z.object({
   // 1 — Who this is about
   about: answer(ReportAbout),
-  age: answer(z.number().int().nonnegative().max(130)),
+  // Any number a number box can emit. Whole, and 0–130, is a rule about a
+  // FINISHED answer and lives at the gate: typing 131 on the way to 13 must
+  // not be treated as an error, let alone as a reason to discard the form.
+  age: answer(z.number()),
   sex: answer(Sex),
 
   // 2 — What happened
@@ -137,15 +165,10 @@ export const ReportDraft = z.object({
   // 5 — About you
   yourRole: answer(ReporterRole),
   yourName: answer(shortText),
-  yourEmail: answer(z.email()),
-  yourPhone: answer(
-    z
-      .string()
-      .max(40)
-      .refine((value) => value.trim().length >= 3, {
-        message: "A phone number needs at least three characters",
-      }),
-  ),
+  // 254 is the longest an address can be. Whether it looks like one at all is
+  // checked at the gate, for the reason typedText explains.
+  yourEmail: answer(typedText(254)),
+  yourPhone: answer(typedText(40)),
   // A country NAME, not a two-letter code. Asking someone who is frightened
   // to know that GB means the United Kingdom is exactly the kind of small
   // cruelty this surface is supposed to avoid. A reviewer maps it later.
@@ -252,12 +275,79 @@ export function trimDraft(draft: ReportDraft): ReportDraft {
   return out as ReportDraft;
 }
 
+// ---------------------------------------------------------------------------
+// Answers that are there but the wrong shape
+// ---------------------------------------------------------------------------
+
 /**
- * The submission gate: a draft plus the rule that all four must be present.
+ * Crude on purpose: something, an @, something, a dot, something.
+ *
+ * A public safety form is the wrong place to be clever about addresses. This
+ * catches the typo people actually make — a missing @ or a truncated domain —
+ * and waves through anything that could plausibly reach a person.
+ */
+const LOOKS_LIKE_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export interface FormatProblem {
+  readonly field: keyof ReportDraft;
+  readonly message: string;
+}
+
+/**
+ * Which answers are present but malformed.
+ *
+ * A different kind of problem from a missing one, said differently: "we still
+ * need to know who you are" versus "that address will not reach you". The
+ * client shows these beside the box they belong to, the gate below refuses
+ * them, and both read this one function — CLAUDE.md non-negotiable #2.
+ *
+ * Only ANSWERED fields are judged. Blank and "I don't know" are not badly
+ * shaped, they are absent, and `missingElements` is where absence is decided.
+ */
+export function formatProblems(draft: ReportDraft): readonly FormatProblem[] {
+  const problems: FormatProblem[] = [];
+
+  if (
+    isAnswered(draft.yourEmail) &&
+    !LOOKS_LIKE_EMAIL.test(draft.yourEmail.value.trim())
+  ) {
+    problems.push({
+      field: "yourEmail",
+      message:
+        "That email address does not look complete. Check it, or clear it and leave us a phone number instead.",
+    });
+  }
+
+  if (isAnswered(draft.yourPhone) && draft.yourPhone.value.trim().length < 3) {
+    problems.push({
+      field: "yourPhone",
+      message:
+        "That phone number looks too short. Check it, or clear it and leave us an email address instead.",
+    });
+  }
+
+  if (isAnswered(draft.age)) {
+    const age = draft.age.value;
+    if (!Number.isInteger(age) || age < 0 || age > 130) {
+      problems.push({
+        field: "age",
+        message: "An age should be a whole number of years, up to 130.",
+      });
+    }
+  }
+
+  return problems;
+}
+
+/**
+ * The submission gate: a draft plus the rules that only apply to a finished
+ * one — all four elements present, and every answer given the right shape.
  *
  * Kept separate from ReportDraft so a half-finished form is still a valid
  * object to hold, save and restore. A partly-filled report is a real thing;
- * only sending it needs all four.
+ * only sending it needs all four. A half-typed email is a real thing too, and
+ * putting that rule up here rather than in the field is what stopped the form
+ * erasing itself under somebody's hands.
  */
 export const Report = ReportDraft.superRefine((draft, ctx) => {
   for (const element of missingElements(draft)) {
@@ -265,6 +355,13 @@ export const Report = ReportDraft.superRefine((draft, ctx) => {
       code: "custom",
       path: [element],
       message: MISSING_MESSAGES[element],
+    });
+  }
+  for (const problem of formatProblems(draft)) {
+    ctx.addIssue({
+      code: "custom",
+      path: [problem.field],
+      message: problem.message,
     });
   }
 });

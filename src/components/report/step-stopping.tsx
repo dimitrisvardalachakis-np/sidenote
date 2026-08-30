@@ -2,7 +2,12 @@
 
 import { DateQuestion, YesNoQuestion } from "./questions";
 import { pronounsFor } from "@/lib/schemas/pronouns";
-import { isAnswered, UNANSWERED, type Answer } from "@/lib/schemas/answer";
+import {
+  isAnswered,
+  isResolved,
+  UNANSWERED,
+  type Answer,
+} from "@/lib/schemas/answer";
 import type { ReportDraft } from "@/lib/schemas/report";
 
 const isYes = (a: Answer<"yes" | "no">) =>
@@ -24,6 +29,13 @@ const isYes = (a: Answer<"yes" | "no">) =>
  * The follow-ups appear only when they mean something. "Did things get better
  * after stopping?" asked of someone who never stopped is noise, and answering
  * it would put a fact in the record that is not true.
+ *
+ * ALL of them, including starting again. That one used to be asked
+ * unconditionally, so answering "no, I never stopped taking it" was followed
+ * immediately by "did you start taking it again later?" — a question that
+ * contradicts the answer above it and has no true answer. Restarting is only a
+ * thing that can happen after stopping; that is what makes rechallenge mean
+ * anything, and the sequence now follows it.
  */
 export function StepStopping({
   draft,
@@ -52,9 +64,14 @@ export function StepStopping({
             isYes(next)
               ? { stoppedMedicine: next }
               : {
+                  // Everything below this question rests on having stopped, so
+                  // withdrawing that answer withdraws them too rather than
+                  // leaving four answers about a stop that did not happen.
                   stoppedMedicine: next,
                   stoppedMedicineOn: UNANSWERED,
                   betterAfterStopping: UNANSWERED,
+                  startedAgain: UNANSWERED,
+                  cameBackAfterStartingAgain: UNANSWERED,
                 },
           )
         }
@@ -72,27 +89,40 @@ export function StepStopping({
             value={draft.betterAfterStopping}
             onChange={(next) => update({ betterAfterStopping: next })}
           />
+          <YesNoQuestion
+            legend={`Did ${p.subject} start taking it again later?`}
+            value={draft.startedAgain}
+            onChange={(next) =>
+              update(
+                isYes(next)
+                  ? { startedAgain: next }
+                  : {
+                      startedAgain: next,
+                      cameBackAfterStartingAgain: UNANSWERED,
+                    },
+              )
+            }
+          />
+
+          {restarted && (
+            <YesNoQuestion
+              legend="Did the same thing happen again?"
+              value={draft.cameBackAfterStartingAgain}
+              onChange={(next) => update({ cameBackAfterStartingAgain: next })}
+            />
+          )}
         </>
       )}
 
-      <YesNoQuestion
-        legend={`Did ${p.subject} start taking it again later?`}
-        value={draft.startedAgain}
-        onChange={(next) =>
-          update(
-            isYes(next)
-              ? { startedAgain: next }
-              : { startedAgain: next, cameBackAfterStartingAgain: UNANSWERED },
-          )
-        }
-      />
-
-      {restarted && (
-        <YesNoQuestion
-          legend="Did the same thing happen again?"
-          value={draft.cameBackAfterStartingAgain}
-          onChange={(next) => update({ cameBackAfterStartingAgain: next })}
-        />
+      {/*
+        Say the step is finished rather than leaving one question alone on a
+        screen that promised four, which reads like something failed to load.
+      */}
+      {!stopped && isResolved(draft.stoppedMedicine) && (
+        <p className="mt-6 text-meta text-slate">
+          That is all we need here — the rest of this step is about what
+          happened after stopping. Carry on to the last part.
+        </p>
       )}
     </div>
   );
