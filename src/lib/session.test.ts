@@ -153,3 +153,47 @@ describe("rotating the session secret", () => {
     vi.unstubAllEnvs();
   });
 });
+
+/**
+ * THE PRODUCTION SECRET GUARD, and the blast radius it must not have.
+ *
+ * Refusing the published default key in production is the point. Taking the
+ * public report form down with it is not — a patient reporting a reaction has
+ * nothing to do with our reviewer session config, and an outage there loses
+ * safety data. So the throw has to be reachable only on the paths that
+ * actually sign or verify something.
+ */
+describe("the production secret guard", () => {
+  it("does not touch a visitor who has no cookie", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "");
+
+    // No cookie means no signature to check, so no secret is needed. This is
+    // every public page: the form, the chat, the lookup.
+    await expect(getSession()).resolves.toBeNull();
+    vi.unstubAllEnvs();
+  });
+
+  it("refuses to mint a session rather than signing with the published key", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "");
+
+    /*
+      Loud, not silent. The alternative this replaced was worse in the exact
+      way that matters: it worked, and it signed with a key printed in this
+      repository, so anyone who had read the file could mint a reviewer
+      session and the deployment looked healthy.
+    */
+    await expect(startSession("reviewer-demo")).rejects.toThrow(
+      /SIDENOTE_SESSION_SECRET/,
+    );
+    vi.unstubAllEnvs();
+  });
+
+  it("still runs on the default key outside production", async () => {
+    vi.stubEnv("SIDENOTE_SESSION_SECRET", "");
+    await startSession("reviewer-demo");
+    expect(await getSession()).not.toBeNull();
+    vi.unstubAllEnvs();
+  });
+});
