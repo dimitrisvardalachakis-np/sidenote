@@ -85,7 +85,7 @@ export function RequiredChecklist({
   return (
     <section aria-label="What a report needs">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="font-mono text-micro uppercase tracking-label text-slate">
+        <p className="font-mono text-micro whitespace-nowrap uppercase tracking-label text-slate">
           A report needs these four
         </p>
         {outstanding.size > 0 && (

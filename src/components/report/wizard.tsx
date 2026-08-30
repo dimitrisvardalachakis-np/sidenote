@@ -120,8 +120,14 @@ export function ReportWizard() {
         it, quietest on the page.
       */}
       <div className="rounded-card border border-rule bg-surface p-5 shadow-card sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          <div className="min-w-0 flex-1">
+        {/*
+          Stacked below sm, side by side above it. Sharing one row on a phone
+          gave the link its full 280px and left the checklist about sixty —
+          "A report needs these four" wrapped over four lines and the pills
+          under it went single-file.
+        */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 sm:flex-1">
             <RequiredChecklist missing={missing} />
           </div>
           {/*
@@ -131,7 +137,7 @@ export function ReportWizard() {
           */}
           <Link
             href="/report/chat"
-            className="shrink-0 text-meta text-steady hover:underline"
+            className="text-meta text-steady hover:underline sm:shrink-0"
           >
             Answer one question at a time instead →
           </Link>
