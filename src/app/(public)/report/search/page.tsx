@@ -134,72 +134,83 @@ export default async function SearchPage({
       : null;
 
   return (
-    <main className="mx-auto w-full max-w-[70ch] px-4 py-8">
-      <h1 className="text-hero font-medium">Search known effects</h1>
-      <p className="mt-2 text-prose text-slate">
+    <main className="mx-auto w-full max-w-[46rem] flex-1 px-4 py-10">
+      <h1 className="text-hero font-semibold">Is this a known side effect?</h1>
+      <p className="mt-2.5 text-prose text-slate">
         Look up whether a side effect is already described in a medicine&rsquo;s
-        published information.
+        published information. Only publicly available labels are searched, and
+        this reports nothing.
       </p>
 
-      <div className="mt-4">
+      <div className="mt-6">
         <Orientation />
       </div>
 
-      <form method="get" className="mt-5">
-        <label htmlFor="drug" className="text-base font-medium">
-          Which medicine?
-        </label>
-        <input
-          id="drug"
-          name="drug"
-          type="search"
-          defaultValue={drug}
-          placeholder="atorvastatin"
-          className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
-        />
+      <form
+        method="get"
+        className="mt-4 rounded-card border border-rule bg-surface p-5 shadow-card"
+      >
+        <div className="flex flex-wrap gap-4">
+          <div className="w-full sm:w-[16rem]">
+            <label htmlFor="drug" className="block text-body font-medium">
+              Which medicine?
+            </label>
+            <input
+              id="drug"
+              name="drug"
+              type="search"
+              defaultValue={drug}
+              placeholder="atorvastatin"
+              className="mt-1.5 min-h-11 w-full rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+            />
+          </div>
 
-        <label htmlFor="q" className="mt-4 block text-base font-medium">
-          What happened?
-        </label>
-        <div className="mt-1 flex gap-2">
-          <input
-            id="q"
-            name="q"
-            type="search"
-            defaultValue={query}
-            placeholder="my muscles ached all over"
-            className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady"
-          />
-          <button
-            type="submit"
-            className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-1.5 text-base text-paper hover:border-steady hover:bg-steady"
-          >
-            Search
-          </button>
+          <div className="min-w-0 flex-1">
+            <label htmlFor="q" className="block text-body font-medium">
+              What happened?
+            </label>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              <input
+                id="q"
+                name="q"
+                type="search"
+                defaultValue={query}
+                placeholder="my muscles ached all over"
+                className="min-h-11 min-w-0 flex-1 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+              />
+              <button
+                type="submit"
+                className="min-h-11 cursor-pointer rounded-soft bg-steady px-5 py-2 text-body font-medium text-surface hover:opacity-90"
+              >
+                Search
+              </button>
+            </div>
+          </div>
         </div>
-        <p className="mt-1 text-meta text-slate">
+
+        {/*
+          What naming the medicine actually does, and what was fetched because
+          of it — one quiet note rather than a promise here and a result
+          somewhere else on the page.
+        */}
+        <p className="mt-3 text-meta text-slate-quiet">
           Only publicly available labels are searched. Naming the medicine lets
           us fetch its FDA label if we do not already hold it.
+          {acquisition !== null && acquisition.status !== "held" && (
+            <>
+              {" "}
+              {acquisition.status === "acquired"
+                ? `Fetched ${acquisition.title} from openFDA — ${acquisition.chunks} passages${acquisition.embedded ? ", indexed for semantic search" : ", keyword search only"}.`
+                : acquisition.status === "not_found"
+                  ? `${acquisition.reason}. Searching the labels already held.`
+                  : `The FDA label service could not be reached, so only labels already held were searched.`}
+            </>
+          )}
         </p>
       </form>
 
-      {acquisition !== null && acquisition.status !== "held" && (
-        <p className="mt-3 border-l-2 border-rule pl-3 text-meta text-slate">
-          {acquisition.status === "acquired"
-            ? `Fetched ${acquisition.title} from openFDA — ${acquisition.chunks} passages${acquisition.embedded ? ", indexed for semantic search" : ", keyword search only"}.`
-            : acquisition.status === "not_found"
-              ? `${acquisition.reason}. Searching the labels already held.`
-              : `The FDA label service could not be reached, so only labels already held were searched.`}
-        </p>
-      )}
-
       {query.length > 1 && (
         <section aria-label="Results" className="mt-6">
-          <h2 className="text-micro uppercase tracking-label text-slate">
-            {hits.length === 0
-              ? "Nothing found"
-              : `${hits.length} passage${hits.length === 1 ? "" : "s"} searched`}
-          </h2>
 
           {/*
             The generated answer. A few sentences, each quoting the passage
@@ -211,13 +222,19 @@ export default async function SearchPage({
             worried person, not a reviewer.
           */}
           {narrative !== null && (
-            <div className="mt-3">
-              <GeneratedNarrative
-                narrative={narrative}
-                onSeeSource={seeSource}
-                about={drug.length > 0 ? `${query} and ${drug}` : query}
-                footnote="The sentences above were written by a computer. The words beneath each one were copied from the published label exactly as they appear there, so you can check them. This is not medical advice and not a decision about your medicine — speak to a doctor or pharmacist."
-              />
+            <div className="rounded-card border border-rule bg-surface p-5 shadow-card">
+              <p className="font-mono text-micro uppercase tracking-label text-slate">
+                What the label says about{" "}
+                {drug.length > 0 ? `${query} and ${drug}` : query}
+              </p>
+              <div className="mt-3">
+                <GeneratedNarrative
+                  narrative={narrative}
+                  onSeeSource={seeSource}
+                  about={drug.length > 0 ? `${query} and ${drug}` : query}
+                  footnote="The sentences above were written by a computer. The words beneath each one were copied from the published label exactly as they appear there, so you can check them. This is not medical advice and not a decision about your medicine — speak to a doctor or pharmacist."
+                />
+              </div>
             </div>
           )}
 
@@ -228,27 +245,22 @@ export default async function SearchPage({
             paraphrasing it.
           */}
           {reading?.status === "read" && (
-            <div className="mt-2 border-l-2 border-steady pl-3">
+            <div className="mt-4 rounded-soft border-l-[3px] border-steady bg-surface-sunken px-4 py-3">
               <blockquote className="text-prose">{reading.quotedSpan}</blockquote>
               {reading.rationale !== null && (
-                <p className="mt-1.5 text-prose text-slate">{reading.rationale}</p>
+                <p className="mt-2 text-body text-slate">{reading.rationale}</p>
               )}
               {answeredFrom !== null && (
-                <p className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
-                  <span className="normal-case tracking-normal">
-                    {titleFor(answeredFrom.documentId)}
-                  </span>
+                <p className="mt-2 flex flex-wrap gap-x-2 font-mono text-micro text-slate">
+                  <span>{titleFor(answeredFrom.documentId)}</span>
                   {answeredFrom.section !== null && (
-                    <span className="normal-case tracking-normal">
-                      {answeredFrom.section}
-                    </span>
+                    <span>· {answeredFrom.section}</span>
                   )}
-                  <span className="font-mono normal-case tracking-normal">
-                    {answeredFrom.chunkId}
-                  </span>
+                  <span>· {answeredFrom.chunkId}</span>
+                  <span>{seeSource(answeredFrom.chunkId)}</span>
                 </p>
               )}
-              <p className="mt-1.5 text-meta text-slate">
+              <p className="mt-2 text-meta text-slate-quiet">
                 Quoted from the published label word for word. This is not
                 medical advice and not a decision about your medicine — speak
                 to a doctor or pharmacist.
@@ -257,8 +269,8 @@ export default async function SearchPage({
           )}
 
           {reading?.status === "nothing_found" && (
-            <div className="mt-2 border border-rule p-3 rounded-soft">
-              <p className="text-prose">
+            <div className="mt-4 rounded-card border border-rule bg-surface p-4 shadow-card">
+              <p className="text-body">
                 The passages below came up for what you described, but none of
                 them appears to be about it. Read them and judge for yourself —
                 it may be different wording for the same thing.
@@ -268,8 +280,8 @@ export default async function SearchPage({
 
           {reading?.status === "unavailable" && (
             /* Dashed, not red. Missing information is not a warning. */
-            <div className="mt-2 border border-dashed border-rule p-3 rounded-soft">
-              <p className="text-prose">
+            <div className="mt-4 rounded-card border border-dashed border-rule p-4">
+              <p className="text-body">
                 We found passages that may be relevant but could not summarise
                 them just now, so they are shown below exactly as written.
               </p>
@@ -277,13 +289,13 @@ export default async function SearchPage({
           )}
 
           {hits.length === 0 ? (
-            <div className="mt-2 border border-rule p-3 rounded-soft">
-              <p className="text-prose">
+            <div className="mt-4 rounded-card border border-rule bg-surface p-5 shadow-card">
+              <p className="text-body">
                 No published label we hold describes that. That is not a
                 verdict — it may simply be a medicine we do not have, or
                 different wording.
               </p>
-              <p className="mt-2 text-prose">
+              <p className="mt-2 text-body">
                 If it happened to you or someone you care for,{" "}
                 <Link href="/report/chat" className="text-steady hover:underline">
                   report it
@@ -294,45 +306,55 @@ export default async function SearchPage({
             </div>
           ) : (
             <>
-              <ul className="mt-2 border-t border-rule">
-                {hits.map((citation) => {
-                  const quoted = citation.chunkId === answeredFrom?.chunkId;
-                  return (
-                    <li key={citation.chunkId} className="border-b border-rule py-3">
-                      <blockquote
-                        className={[
-                          "border-l-2 pl-3 text-prose",
-                          quoted ? "border-ink" : "border-rule",
-                        ].join(" ")}
+              <div className="mt-4 rounded-card border border-rule bg-surface px-5 shadow-card">
+                <p className="flex flex-wrap justify-between gap-x-3 border-b border-rule py-3 font-mono text-micro uppercase tracking-label text-slate">
+                  <span>
+                    {hits.length} passage{hits.length === 1 ? "" : "s"} searched
+                  </span>
+                  <span className="text-slate-quiet">public labels only</span>
+                </p>
+                <ul>
+                  {hits.map((citation) => {
+                    const quoted = citation.chunkId === answeredFrom?.chunkId;
+                    return (
+                      <li
+                        key={citation.chunkId}
+                        className="border-b border-rule py-4 last:border-b-0"
                       >
-                        {citation.quote}
-                      </blockquote>
-                      {/* A <div>: this row holds a <dialog>, which cannot sit inside a <p>. */}
-                      <div className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
-                        {quoted && <span className="text-ink">quoted above</span>}
-                        <span className="text-steady">{citation.sourceType}</span>
-                        <span className="normal-case tracking-normal">
-                          {titleFor(citation.documentId)}
-                        </span>
-                        {citation.section !== null && (
-                          <span className="normal-case tracking-normal">
-                            {citation.section}
+                        <blockquote
+                          className={[
+                            "pl-3 text-body",
+                            quoted
+                              ? "border-l-2 border-ink"
+                              : "border-l-2 border-rule",
+                          ].join(" ")}
+                        >
+                          {citation.quote}
+                        </blockquote>
+                        {/* A <div>: this row holds a <dialog>, which cannot sit inside a <p>. */}
+                        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 pl-3 font-mono text-micro text-slate">
+                          {quoted && (
+                            <span className="text-ink">quoted above ·</span>
+                          )}
+                          <span className="text-steady">
+                            {citation.sourceType}
                           </span>
-                        )}
-                        <span className="font-mono normal-case tracking-normal">
-                          {citation.chunkId}
-                        </span>
-                        <span className="normal-case tracking-normal">
-                          {seeSource(citation.chunkId)}
-                        </span>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="mt-4 text-prose">
+                          <span>· {titleFor(citation.documentId)}</span>
+                          {citation.section !== null && (
+                            <span>· {citation.section}</span>
+                          )}
+                          <span>· {citation.chunkId}</span>
+                          <span>{seeSource(citation.chunkId)}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+
+              <p className="mt-4 rounded-card bg-steady-wash px-5 py-4 text-body">
                 Finding it here does not mean it does not matter.{" "}
-                <Link href="/report/chat" className="text-steady hover:underline">
+                <Link href="/report/chat" className="text-steady underline">
                   Report it anyway
                 </Link>{" "}
                 — how severe it was, and how often it happens, is what reviewers

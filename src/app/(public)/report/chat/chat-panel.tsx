@@ -81,16 +81,12 @@ const SLOT_LABELS: Readonly<Record<string, string>> = {
  */
 function CitedPassage({ citation }: { citation: Citation }) {
   return (
-    <li className="mt-2 border-l-2 border-steady pl-3">
-      <blockquote className="text-prose">{citation.quote}</blockquote>
-      <p className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
+    <li className="mt-3 rounded-soft border-l-[3px] border-steady bg-surface-sunken px-3 py-2.5">
+      <blockquote className="text-body">{citation.quote}</blockquote>
+      <p className="mt-1.5 flex flex-wrap gap-x-2 font-mono text-micro text-slate">
         <span className="text-steady">{citation.sourceType}</span>
-        {citation.section !== null && (
-          <span className="normal-case tracking-normal">{citation.section}</span>
-        )}
-        <span className="font-mono normal-case tracking-normal">
-          {citation.chunkId}
-        </span>
+        {citation.section !== null && <span>· {citation.section}</span>}
+        <span>· {citation.chunkId}</span>
       </p>
     </li>
   );
@@ -101,14 +97,16 @@ function Message({ message }: { message: IntakeMessage }) {
   return (
     <li
       className={[
-        "border-b border-rule py-3",
-        fromReporter ? "pl-8" : "",
+        "border-b border-rule px-5 py-4 last:border-b-0",
+        // The reporter's own turns are indented and filled, so the transcript
+        // reads as two voices rather than one column of alternating labels.
+        fromReporter ? "bg-surface-sunken pl-16" : "",
       ].join(" ")}
     >
-      <p className="text-micro uppercase tracking-label text-slate">
+      <p className="font-mono text-micro uppercase tracking-label text-slate">
         {fromReporter ? "You" : "SideNote"}
       </p>
-      <p className="mt-1 text-prose whitespace-pre-wrap">{message.text}</p>
+      <p className="mt-1.5 text-prose whitespace-pre-wrap">{message.text}</p>
       {message.citations.length > 0 && (
         <ul>
           {message.citations.map((citation) => (
@@ -191,13 +189,13 @@ export function ChatPanel() {
 
   return (
     <div>
-      <ul className="border-t border-rule">
+      <ul className="overflow-hidden rounded-card border border-rule bg-surface shadow-card">
         {state.intake.messages.map((message, index) => (
           <Message key={`${index}-${message.role}`} message={message} />
         ))}
       </ul>
       {state.error !== null && (
-        <p className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2 text-base">
+        <p className="mt-3 rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 text-body">
           {state.error}
         </p>
       )}
@@ -220,8 +218,12 @@ export function ChatPanel() {
           />
         </div>
       ) : (
-        <form ref={formRef} action={formAction} className="mt-4">
-          <label htmlFor="message" className="text-base font-medium">
+        <form
+          ref={formRef}
+          action={formAction}
+          className="mt-4 rounded-card border border-rule bg-surface p-5 shadow-card"
+        >
+          <label htmlFor="message" className="text-body font-medium">
             Your reply
           </label>
           {/*
@@ -239,7 +241,7 @@ export function ChatPanel() {
               rows={2}
               autoComplete="off"
               placeholder="Type here…"
-              className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-prose focus:outline-2 focus:outline-offset-1 focus:outline-steady"
+              className="min-w-0 flex-1 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady"
             />
             <input type="hidden" name="known" value={carried} />
             <button
@@ -255,7 +257,7 @@ export function ChatPanel() {
                 dead.
               */
               disabled={pending}
-              className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-wait disabled:opacity-60"
+              className="min-h-11 cursor-pointer rounded-soft bg-steady px-5 py-2 text-body font-medium text-surface hover:opacity-90 disabled:cursor-wait disabled:opacity-60"
             >
               {pending ? "Sending…" : "Send"}
             </button>
@@ -278,20 +280,38 @@ export function ChatPanel() {
             got shorter, so a reporter could not tell two-done from six-done at
             a glance.
           */}
-          <div className="mt-4 border-t border-rule pt-3">
-            <p className="text-micro uppercase tracking-label text-slate">
+          <div className="mt-5 border-t border-rule pt-4">
+            <p className="font-mono text-micro uppercase tracking-label text-slate">
               Question {Math.min(answeredCount + 1, INTAKE_QUESTION_COUNT)} of{" "}
               {INTAKE_QUESTION_COUNT}
             </p>
-            <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+            {/*
+              Eight segments, one per question, so two-done and six-done are
+              distinguishable at a glance. It used to be a comma sentence that
+              only ever got shorter.
+            */}
+            <ol className="mt-2 flex gap-1.5" aria-hidden="true">
+              {Array.from({ length: INTAKE_QUESTION_COUNT }, (_, index) => (
+                <li
+                  key={index}
+                  className={[
+                    "h-1 flex-1 rounded-pill",
+                    index < answeredCount ? "bg-steady" : "bg-rule",
+                  ].join(" ")}
+                />
+              ))}
+            </ol>
+            <ul className="mt-3 flex flex-wrap gap-2">
               {SLOT_ORDER.map((slot) => {
                 const done = !outstanding.includes(slot);
                 return (
                   <li
                     key={slot}
                     className={[
-                      "flex items-baseline gap-1.5 text-meta",
-                      done ? "text-steady" : "text-slate",
+                      "flex items-center gap-1.5 rounded-pill px-3 py-1 text-meta",
+                      done
+                        ? "bg-steady-wash text-steady"
+                        : "border border-rule text-slate",
                     ].join(" ")}
                   >
                     <span aria-hidden="true">{done ? "✓" : "○"}</span>
@@ -302,11 +322,11 @@ export function ChatPanel() {
             </ul>
           </div>
 
-          <div className="mt-3 border-t border-rule pt-3">
+          <div className="mt-4 border-t border-rule pt-4">
             <RequiredChecklist missing={missing} />
           </div>
 
-          <p className="mt-3 text-meta text-slate">
+          <p className="mt-4 text-meta text-slate">
             Prefer to see all the questions at once?{" "}
             <Link href="/report" className="text-steady hover:underline">
               Use the form

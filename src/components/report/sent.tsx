@@ -33,18 +33,29 @@ export function SentConfirmation({
 
   return (
     <div>
-      <h2 className="text-h2 font-medium">Thank you. Your report is in.</h2>
-      <p className="mt-2 text-prose">
+      <p className="flex items-center gap-2 font-mono text-micro uppercase tracking-label text-steady">
+        <span
+          aria-hidden="true"
+          className="flex size-5 items-center justify-center rounded-pill bg-steady-wash"
+        >
+          ✓
+        </span>
+        Report received
+      </p>
+      <h2 className="mt-3 text-[32px] leading-tight font-semibold">
+        Thank you. Your report is in.
+      </h2>
+      <p className="mt-2.5 text-prose text-slate">
         A trained person reads every report. You do not need to do anything
         else.
       </p>
 
-      <div className="mt-5 rounded-soft border border-rule p-4">
-        <p className="text-micro uppercase tracking-label text-slate">
+      <div className="mt-6 rounded-card border border-rule bg-surface p-5 shadow-card">
+        <p className="font-mono text-micro uppercase tracking-label text-slate">
           Your reference number
         </p>
-        <p className="mt-1 font-mono text-figure">{reference}</p>
-        <p className="mt-3 text-prose">
+        <p className="mt-2 font-mono text-figure-lg tabular-nums">{reference}</p>
+        <p className="mt-3 text-body text-slate">
           Please write this down or take a picture of it. Say this number if you
           ever contact us about this report.
         </p>
@@ -57,58 +68,66 @@ export function SentConfirmation({
         <button
           type="button"
           onClick={() => window.print()}
-          className="mt-3 cursor-pointer rounded-soft border border-rule px-3 py-1 text-meta hover:bg-row-hover"
+          className="mt-4 min-h-11 cursor-pointer rounded-soft border border-rule px-4 py-2 text-body hover:bg-surface-sunken"
         >
           Save or print this page
         </button>
       </div>
 
-      <section aria-label="What happens next" className="mt-6">
-        <h3 className="text-base font-medium">What happens next</h3>
-        <p className="mt-1 text-prose">
-          A safety reviewer will compare what you described against the
-          medicine&rsquo;s safety documents. If you gave us a way to reach you
-          and said we may, someone may contact you to ask one or two more
-          questions. Otherwise you will not hear back, and that does not mean
-          nothing happened — most reports are used as one of many.
-        </p>
-      </section>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <section
+          aria-label="What happens next"
+          className="rounded-card border border-rule bg-surface p-5 shadow-card"
+        >
+          <h3 className="text-h2 font-semibold">What happens next</h3>
+          <p className="mt-2 text-body text-slate">
+            A safety reviewer will compare what you described against the
+            medicine&rsquo;s safety documents. If you gave us a way to reach you
+            and said we may, someone may contact you to ask one or two more
+            questions. Otherwise you will not hear back, and that does not mean
+            nothing happened — most reports are used as one of many.
+          </p>
+        </section>
 
-      <section aria-label="Look it up" className="mt-5">
-        <h3 className="text-base font-medium">
-          Is this already a known side effect?
-        </h3>
-        <p className="mt-1 text-prose">
-          You can look up whether{" "}
-          {medicineName === null ? "the medicine" : medicineName}&rsquo;s
-          published information already describes what happened.{" "}
-          <Link href={lookup} className="text-steady hover:underline">
+        <section
+          aria-label="Look it up"
+          className="rounded-card border border-rule bg-surface p-5 shadow-card"
+        >
+          <h3 className="text-h2 font-semibold">
+            Is this already a known side effect?
+          </h3>
+          <p className="mt-2 text-body text-slate">
+            You can look up whether{" "}
+            {medicineName === null ? "the medicine" : medicineName}&rsquo;s
+            published information already describes what happened. Finding it
+            there does not mean your report was unnecessary — how severe it was,
+            and how often it happens, is what reviewers watch for.
+          </p>
+          <Link
+            href={lookup}
+            className="mt-4 flex min-h-11 w-fit items-center rounded-soft bg-steady-wash px-4 py-2 text-body font-medium text-steady hover:opacity-90"
+          >
             Look it up
           </Link>
-          . Finding it there does not mean your report was unnecessary — how
-          severe it was, and how often it happens, is what reviewers watch for.
-        </p>
-      </section>
-
-      <p className="mt-6 text-meta text-slate">
-        This is a training demo, so here is the reviewer view of what you just
-        sent:{" "}
-        <Link
-          href={`/case/${caseId}`}
-          className="text-steady hover:underline"
-        >
-          see the case
-        </Link>
-        . A real reporter would not have that link.
-      </p>
+        </section>
+      </div>
 
       <button
         type="button"
         onClick={onReportAnother}
-        className="mt-4 cursor-pointer rounded-soft border border-rule px-4 py-2 text-base hover:bg-row-hover"
+        className="mt-5 min-h-11 cursor-pointer rounded-soft border border-rule bg-surface px-4 py-2 text-body hover:bg-surface-sunken"
       >
         Report something else
       </button>
+
+      <p className="mt-5 text-meta text-slate-quiet">
+        This is a training demo, so here is the reviewer view of what you just
+        sent:{" "}
+        <Link href={`/case/${caseId}`} className="text-steady hover:underline">
+          see the case
+        </Link>
+        . A real reporter would not have that link.
+      </p>
     </div>
   );
 }

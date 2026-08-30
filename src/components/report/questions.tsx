@@ -61,9 +61,9 @@ export function ChoiceQuestion<T extends string>({
       className="mt-6"
       aria-describedby={hint === undefined ? undefined : hintId}
     >
-      <legend className="text-base font-medium">{legend}</legend>
+      <legend className="text-body font-medium">{legend}</legend>
       {hint !== undefined && (
-        <p id={hintId} className="mt-1 text-meta text-slate">
+        <p id={hintId} className="mt-1 text-[13px] leading-relaxed text-slate">
           {hint}
         </p>
       )}
@@ -80,7 +80,12 @@ export function ChoiceQuestion<T extends string>({
                   points at the same control forwards a second activation, so
                   clicking the text toggles a checkbox twice and lands back
                   where it started. */}
-              <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-row-hover">
+              <label
+                className={[
+                  "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2.5",
+                  selected ? "bg-steady-wash" : "hover:bg-surface-sunken",
+                ].join(" ")}
+              >
                 <input
                   type="radio"
                   id={id}
@@ -89,7 +94,14 @@ export function ChoiceQuestion<T extends string>({
                   onChange={() => onChange(answered(choice.value))}
                   className="accent-steady"
                 />
-                <span className="text-base">{choice.label}</span>
+                <span
+                  className={[
+                    "text-body",
+                    selected ? "font-medium text-steady" : "",
+                  ].join(" ")}
+                >
+                  {choice.label}
+                </span>
               </label>
             </div>
           );
@@ -97,7 +109,14 @@ export function ChoiceQuestion<T extends string>({
 
         {allowUnknown && (
           <div className="border-t border-rule">
-            <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-row-hover">
+            <label
+              className={[
+                "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-2.5",
+                value.status === "unknown"
+                  ? "bg-steady-wash"
+                  : "hover:bg-surface-sunken",
+              ].join(" ")}
+            >
               <input
                 type="radio"
                 id={`${name}-unknown`}
@@ -106,7 +125,14 @@ export function ChoiceQuestion<T extends string>({
                 onChange={() => onChange(NOT_KNOWN)}
                 className="accent-steady"
               />
-              <span className="text-base text-slate">{unknownLabel}</span>
+              <span
+                className={[
+                  "text-body",
+                  value.status === "unknown" ? "text-steady" : "text-slate",
+                ].join(" ")}
+              >
+                {unknownLabel}
+              </span>
             </label>
           </div>
         )}
@@ -148,11 +174,11 @@ export function NumberQuestion({
 
   return (
     <div className="mt-6">
-      <label htmlFor={id} className="text-base font-medium">
+      <label htmlFor={id} className="text-body font-medium">
         {label}
       </label>
       {hint !== undefined && (
-        <p id={hintId} className="mt-1 text-meta text-slate">
+        <p id={hintId} className="mt-1 text-[13px] leading-relaxed text-slate">
           {hint}
         </p>
       )}
@@ -175,7 +201,7 @@ export function NumberQuestion({
           const parsed = Number(raw);
           onChange(Number.isFinite(parsed) ? answered(parsed) : UNANSWERED);
         }}
-        className="mt-2 w-32 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+        className="mt-2 w-32 min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
       />
 
       <label className="mt-2 flex w-fit cursor-pointer items-center gap-2">
@@ -251,16 +277,16 @@ export function TextQuestion({
     placeholder,
     "aria-describedby": hint === undefined ? undefined : hintId,
     className:
-      "mt-2 w-full rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50",
+      "mt-2 w-full min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50",
   };
 
   return (
     <div className="mt-6">
-      <label htmlFor={id} className="text-base font-medium">
+      <label htmlFor={id} className="text-body font-medium">
         {label}
       </label>
       {hint !== undefined && (
-        <p id={hintId} className="mt-1 text-meta text-slate">
+        <p id={hintId} className="mt-1 text-[13px] leading-relaxed text-slate">
           {hint}
         </p>
       )}
@@ -367,8 +393,8 @@ export function DateQuestion({
       className="mt-6"
       aria-describedby={hint === undefined ? undefined : hintId}
     >
-      <legend className="text-base font-medium">{legend}</legend>
-      <p id={hintId} className="mt-1 text-meta text-slate">
+      <legend className="text-body font-medium">{legend}</legend>
+      <p id={hintId} className="mt-1 text-[13px] leading-relaxed text-slate">
         {hint ?? "If you only remember the year, just fill in the year."}
       </p>
 
@@ -402,7 +428,7 @@ export function DateQuestion({
             disabled={unknown}
             value={year}
             onChange={(event) => rebuild(event.target.value, month, day)}
-            className="mt-1 w-24 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+            className="mt-1 w-24 min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
           />
         </div>
 
@@ -416,7 +442,7 @@ export function DateQuestion({
             title={year === "" ? "Give the year first" : undefined}
             value={month}
             onChange={(event) => rebuild(year, event.target.value, day)}
-            className="mt-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
+            className="mt-1 min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate disabled:opacity-60"
           >
             <option value="">Not sure</option>
             {MONTH_NAMES.map((name, index) => (
@@ -437,7 +463,7 @@ export function DateQuestion({
             title={month === "" ? "Choose a month first" : undefined}
             value={day}
             onChange={(event) => rebuild(year, month, event.target.value)}
-            className="mt-1 rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-row-hover disabled:text-slate disabled:opacity-60"
+            className="mt-1 min-h-11 rounded-soft border border-rule bg-surface px-3 py-2 text-body placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:cursor-not-allowed disabled:bg-surface-sunken disabled:text-slate disabled:opacity-60"
           >
             <option value="">Not sure</option>
             {Array.from({ length: 31 }, (_, i) => String(i + 1).padStart(2, "0")).map(

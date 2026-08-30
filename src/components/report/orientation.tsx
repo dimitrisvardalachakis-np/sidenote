@@ -24,17 +24,24 @@ export function Orientation() {
   return (
     <section
       aria-label="Before you start"
-      className="border-l-2 border-slate pl-3"
+      className="rounded-card border border-rule bg-surface p-5 shadow-card"
     >
-      <p className="text-prose text-ink">
-        <strong className="font-medium">
+      {/*
+        The 3px --signal border is the ONLY --signal on any public page, and it
+        is a border rather than text. The red is the regulatory clock
+        everywhere else in this app; here it is doing the one other job a red
+        edge can honestly do, and it does it without a permanent red block
+        shouting at someone who is already worried.
+      */}
+      <p className="border-l-[3px] border-signal pl-4 text-prose text-ink">
+        <strong className="font-semibold">
           If this is happening now and it is serious
         </strong>{" "}
         — chest pain, trouble breathing, swelling of the face or throat,
         fainting — contact a doctor or your local emergency services. This form
         is not monitored in real time.
       </p>
-      <p className="mt-2 text-meta text-slate">
+      <p className="mt-3 pl-4 text-body text-slate">
         A trained person reads every report and passes it to a safety reviewer.
         You do not need an account. It takes about five minutes, and you can
         leave anything blank if you do not know it.
@@ -77,34 +84,36 @@ export function RequiredChecklist({
 
   return (
     <section aria-label="What a report needs">
-      <p className="text-micro uppercase tracking-label text-slate">
-        A report needs these four
-      </p>
-      <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p className="font-mono text-micro uppercase tracking-label text-slate">
+          A report needs these four
+        </p>
+        {outstanding.size > 0 && (
+          <p className="text-meta text-slate-quiet">
+            Everything else is optional.
+          </p>
+        )}
+      </div>
+      <ul className="mt-2 flex flex-wrap gap-2">
         {REQUIRED_ORDER.map((element) => {
           const done = !outstanding.has(element);
           return (
             <li
               key={element}
               className={[
-                "flex items-baseline gap-1.5 text-meta",
-                done ? "text-steady" : "text-slate",
+                "flex items-center gap-1.5 rounded-pill px-3 py-1 text-meta",
+                done
+                  ? "bg-steady-wash text-steady"
+                  : "border border-rule text-slate",
               ].join(" ")}
             >
               <span aria-hidden="true">{done ? "✓" : "○"}</span>
               <span>{REQUIRED_LABELS[element]}</span>
-              <span className="sr-only">
-                {done ? "given" : "still needed"}
-              </span>
+              <span className="sr-only">{done ? "given" : "still needed"}</span>
             </li>
           );
         })}
       </ul>
-      {outstanding.size > 0 && (
-        <p className="mt-1 text-micro text-slate">
-          Everything else is optional.
-        </p>
-      )}
     </section>
   );
 }
@@ -132,7 +141,7 @@ export function ProgressRule({
 }) {
   return (
     <nav aria-label="Progress">
-      <ol className="flex gap-1">
+      <ol className="flex gap-1.5">
         {steps.map((step, index) => {
           const done = index < current;
           const here = index === current;
@@ -140,7 +149,7 @@ export function ProgressRule({
             <li key={step.id} className="flex-1">
               <div
                 className={[
-                  "h-0.5",
+                  "h-1 rounded-pill",
                   done ? "bg-steady" : here ? "bg-ink" : "bg-rule",
                 ].join(" ")}
               />
@@ -152,7 +161,7 @@ export function ProgressRule({
           );
         })}
       </ol>
-      <p className="mt-1 text-micro uppercase tracking-label text-slate">
+      <p className="mt-2 font-mono text-micro uppercase tracking-label text-slate">
         Step {current + 1} of {steps.length} ·{" "}
         <span className="text-ink">{steps[current]?.title}</span>
       </p>

@@ -16,22 +16,22 @@ export const metadata: Metadata = {
  */
 export default function ChatIntakePage() {
   return (
-    <main className="mx-auto w-full max-w-[70ch] px-4 py-8">
-      <h1 className="text-hero font-medium">Report by chat</h1>
-      <p className="mt-2 text-prose text-slate">
-        Describe what happened in your own words. We will ask for anything else
-        we need, one question at a time.
+    <main className="mx-auto w-full max-w-[46rem] flex-1 px-4 py-10">
+      <h1 className="text-hero font-semibold">Report a side effect</h1>
+      <p className="mt-2.5 text-prose text-slate">
+        One question at a time. About five minutes, eight questions, and you can
+        switch to the form at any point — your answers come with you.
       </p>
 
-      <div className="mt-4">
+      <div className="mt-6">
         <Orientation />
       </div>
 
-      <div className="mt-4 border border-rule p-3 rounded-soft">
-        <p className="text-micro uppercase tracking-label text-slate">
+      <div className="mt-4 rounded-card border border-rule bg-surface p-5 shadow-card">
+        <p className="font-mono text-micro uppercase tracking-label text-slate">
           How this works
         </p>
-        <p className="mt-1 text-meta">
+        <p className="mt-2 text-body text-slate">
           This is a scripted intake, not a chatbot — the questions are fixed and
           come from what a safety report legally requires. When you have
           finished, it searches the published information for that medicine and

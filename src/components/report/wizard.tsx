@@ -114,155 +114,174 @@ export function ReportWizard() {
   return (
     <div>
       {/*
-        The way across, and it carries the answers. Crossing used to mean
-        starting again from nothing, which made the first choice on the landing
-        page unrecoverable.
+        Everything from the checklist down lives in ONE card, so the form reads
+        as a single object a reporter is working through rather than as five
+        stacked panels. The draft notice and the way to clear it stay outside
+        it, quietest on the page.
       */}
-      <p className="text-meta text-slate">
-        Prefer to answer one question at a time?{" "}
-        <Link href="/report/chat" className="text-steady hover:underline">
-          Use the chat
-        </Link>
-        . Your answers come with you.
-      </p>
-
-      {/*
-        The four required things, from the first question rather than at the
-        end. The intro says you can leave anything blank and the send button
-        then refuses without four of them; showing both at once is what stops
-        those being a contradiction the reporter meets four minutes apart.
-      */}
-      <div className="border-y border-rule py-2">
-        <RequiredChecklist missing={missing} />
-      </div>
-
-      <div className="mt-4">
-        <ProgressRule
-          steps={STEP_IDS.map((id) => ({ id, title: STEP_TITLES[id] }))}
-          current={stepIndex}
-        />
-      </div>
-
-      <div className="mt-3">
-        <h2
-          id="step-heading"
-          tabIndex={-1}
-          className="text-h2 font-medium focus:outline-2 focus:outline-offset-2 focus:outline-steady"
-        >
-          {STEP_TITLES[stepId]}
-          {OPTIONAL_STEPS[stepId] && (
-            <span className="ml-2 text-meta font-normal text-slate">
-              optional
-            </span>
-          )}
-        </h2>
-        <p className="mt-1 text-meta text-slate">
-          {progress.resolved} of {progress.total} questions answered here.
-        </p>
-      </div>
-
-      <div className="mt-4">
-        {stepId === "about" && <StepAbout draft={draft} update={update} />}
-        {stepId === "what_happened" && (
-          <StepWhatHappened draft={draft} update={update} />
-        )}
-        {stepId === "medicine" && <StepMedicine draft={draft} update={update} />}
-        {stepId === "stopping" && <StepStopping draft={draft} update={update} />}
-        {stepId === "you" && <StepYou draft={draft} update={update} />}
-      </div>
-
-      {onLastStep && (
-        <div className="mt-8 border-t border-rule pt-4">
-          {missing.length > 0 && (
-            <div
-              role="alert"
-              className="border-l-2 border-ink bg-row-hover px-3 py-2"
-            >
-              <p className="text-base font-medium">
-                Before you send this, we still need{" "}
-                {missing.length === 1 ? "one thing" : `${missing.length} things`}.
-              </p>
-              <ul className="mt-2">
-                {missing.map((element) => (
-                  <li key={element} className="mt-1 text-base">
-                    {MISSING_MESSAGES[element]}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {outcome !== null && outcome.status !== "created" && (
-            <div role="alert" className="mt-3 border-l-2 border-ink bg-row-hover px-3 py-2">
-              <p className="text-base font-medium">We could not send it yet.</p>
-              <ul className="mt-2">
-                {(outcome.status === "failed" || outcome.status === "blocked"
-                  ? [outcome.message]
-                  : outcome.messages
-                ).map((message: string) => (
-                  <li key={message} className="mt-1 text-base">
-                    {message}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <button
-            type="button"
-            onClick={() => void send()}
-            disabled={sending || missing.length > 0}
-            className="mt-4 cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-not-allowed disabled:opacity-40"
+      <div className="rounded-card border border-rule bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+          <div className="min-w-0 flex-1">
+            <RequiredChecklist missing={missing} />
+          </div>
+          {/*
+            The way across, and it carries the answers. Crossing used to mean
+            starting again from nothing, which made the first choice on the
+            landing page unrecoverable.
+          */}
+          <Link
+            href="/report/chat"
+            className="shrink-0 text-meta text-steady hover:underline"
           >
-            {sending ? "Sending" : "Send my report"}
-          </button>
-          <p className="mt-2 text-meta text-slate">
-            Nothing is sent until you press this.
+            Answer one question at a time instead →
+          </Link>
+        </div>
+
+        <div className="mt-6">
+          <ProgressRule
+            steps={STEP_IDS.map((id) => ({ id, title: STEP_TITLES[id] }))}
+            current={stepIndex}
+          />
+        </div>
+
+        <div className="mt-5">
+          <h2
+            id="step-heading"
+            tabIndex={-1}
+            className="text-[21px] leading-tight font-semibold focus:outline-2 focus:outline-offset-2 focus:outline-steady"
+          >
+            {STEP_TITLES[stepId]}
+            {OPTIONAL_STEPS[stepId] && (
+              <span className="ml-2 text-body font-normal text-slate">
+                optional
+              </span>
+            )}
+          </h2>
+          <p className="mt-1 text-meta text-slate">
+            {progress.resolved} of {progress.total} questions answered here.
           </p>
         </div>
-      )}
 
-      <div className="mt-8 flex items-center justify-between gap-3 border-t border-rule pt-4">
-        <button
-          type="button"
-          onClick={() => goTo(stepIndex - 1)}
-          disabled={stepIndex === 0}
-          className="cursor-pointer rounded-soft border border-rule px-4 py-2 text-base hover:bg-row-hover disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Back
-        </button>
-
-        <div className="flex items-center gap-3">
-          {/*
-            The explanation of a disabled Next, BESIDE the control rather than
-            below it — where it was, under a button, out of the eye-line of the
-            thing it explains.
-          */}
-          {stepIndex === 0 && !canLeaveFirstStep && (
-            <p className="text-meta text-slate">
-              Choose who this is about to carry on.
-            </p>
+        <div className="mt-5">
+          {stepId === "about" && <StepAbout draft={draft} update={update} />}
+          {stepId === "what_happened" && (
+            <StepWhatHappened draft={draft} update={update} />
           )}
+          {stepId === "medicine" && (
+            <StepMedicine draft={draft} update={update} />
+          )}
+          {stepId === "stopping" && (
+            <StepStopping draft={draft} update={update} />
+          )}
+          {stepId === "you" && <StepYou draft={draft} update={update} />}
+        </div>
 
-          {/* An optional step says so, and offers the way past it. */}
-          {OPTIONAL_STEPS[stepId] && !onLastStep && (
+        {onLastStep && (
+          <div className="mt-8 border-t border-rule pt-5">
+            {missing.length > 0 && (
+              <div
+                role="alert"
+                className="rounded-card border border-rule border-l-[3px] border-l-ink bg-surface-sunken px-4 py-3"
+              >
+                <p className="text-body font-semibold">
+                  Before you send this, we still need{" "}
+                  {missing.length === 1
+                    ? "one thing"
+                    : `${missing.length} things`}
+                  .
+                </p>
+                <ul className="mt-2">
+                  {missing.map((element) => (
+                    <li key={element} className="mt-1 text-body">
+                      {MISSING_MESSAGES[element]}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {outcome !== null && outcome.status !== "created" && (
+              <div
+                role="alert"
+                className="mt-3 rounded-card border border-rule border-l-[3px] border-l-ink bg-surface-sunken px-4 py-3"
+              >
+                <p className="text-body font-semibold">
+                  We could not send it yet.
+                </p>
+                <ul className="mt-2">
+                  {(outcome.status === "failed" || outcome.status === "blocked"
+                    ? [outcome.message]
+                    : outcome.messages
+                  ).map((message: string) => (
+                    <li key={message} className="mt-1 text-body">
+                      {message}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => void send()}
+              disabled={sending || missing.length > 0}
+              className="mt-4 min-h-11 cursor-pointer rounded-soft bg-steady px-5 py-2 text-body font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {sending ? "Sending" : "Send my report"}
+            </button>
+            <p className="mt-2 text-meta text-slate">
+              Nothing is sent until you press this.
+            </p>
+          </div>
+        )}
+
+        {/*
+          Back / Skip / Next pinned in a footer row INSIDE the card, so the
+          controls that move the form belong to the form rather than floating
+          under it.
+        */}
+        <div className="mt-6 flex items-center justify-between gap-3 border-t border-rule pt-4">
+          <button
+            type="button"
+            onClick={() => goTo(stepIndex - 1)}
+            disabled={stepIndex === 0}
+            className="min-h-11 cursor-pointer rounded-soft border border-rule px-4 py-2 text-body hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Back
+          </button>
+
+          <div className="flex items-center gap-3">
+            {/*
+              The explanation of a disabled Next, BESIDE the control rather
+              than below it — where it was, under a button, out of the eye-line
+              of the thing it explains.
+            */}
+            {stepIndex === 0 && !canLeaveFirstStep && (
+              <p className="text-meta text-slate">
+                Choose who this is about to carry on.
+              </p>
+            )}
+
+            {/* An optional step says so, and offers the way past it. */}
+            {OPTIONAL_STEPS[stepId] && !onLastStep && (
+              <button
+                type="button"
+                onClick={() => goTo(stepIndex + 1)}
+                className="min-h-11 cursor-pointer px-2 text-meta text-slate hover:text-steady hover:underline"
+              >
+                Skip this
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => goTo(stepIndex + 1)}
-              className="cursor-pointer text-meta text-slate hover:text-steady hover:underline"
+              disabled={onLastStep || (stepIndex === 0 && !canLeaveFirstStep)}
+              className="min-h-11 cursor-pointer rounded-soft bg-steady px-5 py-2 text-body font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Skip this
+              Next
             </button>
-          )}
-
-          <button
-            type="button"
-            onClick={() => goTo(stepIndex + 1)}
-            disabled={onLastStep || (stepIndex === 0 && !canLeaveFirstStep)}
-            className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-2 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Next
-          </button>
+          </div>
         </div>
       </div>
 
@@ -273,9 +292,12 @@ export function ReportWizard() {
         and localStorage does not. A privacy claim that has quietly stopped
         being true is worse than no claim, so this states the day and gives a
         control rather than relying on a browser behaviour.
+
+        Outside the card and the quietest thing on the page: it is a standing
+        fact about this device, not a step in the form.
       */}
-      <div className="mt-6 flex flex-wrap items-baseline justify-between gap-3 border-t border-rule pt-3">
-        <p className="text-meta text-slate">
+      <div className="mt-4 flex flex-wrap items-baseline justify-between gap-3 px-1">
+        <p className="text-meta text-slate-quiet">
           Your answers are kept on this device for {DRAFT_TTL_LABEL} so you can
           come back to them.
         </p>
@@ -290,7 +312,7 @@ export function ReportWizard() {
               clearDraft();
             }
           }}
-          className="cursor-pointer text-meta text-slate hover:text-steady hover:underline"
+          className="cursor-pointer text-meta text-slate-quiet hover:text-steady hover:underline"
         >
           Clear my answers
         </button>

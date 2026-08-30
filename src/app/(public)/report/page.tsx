@@ -16,17 +16,18 @@ export const metadata: Metadata = {
  */
 export default function ReportPage() {
   return (
-    <main className="mx-auto w-full max-w-[62ch] px-4 py-8">
-      <h1 className="text-hero font-medium">Report a side effect</h1>
-      <p className="mt-2 text-prose">
-        Tell us what happened after someone took a medicine.
+    <main className="mx-auto w-full max-w-[46rem] flex-1 px-4 py-10">
+      <h1 className="text-hero font-semibold">Report a side effect</h1>
+      <p className="mt-2.5 text-prose text-slate">
+        Tell us what happened after someone took a medicine. Write it however
+        you like — there is no wrong way to do this.
       </p>
 
-      <div className="mt-4">
+      <div className="mt-6">
         <Orientation />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <ReportWizard />
       </div>
     </main>
