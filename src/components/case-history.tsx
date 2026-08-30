@@ -18,8 +18,8 @@ import type { AuditRecord } from "@/lib/audit";
  */
 export function CaseHistory({ records }: { records: readonly AuditRecord[] }) {
   return (
-    <details className="mt-6 border-t border-rule pt-3">
-      <summary className="cursor-pointer text-micro uppercase tracking-label text-slate hover:text-ink">
+    <details className="mt-6 rounded-card border border-rule bg-surface px-4 py-3 shadow-card">
+      <summary className="cursor-pointer font-mono text-micro uppercase tracking-label text-slate hover:text-ink">
         History · {records.length} {records.length === 1 ? "entry" : "entries"}
       </summary>
 
@@ -29,23 +29,25 @@ export function CaseHistory({ records }: { records: readonly AuditRecord[] }) {
           ruling writes a line here.
         </p>
       ) : (
-        <ol className="mt-2">
+        <ol className="mt-3">
           {records.map((record, index) => (
             <li
               key={`${record.timestamp}-${index}`}
-              className="border-t border-rule py-1.5 first:border-t-0"
+              className="grid gap-x-3 border-t border-rule py-2 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)]"
             >
+              <span className="font-mono text-meta tabular-nums text-slate-quiet">
+                {record.timestamp.slice(0, 16).replace("T", " ")}
+              </span>
               <div className="flex flex-wrap items-baseline gap-x-3">
-                <span className="font-mono text-micro tabular-nums text-slate">
-                  {record.timestamp.slice(0, 16).replace("T", " ")}
-                </span>
                 <span className="text-meta text-ink">
                   {record.action.replace(/_/g, " ")}
                 </span>
-                <span className="text-micro text-slate">{record.actor}</span>
+                <span className="font-mono text-micro text-slate">
+                  {record.actor}
+                </span>
                 <span
                   className={[
-                    "text-micro uppercase tracking-label",
+                    "font-mono text-micro uppercase tracking-label",
                     // Not --signal: a rejected write is a system working, not
                     // a regulatory deadline.
                     record.outcome === "success" ? "text-steady" : "text-slate",
@@ -55,7 +57,7 @@ export function CaseHistory({ records }: { records: readonly AuditRecord[] }) {
                 </span>
               </div>
               {record.detail !== undefined && (
-                <p className="mt-0.5 font-mono text-micro break-words text-slate">
+                <p className="mt-0.5 font-mono text-micro break-words text-slate-quiet sm:col-start-2">
                   {Object.entries(record.detail)
                     .map(([key, value]) => `${key}=${String(value)}`)
                     .join("  ")}

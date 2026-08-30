@@ -47,12 +47,12 @@ export function ClaimPanel({
 
   if (theirs) {
     return (
-      <div className="border-l-2 border-ink bg-row-hover px-3 py-2">
+      <div className="rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 shadow-card">
         <p className="text-base">
           Held by <span className="font-medium">{claim.displayName}</span> since{" "}
-          <span className="tabular-nums">{timeOf(claim.heldSince)}</span>
+          <span className="font-mono tabular-nums">{timeOf(claim.heldSince)}</span>
         </p>
-        <p className="mt-0.5 text-meta text-slate">
+        <p className="mt-1 text-meta text-slate">
           You can read everything on this case, including the evidence and the
           documents behind it. You cannot claim it, rule on it, or change a
           seriousness flag while {claim.displayName} holds it.
@@ -72,16 +72,18 @@ export function ClaimPanel({
 
   if (mine) {
     return (
-      <div className="flex flex-wrap items-center gap-3">
-        <p className="text-base">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-soft bg-steady-wash px-4 py-2.5">
+        <p className="text-base text-steady">
           You have this case since{" "}
-          <span className="tabular-nums">{timeOf(claim.heldSince)}</span>
+          <span className="font-mono tabular-nums">
+            {timeOf(claim.heldSince)}
+          </span>
         </p>
         <form action={submitRelease}>
           <button
             type="submit"
             disabled={releasing}
-            className="cursor-pointer rounded-soft border border-rule px-3 py-1 text-meta text-slate hover:border-ink hover:text-ink disabled:opacity-40"
+            className="min-h-8 cursor-pointer rounded-soft border border-steady-line bg-surface px-3 py-1 text-meta text-steady hover:border-steady disabled:opacity-40"
           >
             {releasing ? "Releasing…" : "Release"}
           </button>
@@ -95,7 +97,7 @@ export function ClaimPanel({
       <button
         type="submit"
         disabled={claiming}
-        className="cursor-pointer rounded-soft border border-ink bg-ink px-3 py-1 text-base text-paper hover:border-steady hover:bg-steady disabled:opacity-40"
+        className="min-h-10 cursor-pointer rounded-soft bg-steady px-4 py-2 text-base font-medium text-surface hover:opacity-90 disabled:opacity-40"
       >
         {claiming ? "Claiming…" : "Claim this case"}
       </button>

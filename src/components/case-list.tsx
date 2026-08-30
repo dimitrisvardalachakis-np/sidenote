@@ -71,16 +71,20 @@ function CountdownRail({ clock }: { clock: ExpeditedClock | null }) {
    *
    * A reviewer scanning a queue reads down the left margin; putting urgency
    * there means it is legible without reading a single word, and it costs no
-   * horizontal space in a table that is already dense.
+   * horizontal space in a list that is already dense. Three states, matching
+   * the queue table: red for late, --steady-line for a clock merely running,
+   * nothing otherwise.
    */
-  const urgent = clock !== null && clock.state !== "not_applicable";
+  const tone =
+    clock === null || clock.state === "not_applicable"
+      ? "bg-transparent"
+      : clock.state === "overdue"
+        ? "bg-signal"
+        : "bg-steady-line";
   return (
     <span
       aria-hidden="true"
-      className={[
-        "block w-0.5 self-stretch",
-        urgent ? "bg-signal" : "bg-transparent",
-      ].join(" ")}
+      className={`block w-[3px] shrink-0 self-stretch ${tone}`}
     />
   );
 }
@@ -110,23 +114,25 @@ export function CaseRow({
   const disagrees = assessment !== null && sourcesDisagree(assessment);
 
   return (
-    <li className="border-b border-rule">
+    <li className="mt-1.5 first:mt-0">
       <Link
         href={`/case/${record.id}`}
         className={[
-          "flex gap-3 hover:bg-row-hover",
-          current ? "bg-row-active" : "",
+          "flex overflow-hidden rounded-soft bg-surface",
+          current
+            ? "border border-rule shadow-card"
+            : "border border-transparent hover:border-rule",
         ].join(" ")}
       >
         <CountdownRail clock={clock} />
-        <div className="min-w-0 flex-1 py-2 pr-3">
+        <div className="min-w-0 flex-1 px-3 py-2.5">
           <div className="flex items-baseline justify-between gap-3">
             <span className="font-mono text-meta text-slate">
               {record.reference}
             </span>
             <span
               className={[
-                "shrink-0 text-meta tabular-nums",
+                "shrink-0 font-mono text-meta tabular-nums",
                 label.urgent ? "font-medium text-signal" : "text-slate",
               ].join(" ")}
             >
@@ -146,7 +152,7 @@ export function CaseRow({
           </p>
 
           {!compact && (
-            <div className="mt-1 flex flex-wrap gap-x-3 text-micro uppercase tracking-label text-slate">
+            <div className="mt-1 flex flex-wrap gap-x-3 font-mono text-micro uppercase tracking-label text-slate">
               <span>{record.status.replace("_", " ")}</span>
               <span>received {record.receivedAt}</span>
               {record.assignedTo !== null && (
@@ -184,7 +190,7 @@ export function CaseList({
   currentId?: string | null;
 }) {
   return (
-    <ul className="border-t border-rule">
+    <ul>
       {cases.map((seeded) => (
         <CaseRow
           key={seeded.record.id}

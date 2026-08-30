@@ -86,9 +86,12 @@ export function RulingForm({
   const unlisted = listedness === "unlisted";
 
   return (
-    <form action={submit}>
+    <form
+      action={submit}
+      className="rounded-card border border-rule bg-surface p-5 shadow-card"
+    >
       <fieldset disabled={blocked} className="border-0 p-0">
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           <Choice
             legend="Company document — listedness"
             name="listedness"
@@ -115,7 +118,7 @@ export function RulingForm({
 
         <label
           htmlFor="rationale"
-          className="mt-4 block text-micro uppercase tracking-label text-slate"
+          className="mt-5 block font-mono text-micro uppercase tracking-label text-slate"
         >
           Why
         </label>
@@ -126,14 +129,28 @@ export function RulingForm({
           value={rationale}
           onChange={(e) => setRationale(e.target.value)}
           placeholder="Which passage decided it, and what the other source said."
-          className="mt-1 w-full rounded-soft border border-rule bg-surface px-2 py-1.5 text-base focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
+          className="mt-1.5 w-full rounded-soft border border-rule bg-surface px-3 py-2 text-base placeholder:text-slate-quiet focus:outline-2 focus:outline-offset-1 focus:outline-steady disabled:opacity-50"
         />
 
         {/*
           The consequence, live, beside the control rather than after it.
           --signal is correct here and only here: this IS the expedited clock.
         */}
-        <div className="mt-3 border-l-2 border-rule pl-3">
+        {/*
+          The consequence, live, beside the control rather than after it.
+          --signal is correct here and only here: this IS the expedited clock,
+          and the wash appears only when the clock would actually start —
+          `unlisted` alone does not earn it, because a case with no seriousness
+          criterion standing starts no clock however it is ruled.
+        */}
+        <div
+          className={[
+            "mt-4 rounded-soft border-l-[3px] px-3 py-2.5",
+            unlisted && clockIfUnlisted.state !== "not_applicable"
+              ? "border-l-signal bg-signal-wash"
+              : "border-l-rule bg-paper",
+          ].join(" ")}
+        >
           {unlisted && clockIfUnlisted.state !== "not_applicable" ? (
             <p className="text-base">
               <span className="text-signal">Unlisted and serious</span> — this
@@ -159,11 +176,11 @@ export function RulingForm({
           )}
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             type="submit"
             disabled={!canSubmit}
-            className="cursor-pointer rounded-soft border border-ink bg-ink px-4 py-1.5 text-base text-paper hover:border-steady hover:bg-steady disabled:cursor-not-allowed disabled:opacity-40"
+            className="min-h-10 cursor-pointer rounded-soft bg-steady px-5 py-2 text-base font-medium text-surface hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pending
               ? "Recording…"
@@ -195,7 +212,7 @@ export function RulingForm({
       </fieldset>
 
       {existing !== null && (
-        <p className="mt-3 border-t border-rule pt-2 text-micro uppercase tracking-label text-slate">
+        <p className="mt-4 border-t border-rule pt-3 font-mono text-micro uppercase tracking-label text-slate">
           Ruled by <span className="text-ink">{existing.decidedBy}</span> ·{" "}
           <span className="normal-case tracking-normal">
             {existing.decidedAt.slice(0, 16).replace("T", " ")}
@@ -221,20 +238,25 @@ function Choice({
 }) {
   return (
     <fieldset className="border-0 p-0">
-      <legend className="text-micro uppercase tracking-label text-slate">
+      <legend className="font-mono text-micro uppercase tracking-label text-slate">
         {legend}
       </legend>
-      <div className="mt-1 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
         {options.map(([option, label]) => {
           const current = value === option;
           return (
+            /*
+              A pill with a real radio inside it, kept `sr-only` rather than
+              replaced. The keyboard, the form payload and the screen reader
+              all still see a radio group; only the paint is ours.
+            */
             <label
               key={option}
               className={[
-                "cursor-pointer rounded-soft border px-2 py-1 text-meta",
+                "flex min-h-9 cursor-pointer items-center rounded-pill border px-3.5 py-1.5 text-base",
                 current
-                  ? "border-steady bg-steady-wash text-steady"
-                  : "border-rule text-slate hover:border-ink hover:text-ink",
+                  ? "border-steady bg-steady text-surface"
+                  : "border-rule text-slate hover:border-steady-line hover:text-ink",
               ].join(" ")}
             >
               <input

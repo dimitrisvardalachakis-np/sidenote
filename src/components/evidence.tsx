@@ -8,7 +8,13 @@ import { documentStance } from "@/lib/schemas";
 import { GeneratedNarrative } from "./narrative";
 
 /**
- * The two evidence panels.
+ * The two evidence panels, side by side in ONE card.
+ *
+ * They used to be two bordered boxes with a gap between them, which read as
+ * two things that happen to be next to each other. They are not: the whole
+ * product is the comparison, and CLAUDE.md says that when the two disagree
+ * THAT is the case. One card split by a single hairline says "one object, two
+ * halves" in a way two cards cannot.
  *
  * Three states each, and they are visually distinct on purpose:
  *
@@ -23,62 +29,29 @@ import { GeneratedNarrative } from "./narrative";
  * outage. CLAUDE.md non-negotiable #8 is precisely this.
  *
  * Nothing here uses --signal. A degraded panel is not a regulatory deadline.
- *
- * The two panels are rendered SIDE BY SIDE at xl by the case screen, aligned
- * row for row: stance, generated summary, verified reading, passages. CLAUDE.md
- * promises "both side by side with citations" and the landing page repeats it
- * to the user; stacking them meant the comparison the product is built around
- * had to be done from memory while scrolling.
  */
 
-function CitationBlock({
-  citation,
-  cited,
-  source,
+/**
+ * The pair, as one object.
+ *
+ * `gap-px` over a --rule ground is what draws the divider: one rule between
+ * the halves at xl, and the same rule as a horizontal line when they stack
+ * below it. No border to double up, and nothing to leave a hairline artefact
+ * in the stacked layout, because the "artefact" is the divider doing its job
+ * in the other direction.
+ */
+export function EvidencePair({
+  company,
+  publicLabel,
 }: {
-  citation: Citation;
-  /** True when this is the passage the model's reading quotes from. */
-  cited: boolean;
-  /** "See in source" for this passage, when the corpus still holds it. */
-  source?: React.ReactNode | undefined;
+  company: React.ReactNode;
+  publicLabel: React.ReactNode;
 }) {
   return (
-    <li className="border-t border-rule py-2 first:border-t-0">
-      {/*
-        The retrieved passage. Marked when it is the one the reading quotes, so
-        a reviewer can get from the quotation above to its source without
-        comparing chunk ids by eye. Marked with a rule, not a colour: --steady
-        would read as "resolved" and --signal is reserved for the clock.
-      */}
-      <blockquote
-        className={[
-          "border-l-2 pl-3 text-prose",
-          cited ? "border-ink" : "border-rule",
-        ].join(" ")}
-      >
-        {citation.quote}
-      </blockquote>
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 text-micro uppercase tracking-label text-slate">
-        {cited && <span className="text-ink">quoted above</span>}
-        {/* "Every retrieval result must state which" — company or public. */}
-        <span
-          className={
-            citation.sourceType === "company" ? "text-steady" : "text-slate"
-          }
-        >
-          {citation.sourceType}
-        </span>
-        {citation.section !== null && (
-          <span className="normal-case tracking-normal">
-            {citation.section}
-          </span>
-        )}
-        <span className="font-mono normal-case tracking-normal">
-          {citation.chunkId}
-        </span>
-        {source}
-      </div>
-    </li>
+    <div className="grid gap-px overflow-hidden rounded-card border border-rule bg-rule shadow-card xl:grid-cols-2">
+      <div className="bg-surface p-4">{company}</div>
+      <div className="bg-surface p-4">{publicLabel}</div>
+    </div>
   );
 }
 
@@ -87,25 +60,28 @@ function CitationBlock({
  * column — so the comparison can be made at a glance before any reading.
  *
  * It is `documentStance` rendered, and it is emphatically not a determination:
- * "describes" is an observation about a passage, where "listed" would be a
- * ruling. The wording keeps that distinction visible.
+ * "describes it" is an observation about a passage, where "listed" would be a
+ * ruling. The wording keeps that distinction visible, and only the affirmative
+ * state gets --steady — a document that says nothing is not a resolved thing.
  */
 function Stance({ stance }: { stance: "describes" | "silent" | "unknown" }) {
   const label =
     stance === "describes"
-      ? "describes this reaction"
+      ? "describes it"
       : stance === "silent"
-        ? "silent on this reaction"
+        ? "does not describe it"
         : "not read";
   return (
-    <p
+    <span
       className={[
-        "text-base",
-        stance === "describes" ? "font-medium text-ink" : "text-slate",
+        "shrink-0 rounded-pill px-2.5 py-1 text-meta",
+        stance === "describes"
+          ? "bg-steady-wash font-medium text-steady"
+          : "bg-surface-sunken text-slate",
       ].join(" ")}
     >
       {label}
-    </p>
+    </span>
   );
 }
 
@@ -122,15 +98,60 @@ function PanelShell({
 }) {
   return (
     <section aria-label={heading} className="min-w-0">
-      <div className="flex items-baseline justify-between gap-3 border-b border-rule pb-1">
-        <h3 className="text-base font-medium">{heading}</h3>
-        <p className="text-micro uppercase tracking-label text-slate">{note}</p>
-      </div>
-      <div className="mt-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="font-mono text-micro uppercase tracking-label text-slate">
+            {heading}
+          </h3>
+          <p className="mt-1 text-meta text-slate-quiet">{note}</p>
+        </div>
         <Stance stance={stance} />
       </div>
-      <div className="mt-2">{children}</div>
+      <div className="mt-3">{children}</div>
     </section>
+  );
+}
+
+/** A bordered, monospace provenance chip. */
+function CiteChip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex rounded-[5px] border border-rule px-1.5 py-0.5 font-mono text-micro text-slate">
+      {children}
+    </span>
+  );
+}
+
+/**
+ * The passage, with the verified span marked inside it.
+ *
+ * THE FALLBACK IS THE POINT. `Citation.quote` is a <=320-character excerpt and
+ * the verified span can legitimately sit outside it, so the span is only
+ * highlighted when it occurs in the excerpt VERBATIM — same character-for-
+ * character test the build gate applies, no normalisation of whitespace,
+ * quotes or dashes. When it does not occur, the excerpt is dropped and the
+ * verified span is shown alone.
+ *
+ * A highlight drawn over approximately-matching words would be a claim that
+ * the document contains a sentence it may not contain, which is the exact
+ * failure non-negotiable #6 exists to prevent. Better to show less.
+ */
+function MarkedPassage({ quote, span }: { quote: string; span: string }) {
+  const at = quote.indexOf(span);
+
+  if (at === -1) {
+    return (
+      <blockquote className="border-l-[3px] border-steady pl-3 text-quote">
+        {span}
+      </blockquote>
+    );
+  }
+
+  return (
+    <blockquote className="border-l-[3px] border-steady pl-3 text-quote">
+      {quote.slice(0, at)}
+      <mark className="bg-steady-wash text-ink">{span}</mark>
+      {quote.slice(at + span.length)}
+    </blockquote>
   );
 }
 
@@ -151,28 +172,20 @@ function PanelShell({
 function Reading({
   reading,
   citations,
+  seeSource,
 }: {
   reading: ModelReading;
   citations: readonly Citation[];
+  seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
 }) {
   if (reading.status === "unavailable") {
     return (
       /*
-        A one-line marker, not a paragraph.
-
-        Both panels used to print the same three-line explanation and the same
-        reason string, so a reviewer with no model configured read the identical
-        text twice and neither copy said anything the other did not. The
-        explanation is hoisted to a single notice above the pair; what stays
+        A one-line marker, not a paragraph. The explanation belongs to the
+        situation and is hoisted to a single notice above the pair; what stays
         here is the fact that THIS panel was not read. Dashed, never --signal.
       */
-      <div className="border border-dashed border-rule px-3 py-1.5 rounded-soft">
-        {/*
-          The REASON, not the state. The stance line two rows above already
-          says "not read", and repeating it here in a box was the same
-          duplication one layer down from the one this change removed between
-          the two panels.
-        */}
+      <div className="rounded-soft border border-dashed border-rule px-3 py-2">
         <p className="text-meta text-slate">{reading.reason}</p>
       </div>
     );
@@ -180,11 +193,11 @@ function Reading({
 
   if (reading.status === "nothing_found") {
     return (
-      <div className="border-b border-rule pb-2">
+      <div>
         <p className="text-base font-medium">
           No passage identified as describing this reaction
         </p>
-        <p className="mt-0.5 text-meta text-slate">
+        <p className="mt-1 text-meta text-slate">
           The model read the passages below and identified none of them as
           describing it. They are shown so you can check that reading — it is
           the reading that found nothing, not the document that says nothing.
@@ -196,32 +209,28 @@ function Reading({
   const source = citations.find((c) => c.chunkId === reading.chunkId);
 
   return (
-    <div className="border-b border-rule pb-2">
+    <div>
       {/* The verified span. This is the claim; everything else is provenance. */}
-      <blockquote className="border-l-2 border-steady pl-3 text-prose">
-        {reading.quotedSpan}
-      </blockquote>
+      <MarkedPassage
+        quote={source?.quote ?? reading.quotedSpan}
+        span={reading.quotedSpan}
+      />
       {reading.rationale !== null && (
-        <p className="mt-1.5 text-meta text-ink">{reading.rationale}</p>
+        <p className="mt-2 text-meta text-slate">{reading.rationale}</p>
       )}
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-3 text-micro uppercase tracking-label text-slate">
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {source !== undefined && (
-          <span className={source.sourceType === "company" ? "text-steady" : "text-slate"}>
+          <CiteChip>
             {source.sourceType}
-          </span>
+            {source.section !== null && ` · ${source.section}`}
+          </CiteChip>
         )}
-        {source?.section != null && (
-          <span className="normal-case tracking-normal">{source.section}</span>
-        )}
-        <span className="font-mono normal-case tracking-normal">
-          {reading.chunkId}
-        </span>
-        <span className="normal-case tracking-normal">
-          read by <span className="font-mono">{reading.model}</span>
-        </span>
+        <CiteChip>{reading.chunkId}</CiteChip>
+        <CiteChip>read by {reading.model}</CiteChip>
+        {seeSource?.(reading.chunkId)}
       </div>
-      <p className="mt-1 text-meta text-slate">
-        Quoted word for word from the passage marked below, checked against the
+      <p className="mt-2 text-meta text-slate-quiet">
+        Quoted word for word from the passage marked above, checked against the
         whole passage — of which an extract is shown, so these words may sit
         outside it. Not a determination: listedness is yours to record.
       </p>
@@ -229,9 +238,59 @@ function Reading({
   );
 }
 
+/**
+ * Everything retrieved that the reading did not quote.
+ *
+ * Folded away rather than listed, because the panel's job is the comparison
+ * and eight passages under each half buries it. Folded, not dropped: "every
+ * AI output carries citations" means a reviewer must be able to reach the
+ * whole retrieved set, and a disclosure is a reach rather than a wall.
+ */
+function OtherPassages({
+  citations,
+  quotedChunkId,
+  sourceType,
+  seeSource,
+}: {
+  citations: readonly Citation[];
+  quotedChunkId: string | null;
+  sourceType: "company" | "public";
+  seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+}) {
+  const rest = citations.filter((c) => c.chunkId !== quotedChunkId);
+  if (rest.length === 0) return null;
+
+  return (
+    <details className="mt-4 border-t border-rule pt-3">
+      <summary className="cursor-pointer font-mono text-micro uppercase tracking-label text-slate hover:text-ink">
+        {rest.length} more {rest.length === 1 ? "passage" : "passages"} retrieved
+        {" · "}
+        {sourceType === "company" ? "confidential" : "public"}
+      </summary>
+      <ul className="mt-2">
+        {rest.map((citation) => (
+          <li key={citation.chunkId} className="mt-3 first:mt-0">
+            <blockquote className="border-l-[3px] border-rule pl-3 text-quote text-slate">
+              {citation.quote}
+            </blockquote>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <CiteChip>
+                {citation.sourceType}
+                {citation.section !== null && ` · ${citation.section}`}
+              </CiteChip>
+              <CiteChip>{citation.chunkId}</CiteChip>
+              {seeSource?.(citation.chunkId)}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function NoResult({ query, at }: { query: string; at: string }) {
   return (
-    <div className="border border-rule px-3 py-3 rounded-soft">
+    <div className="rounded-soft border border-rule px-3 py-3">
       <p className="text-base font-medium">No matching passage</p>
       <p className="mt-1 text-meta text-slate">
         The search ran against this product&rsquo;s documents and matched no
@@ -239,7 +298,7 @@ function NoResult({ query, at }: { query: string; at: string }) {
         about a search, not a statement that the document is silent.
       </p>
       <p className="mt-2 font-mono text-meta text-slate">{query}</p>
-      <p className="mt-0.5 text-micro uppercase tracking-label text-slate">
+      <p className="mt-1 font-mono text-micro uppercase tracking-label text-slate-quiet">
         searched {at.slice(0, 16).replace("T", " ")}
       </p>
     </div>
@@ -249,14 +308,14 @@ function NoResult({ query, at }: { query: string; at: string }) {
 function SourceUnavailable({ reason, at }: { reason: string; at: string }) {
   return (
     /* A dashed edge, not a red one: this is missing information, not danger. */
-    <div className="border border-dashed border-rule px-3 py-3 rounded-soft">
+    <div className="rounded-soft border border-dashed border-rule px-3 py-3">
       <p className="text-base font-medium">Source unavailable</p>
       <p className="mt-1 text-meta text-slate">
         The search could not run, so nothing can be concluded either way. This
         is not evidence that the reaction is absent.
       </p>
       <p className="mt-2 text-meta text-ink">{reason}</p>
-      <p className="mt-0.5 text-micro uppercase tracking-label text-slate">
+      <p className="mt-1 font-mono text-micro uppercase tracking-label text-slate-quiet">
         attempted {at.slice(0, 16).replace("T", " ")}
       </p>
     </div>
@@ -281,7 +340,7 @@ export function CompanyEvidence({
 
   return (
     <PanelShell
-      heading="Company documents"
+      heading="Company document"
       note={`${documentLabel} · confidential`}
       stance={documentStance(finding)}
     >
@@ -289,12 +348,10 @@ export function CompanyEvidence({
         <>
           {/*
             The generated summary sits ABOVE the single verified quotation.
-            The user asked for the generated answer to be prominent, and
-            burying it under the quotation defeats that. The quotation below
-            still reads as the stronger evidence — it carries --steady, the
-            summary carries only a label.
+            The quotation below still reads as the stronger evidence — it
+            carries --steady, the summary carries only a label.
           */}
-          <div className="mb-3">
+          <div className="mb-4">
             <GeneratedNarrative
               narrative={finding.narrative}
               onSeeSource={seeSource}
@@ -302,20 +359,19 @@ export function CompanyEvidence({
               footnote="Each sentence above was written by a model; each quotation beneath it was copied from the company document word for word and checked against it. Not a determination — listedness is yours to record."
             />
           </div>
-          <Reading reading={finding.reading} citations={finding.citations} />
-          <ul className="mt-2">
-            {finding.citations.map((citation) => (
-              <CitationBlock
-                key={citation.chunkId}
-                citation={citation}
-                cited={
-                  finding.reading.status === "read" &&
-                  finding.reading.chunkId === citation.chunkId
-                }
-                source={seeSource?.(citation.chunkId)}
-              />
-            ))}
-          </ul>
+          <Reading
+            reading={finding.reading}
+            citations={finding.citations}
+            seeSource={seeSource}
+          />
+          <OtherPassages
+            citations={finding.citations}
+            quotedChunkId={
+              finding.reading.status === "read" ? finding.reading.chunkId : null
+            }
+            sourceType="company"
+            seeSource={seeSource}
+          />
         </>
       )}
       {finding.state === "no_result" && (
@@ -338,10 +394,14 @@ export function PublicEvidence({
   about?: string | undefined;
 }) {
   return (
-    <PanelShell heading="FDA label" note="public" stance={documentStance(finding)}>
+    <PanelShell
+      heading="Public FDA label"
+      note="public"
+      stance={documentStance(finding)}
+    >
       {finding.state === "grounded" && (
         <>
-          <div className="mb-3">
+          <div className="mb-4">
             <GeneratedNarrative
               narrative={finding.narrative}
               onSeeSource={seeSource}
@@ -349,22 +409,21 @@ export function PublicEvidence({
               footnote="Each sentence above was written by a model; each quotation beneath it was copied from the FDA label word for word and checked against it. Not a determination — expectedness is yours to record."
             />
           </div>
-          <Reading reading={finding.reading} citations={finding.citations} />
-          <ul className="mt-2">
-            {finding.citations.map((citation) => (
-              <CitationBlock
-                key={citation.chunkId}
-                citation={citation}
-                cited={
-                  finding.reading.status === "read" &&
-                  finding.reading.chunkId === citation.chunkId
-                }
-                source={seeSource?.(citation.chunkId)}
-              />
-            ))}
-          </ul>
+          <Reading
+            reading={finding.reading}
+            citations={finding.citations}
+            seeSource={seeSource}
+          />
+          <OtherPassages
+            citations={finding.citations}
+            quotedChunkId={
+              finding.reading.status === "read" ? finding.reading.chunkId : null
+            }
+            sourceType="public"
+            seeSource={seeSource}
+          />
           {finding.labelSetId !== null && (
-            <p className="mt-2 font-mono text-micro text-slate">
+            <p className="mt-3 font-mono text-micro text-slate-quiet">
               SPL set {finding.labelSetId}
             </p>
           )}

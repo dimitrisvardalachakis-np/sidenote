@@ -109,7 +109,7 @@ function ValidityChecklist({ record }: { record: Case }) {
 
   return (
     <section aria-label="Case validity">
-      <h3 className="text-micro uppercase tracking-label text-slate">
+      <h3 className="font-mono text-micro uppercase tracking-label text-slate">
         Minimum criteria
       </h3>
       <ul className="mt-1">
@@ -125,7 +125,7 @@ function ValidityChecklist({ record }: { record: Case }) {
               </span>
               <span
                 className={[
-                  "shrink-0 text-micro uppercase tracking-label",
+                  "shrink-0 font-mono text-micro uppercase tracking-label",
                   missing ? "font-medium text-ink" : "text-steady",
                 ].join(" ")}
               >
@@ -163,7 +163,7 @@ function SeriousnessList({
   if (rows.length === 0) {
     return (
       <section aria-label="Seriousness">
-        <h3 className="text-micro uppercase tracking-label text-slate">
+        <h3 className="font-mono text-micro uppercase tracking-label text-slate">
           Seriousness
         </h3>
         <p className="mt-1 text-base text-slate">
@@ -175,7 +175,7 @@ function SeriousnessList({
 
   return (
     <section aria-label="Seriousness">
-      <h3 className="text-micro uppercase tracking-label text-slate">
+      <h3 className="font-mono text-micro uppercase tracking-label text-slate">
         Seriousness
       </h3>
       <ul className="mt-1">
@@ -285,7 +285,7 @@ export function WhyThisIsSerious({ record }: { record: Case }) {
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
       <section aria-label="Narrative">
-        <h3 className="text-micro uppercase tracking-label text-slate">
+        <h3 className="font-mono text-micro uppercase tracking-label text-slate">
           Narrative
         </h3>
         <div className="mt-1">
@@ -306,7 +306,7 @@ export function CaseFacts({ record }: { record: Case }) {
   const drug = record.drugs[0];
   const reaction = record.reactions[0];
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 xl:grid-cols-2">
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3 2xl:grid-cols-2">
       <Fact label="Drug">{drug?.reportedName ?? "—"}</Fact>
       <Fact label="Substance">{drug?.activeSubstance ?? "—"}</Fact>
       {/*
@@ -406,7 +406,7 @@ export function CaseDetail({ record }: { record: Case }) {
       </dl>
 
       <section aria-label="Narrative" className="mt-4">
-        <h3 className="text-micro uppercase tracking-label text-slate">
+        <h3 className="font-mono text-micro uppercase tracking-label text-slate">
           Narrative
         </h3>
         <div className="mt-1">
@@ -439,8 +439,8 @@ function Fact({
   wide?: boolean;
 }) {
   return (
-    <div className={wide ? "col-span-2 sm:col-span-3 xl:col-span-2" : undefined}>
-      <dt className="text-micro uppercase tracking-label text-slate">
+    <div className={wide ? "col-span-2 sm:col-span-3 2xl:col-span-2" : undefined}>
+      <dt className="font-mono text-micro uppercase tracking-label text-slate">
         {label}
       </dt>
       {/* break-words so an email or a long term wraps instead of overlapping. */}
@@ -470,8 +470,8 @@ function ReporterPanel({ record }: { record: Case }) {
   const reporter = record.reporter;
 
   return (
-    <section aria-label="Reporter" className="mt-5 border-t border-rule pt-3">
-      <h3 className="text-micro uppercase tracking-label text-slate">
+    <section aria-label="Reporter">
+      <h3 className="font-mono text-micro uppercase tracking-label text-slate">
         Reporter
       </h3>
 

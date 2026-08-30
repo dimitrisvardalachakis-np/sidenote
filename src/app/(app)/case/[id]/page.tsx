@@ -10,7 +10,11 @@ import {
 import { CaseHistory } from "@/components/case-history";
 import { CaseList, clockLabel } from "@/components/case-list";
 import { ClaimPanel } from "@/components/claim-panel";
-import { CompanyEvidence, PublicEvidence } from "@/components/evidence";
+import {
+  CompanyEvidence,
+  EvidencePair,
+  PublicEvidence,
+} from "@/components/evidence";
 import { RulingForm } from "@/components/ruling-form";
 import { SourceDialog } from "@/components/source-dialog";
 import { SourcePassage } from "@/components/source-passage";
@@ -26,6 +30,7 @@ import { loadCorpus } from "@/lib/store/corpus";
 import { requireSession } from "@/lib/auth";
 import { claimCase, recordRuling, releaseCase, runAssessment } from "./actions";
 import {
+  EXPEDITED_WINDOW_DAYS,
   documentStance,
   expeditedClock,
   isSerious,
@@ -111,6 +116,8 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
   const companyDescribes =
     assessment !== null && documentStance(assessment.listedness) === "describes";
   const serious = record.reactions.some((r) => isSerious(r.seriousness));
+  const codedAs = record.reactions[0]?.meddraPreferredTerm ?? null;
+  const reporterName = record.reporter?.name ?? null;
 
   /*
     What the clock WOULD be if this case were ruled unlisted.
@@ -221,7 +228,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
 
   return (
     <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-4">
-      <div className="grid flex-1 gap-0 lg:grid-cols-[300px_1fr]">
+      <div className="grid flex-1 gap-0 lg:grid-cols-[292px_1fr]">
         {/*
           The queue rail is HIDDEN below lg rather than stacked. It used to sit
           above the case, so tapping a case on a phone landed you on the list
@@ -230,36 +237,38 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
         */}
         <aside
           aria-label="Queue"
-          className="hidden border-rule lg:sticky lg:top-0 lg:block lg:max-h-screen lg:self-start lg:overflow-y-auto lg:border-r lg:pr-4"
+          className="hidden rounded-card bg-surface-sunken p-3 lg:sticky lg:top-4 lg:block lg:max-h-[calc(100vh-2rem)] lg:self-start lg:overflow-y-auto"
         >
-          <div className="flex items-baseline justify-between gap-2">
-            <p className="text-micro uppercase tracking-label text-slate">
+          <div className="flex items-baseline justify-between gap-2 px-1">
+            <p className="font-mono text-micro uppercase tracking-label text-slate">
               Queue
             </p>
-            <span className="text-meta text-slate">{all.length} cases</span>
+            <span className="font-mono text-meta text-slate">
+              {all.length} cases
+            </span>
           </div>
-          <div className="mt-1">
+          <div className="mt-2">
             <CaseList cases={all} today={today} compact currentId={record.id} />
           </div>
         </aside>
 
-        <div className="min-w-0 lg:pl-4">
+        <div className="min-w-0 lg:pl-6">
           {/*
             Sticky, so the reference, the clock and the claim stay visible while
             a reviewer reads down the evidence. These are the three facts they
             need at every moment on this screen.
           */}
-          <header className="sticky top-0 z-10 border-b border-rule bg-paper pt-1 pb-3">
+          <header className="sticky top-0 z-10 -mx-1 border-b border-rule bg-paper px-1 pt-2 pb-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <nav aria-label="Breadcrumb">
-                <ol className="flex flex-wrap items-baseline gap-x-1.5 text-micro uppercase tracking-label text-slate">
+                <ol className="flex flex-wrap items-baseline gap-x-1.5 font-mono text-micro uppercase tracking-label text-slate">
                   <li>
                     <Link href="/queue" className="hover:text-steady hover:underline">
                       Queue
                     </Link>
                   </li>
                   <li aria-hidden="true">›</li>
-                  <li className="font-mono normal-case tracking-normal text-ink">
+                  <li className="normal-case tracking-normal text-ink">
                     {record.reference}
                   </li>
                 </ol>
@@ -273,35 +282,70 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
               />
             </div>
 
-            <div className="mt-1 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-              <h1 className="text-h1 font-medium">
-                {record.reactions[0]?.verbatimTerm ?? "No reaction recorded"}
-                <span className="ml-2 text-base font-normal text-slate">
-                  {record.drugs[0]?.reportedName ?? "no drug recorded"}
-                </span>
-              </h1>
-              <p
-                className={[
-                  "text-base tabular-nums",
-                  clock !== null && clockLabel(clock).urgent
-                    ? "text-signal"
-                    : "text-slate",
-                ].join(" ")}
-              >
-                {clock === null
-                  ? serious
-                    ? "assess now"
-                    : "not assessed"
-                  : clockLabel(clock).text}
-                {clock !== null && clock.state !== "not_applicable" && (
-                  <span className="ml-2 text-micro uppercase tracking-label">
-                    due {clock.dueOn}
+            <div className="mt-2 flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
+              <div className="min-w-0">
+                <h1 className="text-[25px] leading-tight font-semibold">
+                  {record.reactions[0]?.verbatimTerm ?? "No reaction recorded"}
+                  <span className="ml-2.5 text-[16px] font-normal text-slate">
+                    {record.drugs[0]?.reportedName ?? "no drug recorded"}
                   </span>
+                </h1>
+                {/*
+                  The three facts a reviewer asks for immediately after the
+                  reaction: what it was coded to, when the clock's Day 0 was,
+                  and who reported it. All three were on the screen already —
+                  Day 0 and the reporter behind a disclosure in the context
+                  rail, the coded term in a facts grid — which meant the two
+                  that decide the deadline were further from the deadline than
+                  the administrative ones.
+                */}
+                <p className="mt-1.5 text-meta text-slate">
+                  {codedAs !== null && (
+                    <>
+                      Coded as <span className="text-ink">{codedAs}</span>
+                      {" · "}
+                    </>
+                  )}
+                  Day 0{" "}
+                  <span className="font-mono text-ink">{record.receivedAt}</span>
+                  {reporterName !== null && (
+                    <>
+                      {" · "}reported by{" "}
+                      <span className="text-ink">{reporterName}</span>
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {/*
+                The clock, as a figure rather than a sentence. It is the one
+                number on this screen that decides whether the case is late,
+                and it was set at the same size as the drug name beside it.
+              */}
+              <div className="shrink-0 text-right">
+                <p
+                  className={[
+                    "font-mono text-figure tabular-nums",
+                    clock !== null && clockLabel(clock).urgent
+                      ? "text-signal"
+                      : "text-slate",
+                  ].join(" ")}
+                >
+                  {clock === null
+                    ? serious
+                      ? "assess now"
+                      : "not assessed"
+                    : clockLabel(clock).text}
+                </p>
+                {clock !== null && clock.state !== "not_applicable" && (
+                  <p className="mt-1 font-mono text-micro uppercase tracking-label text-slate">
+                    {EXPEDITED_WINDOW_DAYS}-day clock · due {clock.dueOn}
+                  </p>
                 )}
-              </p>
+              </div>
             </div>
 
-            <div className="mt-2">
+            <div className="mt-3">
               <ClaimPanel
                 claim={claim}
                 reviewerId={session.reviewerId}
@@ -311,12 +355,21 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
             </div>
           </header>
 
-          <div className="grid gap-6 xl:grid-cols-[1fr_18rem]">
+          {/*
+            The context rail appears at 2xl, not xl, and the evidence pair
+            splits at xl. They used to arrive together, so at 1280 the row was
+            a 232px rail, two evidence columns and a 300px context rail — about
+            290px per document, in which "Company Core Data Sheet ·
+            confidential" wrapped over five lines and the quotations were four
+            words wide. The side-by-side comparison is what the product is for;
+            the facts beside it are reference material, so the facts wait.
+          */}
+          <div className="grid gap-6 2xl:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0">
               {/* ---- THE ANSWER, FIRST ---- */}
-              <section aria-label="Evidence" className="mt-4">
+              <section aria-label="Evidence" className="mt-5">
                 <div className="flex flex-wrap items-baseline justify-between gap-3">
-                  <h2 className="text-base font-medium">
+                  <h2 className="text-h2 font-semibold">
                     Is it already described?
                   </h2>
                   {/*
@@ -328,7 +381,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                       type="submit"
                       disabled={ai.binding === null}
                       title={ai.reason ?? "Search the safety documents and read the passages found"}
-                      className="cursor-pointer rounded-soft border border-rule px-2 py-0.5 text-micro uppercase tracking-label text-slate hover:border-steady hover:text-steady disabled:cursor-not-allowed disabled:opacity-50"
+                      className="min-h-8 cursor-pointer rounded-soft border border-rule bg-surface px-3 py-1 font-mono text-micro uppercase tracking-label text-slate hover:border-steady-line hover:text-steady disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {assessment === null ? "Assess this case" : "Re-assess"}
                     </button>
@@ -343,7 +396,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                     panels here would read as "the documents do not mention
                     this" — a finding nobody has actually made.
                   */
-                  <div className="mt-3 border border-dashed border-rule px-3 py-3 rounded-soft">
+                  <div className="mt-3 rounded-card border border-dashed border-rule bg-surface px-4 py-4">
                     <p className="text-base font-medium">Not assessed yet</p>
                     <p className="mt-1 text-meta text-slate">
                       Nobody has run this case against the safety documents.
@@ -369,7 +422,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                 ) : (
                   <>
                     {bothUnread && (
-                      <div className="mt-3 border border-dashed border-rule px-3 py-2 rounded-soft">
+                      <div className="mt-3 rounded-card border border-dashed border-rule bg-surface px-4 py-3">
                         <p className="text-base font-medium">
                           The passages were retrieved but not read
                         </p>
@@ -392,19 +445,23 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                       with citations"; stacking them meant the comparison the
                       product is built around had to be done from memory.
                     */}
-                    <div className="mt-3 grid gap-6 xl:grid-cols-2 xl:gap-8">
-                      <CompanyEvidence
-                        finding={assessment.listedness}
-                        seeSource={seeSource}
-                        about={aboutPhrase}
+                    <div className="mt-3">
+                      <EvidencePair
+                        company={
+                          <CompanyEvidence
+                            finding={assessment.listedness}
+                            seeSource={seeSource}
+                            about={aboutPhrase}
+                          />
+                        }
+                        publicLabel={
+                          <PublicEvidence
+                            finding={assessment.expectedness}
+                            seeSource={seeSource}
+                            about={aboutPhrase}
+                          />
+                        }
                       />
-                      <div className="border-t border-rule pt-4 xl:border-t-0 xl:border-l xl:pt-0 xl:pl-8">
-                        <PublicEvidence
-                          finding={assessment.expectedness}
-                          seeSource={seeSource}
-                          about={aboutPhrase}
-                        />
-                      </div>
                     </div>
 
                     {/* What was on the shelf when this search ran. */}
@@ -457,8 +514,8 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                       smaller than the reference number.
                     */}
                     {diverges && (
-                      <div className="mt-4 border-l-2 border-ink bg-row-hover px-3 py-2">
-                        <p className="text-base font-medium">
+                      <div className="mt-4 rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 shadow-card">
+                        <p className="text-body font-semibold">
                           The two documents read differently — that is this case.
                         </p>
                         <p className="mt-0.5 text-meta text-slate">
@@ -474,8 +531,8 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                     )}
 
                     {disagrees && (
-                      <div className="mt-4 border-l-2 border-ink bg-row-hover px-3 py-2">
-                        <p className="text-base font-medium">
+                      <div className="mt-4 rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 shadow-card">
+                        <p className="text-body font-semibold">
                           Your ruling splits the two sources.
                         </p>
                         <p className="mt-0.5 text-meta text-slate">
@@ -491,12 +548,9 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
               </section>
 
               {/* ---- THE DECISION, NEXT ---- */}
-              <section
-                aria-label="Ruling"
-                className="mt-6 border-t border-rule pt-4"
-              >
-                <h2 className="text-base font-medium">Your ruling</h2>
-                <p className="mt-0.5 text-meta text-slate">
+              <section aria-label="Ruling" className="mt-8">
+                <h2 className="text-h2 font-semibold">Your ruling</h2>
+                <p className="mt-1 text-meta text-slate">
                   Nothing above counts as a decision until you record one here.
                   The panels quote documents; they do not decide listedness.
                 </p>
@@ -525,7 +579,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                   to go back to the list to reach the next case.
                 */}
                 {next !== undefined && (
-                  <p className="mt-4 border-t border-rule pt-3 text-meta">
+                  <p className="mt-4 text-meta">
                     <Link
                       href={`/case/${next.record.id}`}
                       className="text-steady hover:underline"
@@ -538,31 +592,28 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
               </section>
 
               {/* ---- THE SUPPORTING EVIDENCE ---- */}
-              <section
-                aria-label="Seriousness"
-                className="mt-6 border-t border-rule pt-4"
-              >
-                <h2 className="text-base font-medium">Why this is serious</h2>
-                <div className="mt-3">
+              <section aria-label="Seriousness" className="mt-8">
+                <h2 className="text-h2 font-semibold">Why this is serious</h2>
+                <div className="mt-3 rounded-card border border-rule bg-surface p-5 shadow-card">
                   <WhyThisIsSerious record={record} />
                 </div>
               </section>
 
               {/* ---- COLLAPSED BY DEFAULT ---- */}
-              <div className="mt-6 xl:hidden">
-                <details className="border-t border-rule pt-3">
-                  <summary className="cursor-pointer text-micro uppercase tracking-label text-slate hover:text-ink">
+              <div className="mt-6 2xl:hidden">
+                <details className="rounded-card border border-rule bg-surface px-4 py-3 shadow-card">
+                  <summary className="cursor-pointer font-mono text-micro uppercase tracking-label text-slate hover:text-ink">
                     Case details
                   </summary>
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <CaseFacts record={record} />
                     <div className="mt-4">
                       <ValidityChecklist record={record} />
                     </div>
                   </div>
                 </details>
-                <details className="mt-3 border-t border-rule pt-3">
-                  <summary className="cursor-pointer text-micro uppercase tracking-label text-slate hover:text-ink">
+                <details className="mt-3 rounded-card border border-rule bg-surface px-4 py-3 shadow-card">
+                  <summary className="cursor-pointer font-mono text-micro uppercase tracking-label text-slate hover:text-ink">
                     Reporter
                   </summary>
                   <ReporterPanel record={record} />
@@ -578,21 +629,20 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
               than reads. Below xl these become the collapsed sections above,
               so nothing is lost — only re-placed.
             */}
-            <aside
-              aria-label="Case context"
-              className="hidden xl:block xl:border-l xl:border-rule xl:pl-6"
-            >
-              <div className="sticky top-28">
-                <h2 className="text-micro uppercase tracking-label text-slate">
-                  Case details
-                </h2>
-                <div className="mt-2">
-                  <CaseFacts record={record} />
+            <aside aria-label="Case context" className="hidden 2xl:block">
+              <div className="sticky top-32 space-y-3">
+                <div className="rounded-card border border-rule bg-surface p-4 shadow-card">
+                  <h2 className="font-mono text-micro uppercase tracking-label text-slate">
+                    Case details
+                  </h2>
+                  <div className="mt-2.5">
+                    <CaseFacts record={record} />
+                  </div>
                 </div>
-                <div className="mt-5 border-t border-rule pt-4">
+                <div className="rounded-card border border-rule bg-surface p-4 shadow-card">
                   <ValidityChecklist record={record} />
                 </div>
-                <div className="mt-5 border-t border-rule pt-4">
+                <div className="rounded-card border border-rule bg-surface p-4 shadow-card">
                   <ReporterPanel record={record} />
                 </div>
               </div>
@@ -621,7 +671,7 @@ function CaseStepper({
   nextId: string | null;
 }) {
   return (
-    <div className="flex items-baseline gap-3 text-micro uppercase tracking-label text-slate">
+    <div className="flex items-baseline gap-3 font-mono text-micro uppercase tracking-label text-slate">
       {previousId === null ? (
         <span className="opacity-40">‹ prev</span>
       ) : (
