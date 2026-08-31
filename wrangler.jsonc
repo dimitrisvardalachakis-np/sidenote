@@ -71,7 +71,7 @@
     {
       "binding": "DB",
       "database_name": "sidenote",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "7f90d3f8-ec18-4251-ad20-5be3d659be23",
       "migrations_dir": "drizzle"
     }
   ],
@@ -92,7 +92,7 @@
   "kv_namespaces": [
     {
       "binding": "CACHE",
-      "id": "00000000000000000000000000000000"
+      "id": "147b0babfefb43969897059e20c2860f"
     }
   ],
 
