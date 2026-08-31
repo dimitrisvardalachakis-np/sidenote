@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CRON, runScheduled } from "./run";
 
 /**
@@ -30,7 +30,70 @@ function capture(): string[] {
 
 const NOON = Date.parse("2026-08-25T12:00:00.000Z");
 
+/*
+  THIS SUITE USED TO CALL api.fda.gov, ONCE PER SUSPECT SUBSTANCE, FOR REAL.
+
+  `runLabelDiff` reads every open case, collects the distinct suspect
+  substances and fetches a label for each, serially. Under vitest `getDb()` is
+  null and `hasLocalDisk()` is true, so `getCaseStore()` returned the DISK
+  store and read the developer's own `.data/cases` — nine cases, five
+  substances, 8.3 seconds of network measured against vitest's 5 second
+  default timeout. It passed most of the time because keep-alive collapses the
+  later requests, and failed about one run in six under `pool: "forks"` with
+  ten children competing for the CPU and the uplink.
+
+  The failure was a TIMEOUT, not an assertion mismatch, which is what made it
+  hard to read: both audit lines the test wants are already captured by then,
+  because `runDeadlineSweep` runs before `runLabelDiff`. Worse, vitest cannot
+  cancel the abandoned promise, so the late `label_diff_sweep` line landed in
+  the NEXT test's captured array — where that test's assertion happened to
+  accept it, and passed for the wrong reason.
+
+  It also grew with use: `.data` is gitignored, so a fresh clone made zero
+  network calls and every report filed through the app made this slower.
+
+  Pretending to be Workers is the whole fix. `storageBacking()` becomes
+  "ephemeral", `getCaseStore()` returns the in-memory store, `list()` is empty,
+  and the loop that fetches never runs. Nothing here asserts on case data, so
+  every assertion below is unchanged.
+*/
+function pretendToBeWorkers(): void {
+  vi.stubGlobal("navigator", { userAgent: "Cloudflare-Workers" });
+}
+
+function resetEphemeralStores(): void {
+  delete (globalThis as unknown as { __sidenoteEphemeralStores?: unknown })
+    .__sidenoteEphemeralStores;
+}
+
+/*
+  And a guard, so this cannot come back quietly.
+
+  Every other suite that touches openFDA — openfda.test.ts, acquire.test.ts —
+  stubs fetch. This one was the exception, which is exactly why nobody noticed
+  it was on the network. Throwing rather than returning a canned response is
+  deliberate: there is no request this suite should be making, so the honest
+  stub is one that fails loudly if the store ever starts returning cases again.
+*/
+const realFetch = globalThis.fetch;
+
+function refuseNetwork(): void {
+  globalThis.fetch = vi.fn(async (url: unknown) => {
+    throw new Error(
+      `schedule.test.ts must not reach the network — tried ${String(url)}`,
+    );
+  }) as typeof fetch;
+}
+
+beforeEach(() => {
+  resetEphemeralStores();
+  pretendToBeWorkers();
+  refuseNetwork();
+});
+
 afterEach(() => {
+  globalThis.fetch = realFetch;
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
