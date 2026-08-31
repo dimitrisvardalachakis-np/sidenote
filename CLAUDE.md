@@ -286,6 +286,15 @@ single-threaded object, so a lapse cannot produce two rulings, only a handover
 — and against a deadline counted in days, a case locked until Monday is the
 worse failure.
 
+**It has run on workerd.** Not deployed — but `wrangler dev` with both Workers
+has exercised the Durable Objects (two reviewers racing one case, exactly one
+winner, six times out of six), the D1 claims mirror, both crons twice over, the
+rate-limit binding, Workers AI on the native `env.AI` binding, Vectorize, the
+service binding to `sidenote-assess`, and the ingest queue running producer →
+consumer → model → D1. Remote D1 carries all four migrations. Six defects only
+the real runtime could show turned up on the first run, including a generation
+model that had been retired for three months behind an honest degraded state.
+
 **Cloudflare is configured, not deployed.** `wrangler.jsonc` declares D1, KV,
 R2, Vectorize, Queues with a DLQ, two Durable Objects, two cron triggers, two
 rate-limit bindings, Workers AI and a `services` binding to a second Worker,
@@ -294,6 +303,19 @@ happened is `wrangler deploy`: nothing here has served traffic, and a service
 binding in particular cannot be exercised at all until both Workers exist. Vectorize is opt-in; the default vector store is a local file
 doing brute-force cosine over every vector, and it says so on the screen and
 the audit line.
+
+**An assessment has one home.** `getAssessmentStore()` resolves D1, then the
+disk, then memory, and the nightly sweeps read through it rather than reaching
+into D1 themselves. For a while it had no D1 branch while the sweeps read only
+D1, which is why the expedited clock could never arm on any backing and the
+ingest queue had no reachable producer — its rows were written by the queue's
+own consumer and nothing else could prime it.
+
+**A replayed submission is recorded as a replay.** The idempotency key stopped
+the Durable Object running the work twice and did not stop the caller writing
+the mirror and the audit line twice, so a double-submitted ruling produced two
+`rule_case` success lines at two instants. `Replayed<T>` carries the fact out
+of the object; the action logs the retry as a retry and writes nothing.
 
 **Degradation is the tested path, not the assumed one.** With no model
 configured, `resolveAiBinding` returns null, the dense half switches off with

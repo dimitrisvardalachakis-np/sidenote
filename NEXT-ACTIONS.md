@@ -1,9 +1,8 @@
 # Next actions — after the merge, before the demo
 
-Written 31 Aug 2026 against `main @ 83f1389`. Items 1 and 2 are done — see the
-notes under each, which record what the original diagnosis got right and the
-two decisions it left open. Items 3 onwards are unchanged and still outstanding,
-and 2b is new.
+Written 31 Aug 2026 against `main @ 83f1389`, and kept up to date since. Items
+1, 2, 2b and 2c are done. The app has now run on workerd and the remote D1 is
+migrated; what remains is item 3's console work and the deploy itself.
 
 ---
 
@@ -79,25 +78,82 @@ Worker's front door by calling its handler directly.
 
 ---
 
-## 2b. NEW — the test suite flakes about one run in six
+## 2b. DONE — the suite flaked about one run in six
 
-Not introduced by any of the above; measured on `c3d394d`'s parent at **3
-failures in 14 runs**, and on the finished work at 2 in 16.
-`src/lib/schedule/schedule.test.ts` fails intermittently on the two cases that
-run the sweeps.
+Fixed in `344b327`, and my first diagnosis was wrong: not cross-file `.data/`
+interference but **real network calls**. `runLabelDiff` read the developer's
+own `.data/cases`, collected 5 distinct substances and made 5 serial HTTPS
+requests to api.fda.gov — 8.35s measured, against vitest's 5s default timeout.
+`pretendToBeWorkers()` takes it to the in-memory store, the case list is empty
+and the loop never runs: 5 fetch calls before, 0 after. 0 failures in 15 runs.
 
-Cause is cross-file interference: `runDeadlineSweep` and `runLabelDiff` both
-call `getCaseStore()`, which reads `.data/` on a developer machine, while other
-suites write and `rm` files in the same directory. `npx vitest run
---no-file-parallelism` was clean 6/6.
+---
 
-`label-diff.ts` also calls `fetchJson` against openFDA, so the unrecognised-cron
-case makes a real network request during `npm test`.
+## 2c. DONE — first run on workerd, and what it found
 
-This matters because `npm run build` runs the suite, so the build gate is
-unreliable about one time in six. Worth fixing before the demo — most likely by
-giving the schedule tests their own temp `.data` root, or stubbing the store and
-the fetch the way `acquire.test.ts` stubs its own.
+Six defects fixed in `e6e6366`, three more in `c2587cd`. None was visible to
+typecheck, lint, the suite or `next build`.
+
+**Stopped it starting:** `"entrypoint": "default"` on the services binding (it
+names a `WorkerEntrypoint` subclass, not the default export).
+
+**Stopped every reviewer route:** `SIDENOTE_SESSION_SECRET` is required in
+production and was documented nowhere — `next dev` falls back to the published
+default, `wrangler dev` serves a production build, so the guard fired and every
+authenticated route 500'd. **A deploy following the docs would have done the
+same.** Now in `.dev.vars.example`.
+
+**Stopped the build:** `.wrangler/**` was missing from eslint's ignores, so
+running the app once produced 19,643 lint problems and `npm run build` failed.
+
+**The generation model had been retired since 2026-05-30.**
+`@cf/meta/llama-3.1-8b-instruct` answers `5028: ... was deprecated`. Three
+months, unnoticed, because every layer degraded exactly as designed. Now
+`-fp8`. The reason it went unnoticed was its own finding: the audit line
+recorded `status: "unavailable"` and not *why*. Adding `reason` turned a shrug
+into the diagnosis in one request.
+
+**The clock could never arm, and the queue could never start** — see `c2587cd`.
+Assessments had two homes; the sweeps read the one the reviewer never wrote to.
+
+Proven on workerd, not merely in the suite: two reviewers racing one case, 6/6
+exactly one winner; the claim visible in the queue through the D1 mirror;
+`arbitrates` true; idempotent replay; both crons twice with the second changing
+nothing; the rate-limit *binding* (`Retry-After: 60` matches the binding
+policy, not the in-memory one); Workers AI on the native binding
+(`source: "workers-binding"`); Vectorize hybrid retrieval; a verified verbatim
+quotation from a real FDA label; the services binding connected with the AI
+Worker doing both namespace readings; and the ingest queue running producer →
+consumer → model → D1.
+
+**Remote D1 is migrated.** `0003_case_claims.sql` applied to
+`7f90d3f8-ec18-4251-ad20-5be3d659be23`; `claims` exists with its six columns
+and nothing is pending.
+
+### Still not proven
+
+- **DLQ.** The queue itself now runs end to end, but reaching
+  `sidenote-ingest-dlq` needs a message whose `runStep` *throws* — a malformed
+  one is `ack()`ed to `queue_message_rejected` by design and never gets there.
+- **Turnstile on the browser path.** No keys. The machine path correctly logs
+  `bot_check_not_applicable/machine_caller`; the browser path could not be
+  driven over HTTP because `submitReportAction` takes an object, not FormData.
+- **R2.** Bound and simulated locally, and it does not block startup — but the
+  upload path needs a browser, since pdf.js extracts client-side.
+- **The narrative generation times out at 10s** against the fp8 model, while
+  the reading succeeds. The UI shows one unavailable and the other standing,
+  which is correct; the timeout may want raising.
+
+### One thing to carry into the deploy
+
+`wrangler dev` needs a token that can reach Workers AI **and** Vectorize. The
+`CLOUDFLARE_API_TOKEN` in `.env.local` is AI-only: it 403s on Vectorize and
+cannot authenticate the AI binding's mandatory remote proxy session, which is
+not optional (`remote: false` throws). `CF_PROVISION_TOKEN` does both and is
+what the local runs used. A deployment wants one scoped to both, not the
+provisioning token.
+
+---
 
 ## 3. Deploy — blocked on a wider API token, then mechanical
 
