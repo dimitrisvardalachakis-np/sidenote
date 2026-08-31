@@ -229,6 +229,52 @@ export const chunks = sqliteTable(
 );
 
 /**
+ * Who holds which case — a MIRROR, not the authority.
+ *
+ * The authority is `CaseCoordinator`, one Durable Object per case addressed
+ * `idFromName(caseId)`, and it stays the authority because what makes a claim
+ * correct is serialisation rather than persistence. This table exists for the
+ * one question that object cannot answer: the queue needs "who holds each of
+ * the sixteen", and a per-case object cannot be asked about all cases. So the
+ * DO writes a row inside the same turn that grants or releases, the queue
+ * reads the table, and the case screen reads the object. A stale mirror is
+ * harmless — the DO refuses the write regardless of what this says.
+ *
+ * A ROW EXISTS IFF THE COORDINATOR HAS EVER SPOKEN ABOUT THIS CASE, and a row
+ * is a LIVE claim only while `expires_at > now`. Releasing writes the release
+ * instant into `expires_at` rather than deleting the row, which is what makes
+ * having-spoken permanent. That is the whole reason there is no `released_at`
+ * column: nothing in this codebase distinguishes released from lapsed —
+ * `claimIsLive` is the single liveness predicate — and the only other question
+ * anyone asks of a row is whether it exists, so a second column would be one
+ * no query reads.
+ *
+ * NO FOREIGN KEY TO `cases.id`, against the pattern drugs, reactions and
+ * assessments all follow, and this is deliberate rather than forgotten.
+ * Twelve of the sixteen queue rows are fixtures rebuilt from code by
+ * `buildSeedCases()` and are not rows in `cases`. A foreign key would reject
+ * every mirror write for a fixture, the coordinator's try/catch would swallow
+ * it, and the demo would break in precisely the silent way this table was
+ * added to fix.
+ */
+export const claims = sqliteTable(
+  "claims",
+  {
+    caseId: text("case_id").primaryKey(),
+    reviewerId: text("reviewer_id").notNull(),
+    /** Shown on screen, so a colleague is named rather than identified by id. */
+    displayName: text("display_name").notNull(),
+    heldSince: text("held_since").notNull(),
+    expiresAt: text("expires_at").notNull(),
+    updatedAt: text("updated_at").notNull(),
+  },
+  // No index, and no third argument at all. The one reader selects every row
+  // and lets `claimIsLive` decide, because a `WHERE expires_at > ?` would be a
+  // second copy of the liveness rule; there is no column left to index on. The
+  // table is bounded by cases-ever-claimed and read whole.
+);
+
+/**
  * Cluster F's sink. Same five fields the console line has always carried, so
  * nothing about the audit contract changes when the destination does.
  */

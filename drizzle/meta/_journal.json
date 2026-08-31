@@ -22,6 +22,13 @@
       "when": 1787653769488,
       "tag": "0002_chunks_fts5",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788164683030,
+      "tag": "0003_case_claims",
+      "breakpoints": true
     }
   ]
 }

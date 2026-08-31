@@ -22,15 +22,26 @@ import {
  * needs to be told that, not left to discover it by pressing dead controls.
  *
  * Nothing here uses --signal. A colleague holding a case is not a deadline.
+ *
+ * `arbitrated` is the fourth thing this panel says, and it is the one the
+ * reviewer cannot find out any other way. Three comments in the coordinator
+ * claimed the screen already said it; none of them did. The stand-in behind
+ * `next dev` arbitrates perfectly between two tabs on one laptop and not at
+ * all between two reviewers on two machines — and without this line the panel
+ * looks identical either way, which is exactly the failure the class is named
+ * `UnarbitratedCoordination` to avoid.
  */
 export function ClaimPanel({
   claim,
   reviewerId,
+  arbitrated,
   claimAction,
   releaseAction,
 }: {
   claim: CaseClaim | null;
   reviewerId: string;
+  /** False when an in-process stand-in is deciding this, not a Durable Object. */
+  arbitrated: boolean;
   claimAction: (
     state: ClaimActionState,
     formData: FormData,
@@ -86,6 +97,11 @@ export function ClaimPanel({
             {timeOf(claim.heldSince)}
           </span>
         </p>
+        {!arbitrated && (
+          <p className="w-full text-meta text-slate">
+            Held in this process only — not across machines.
+          </p>
+        )}
         <IdempotentForm action={submitRelease}>
           <button
             type="submit"
@@ -114,6 +130,15 @@ export function ClaimPanel({
       <p className="text-meta text-slate">
         Nobody has this case. Claiming it lets you record a ruling and tells
         your colleagues you are on it.
+        {!arbitrated && (
+          <>
+            {" "}
+            <span className="text-slate">
+              Claims are held in this process only, so they do not hold across
+              machines — no Durable Object is bound here.
+            </span>
+          </>
+        )}
       </p>
     </IdempotentForm>
   );

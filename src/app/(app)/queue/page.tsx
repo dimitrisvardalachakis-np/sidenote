@@ -22,7 +22,7 @@ import {
   sortRows,
   type QueueSort,
 } from "@/lib/queue/sort";
-import { getClaimStore } from "@/lib/store/claim-store";
+import { getCaseCoordination } from "@/lib/coordinator";
 import { readLastVisit, recordVisit } from "@/lib/queue/last-visit";
 import type { IsoDate } from "@/lib/schemas";
 
@@ -46,7 +46,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const rows = buildRows({
     entries,
     today,
-    claims: await (await getClaimStore()).all(),
+    claims: await (await getCaseCoordination()).held(),
     lastVisit: null,
   });
   const live = rows.filter(
@@ -82,7 +82,7 @@ export default async function QueuePage({
   const rows = buildRows({
     entries,
     today,
-    claims: await (await getClaimStore()).all(),
+    claims: await (await getCaseCoordination()).held(),
     lastVisit,
   });
 

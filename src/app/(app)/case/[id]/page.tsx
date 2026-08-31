@@ -25,7 +25,7 @@ import { passageContext } from "@/lib/library/context";
 import { coverageFor, isUncovered } from "@/lib/library/coverage";
 import { writeBlockedReason } from "@/lib/case/claim";
 import type { IsoDateTime } from "@/lib/schemas";
-import { getClaimStore } from "@/lib/store/claim-store";
+import { getCaseCoordination } from "@/lib/coordinator";
 import { readAuditTrail } from "@/lib/store/audit-store";
 import { loadCorpus } from "@/lib/store/corpus";
 import { requireSession } from "@/lib/auth";
@@ -135,7 +135,17 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
   const previous = position > 0 ? all[position - 1] : undefined;
   const next = position >= 0 ? all[position + 1] : undefined;
 
-  const claim = await (await getClaimStore()).get(record.id);
+  /*
+    The object, not the mirror.
+
+    The queue reads the `claims` table because no per-case object can answer a
+    question about all sixteen. Here there is exactly one case and the
+    authority is reachable, and this value decides whether the ruling form is
+    enabled — so it comes from the thing that would refuse the write, not from
+    a best-effort copy of it.
+  */
+  const coordination = await getCaseCoordination();
+  const claim = (await coordination.state(record.id)).claim;
   const blockedReason = writeBlockedReason(
     claim,
     session.reviewerId,
@@ -354,6 +364,7 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
               <ClaimPanel
                 claim={claim}
                 reviewerId={session.reviewerId}
+                arbitrated={coordination.arbitrates}
                 claimAction={claimAction}
                 releaseAction={releaseAction}
               />

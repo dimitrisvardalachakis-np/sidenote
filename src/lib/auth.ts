@@ -152,8 +152,10 @@ async function sign(value: string, secret = sessionSecret()): Promise<string> {
  * person who loses the race for it.
  *
  * `reviewer-demo` stays first and stays the default. The other two are the
- * holders seeded in `claim-store.ts`, so signing in as one of them and back
- * demonstrates both sides of the same case.
+ * holders in `case/seeded-claims.ts`, so signing in as one of them and back
+ * demonstrates both sides of the same case — and releasing as the holder
+ * genuinely frees the case, because the coordinator lapses that claim rather
+ * than forgetting it.
  *
  * The addresses are on `.example`, which is reserved and can never resolve. An
  * identity list in a demo should not read as a list of real mailboxes.

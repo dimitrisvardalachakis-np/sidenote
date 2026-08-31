@@ -217,9 +217,9 @@ export async function runAssessment(caseId: string): Promise<void> {
  * the interaction CLAUDE.md calls the central conflict this app exists to
  * resolve, and the one it is worth making look deliberate.
  *
- * The read-then-write below is not atomic, and `claim-store.ts` says so at
- * length. `idFromName(caseId)` in Cluster D is what closes that window; this
- * action's shape does not change when it does.
+ * The read-then-write this used to describe is gone: `idFromName(caseId)`
+ * gives one object per case whose methods cannot run concurrently, so the
+ * check and the write happen in one turn and the window cannot be expressed.
  */
 export async function claimCase(
   caseId: string,
@@ -233,14 +233,20 @@ export async function claimCase(
   if (entry === null) return INITIAL_CLAIM_STATE;
 
   /*
-    Through the coordinator, not the store.
+    The coordinator is the only thing that decides this, and now the only
+    thing the screens read as well.
 
-    This is the line `claim-store.ts` has been advertising since Cluster A —
-    "one line for Cluster D to point at the Durable Object". The read-then-
-    write it documented is gone: `idFromName(caseId)` gives one object per case
-    whose methods cannot run concurrently, so the check and the write are one
-    turn. Where no Durable Object is bound the stand-in answers instead, and
-    says `arbitrates: false` so the screen can be honest about it.
+    `idFromName(caseId)` gives one object per case whose methods cannot run
+    concurrently, so the check and the write are one turn. Where no Durable
+    Object is bound the stand-in answers instead and says `arbitrates: false`,
+    which the claim panel prints under the control — for a while nothing did,
+    and three comments including this one said otherwise.
+
+    The write used to land here and the screens used to read a separate
+    filesystem store, with nothing copying one into the other, so claiming a
+    case changed nothing anybody could see. That store is gone; the queue reads
+    the `claims` mirror these objects write, and the case screen reads the
+    object.
   */
   const coordination = await getCaseCoordination();
   const outcome = await coordination.claim(

@@ -28,6 +28,7 @@
  * doing exactly what the app is for, and re-claiming your own case extends it,
  * so the ceiling only bites when somebody has genuinely walked away.
  */
+import { z } from "zod";
 import type { IsoDateTime } from "@/lib/schemas";
 
 /**
@@ -50,6 +51,22 @@ export interface CaseClaim {
    */
   readonly expiresAt: IsoDateTime;
 }
+
+/**
+ * A claim as it comes back off a wire or out of a row.
+ *
+ * Inherited from `claim-store.ts`, which parsed its JSON files with this and
+ * took the parser with it when it went. The D1 mirror needs it for the same
+ * reason the files did, and `schema.ts` states the rule outright: nothing
+ * crosses the database boundary without being parsed, so a row written by an
+ * older version is rejected rather than rendered.
+ */
+export const StoredCaseClaim = z.object({
+  reviewerId: z.string().min(1),
+  displayName: z.string().min(1),
+  heldSince: z.string().min(1),
+  expiresAt: z.string().min(1),
+});
 
 export type ClaimOutcome =
   /** Nobody held it, they released it, or their claim lapsed. It is yours now. */

@@ -6,8 +6,10 @@ import {
   type CaseClaim,
   type ClaimOutcome,
 } from "@/lib/case/claim";
+import { seededHolder } from "@/lib/case/seeded-claims";
+import { dbFrom, schema } from "@/lib/db/client";
 import type { ReviewerRuling } from "@/lib/schemas/assessment";
-import type { IsoDate } from "@/lib/schemas/primitives";
+import type { IsoDate, IsoDateTime } from "@/lib/schemas/primitives";
 
 /**
  * One case, one reviewer — arbitrated in one place.
@@ -28,6 +30,29 @@ import type { IsoDate } from "@/lib/schemas/primitives";
  * `idFromName(caseId)` gives one object per case and the platform guarantees
  * its methods do not run concurrently. The race is not handled; it cannot be
  * expressed. That is the whole argument.
+ *
+ * WHY A CLAIM IS NOT A FIELD ON `Case`.
+ *
+ * Inherited from `claim-store.ts`, which held these facts until this class
+ * took its job. Most of the queue is seeded fixtures rebuilt from code on
+ * every request, so a claim written onto a `Case` would be discarded the
+ * moment the page re-rendered. Keeping claims apart from the cases is what
+ * makes a fixture claimable, releasable and re-claimable like any other case,
+ * and therefore what makes the conflict demonstrable at all.
+ *
+ * That old store also carried a paragraph admitting that `claim` read and then
+ * wrote with nothing serialising the two, so two requests in the same
+ * millisecond could both see null and both write. It is repeated here in the
+ * past tense because it is the window this class closed and the reason it
+ * exists.
+ *
+ * D1 IS A MIRROR OF THIS OBJECT, WRITTEN BY IT.
+ *
+ * The queue needs "who holds each of the sixteen", which a per-case object
+ * cannot answer. So every method that grants or releases also writes the
+ * `claims` row, in the same turn, and the queue reads the table while the case
+ * screen reads this. A stale mirror is harmless: the write is refused here
+ * regardless of what the table says.
  *
  * THE ALARM IS NOT THE NIGHTLY SWEEP.
  *
@@ -161,16 +186,82 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
    * nobody has touched for an hour is not awake — so a claim would expire only
    * once somebody arrived to be blocked by it, which is precisely when it must
    * already be gone.
+   *
+   * THE SEED APPLIES ONLY WHERE THIS OBJECT HAS NEVER SPOKEN.
+   *
+   * Two of the fixture cases arrive already held, so that the screen a second
+   * reviewer sees when a case is taken is reachable in a demo with one
+   * identity. A stored claim always wins; the fixture is consulted only when
+   * storage holds nothing at all. That is why `release()` writes a lapsed
+   * claim instead of deleting one — deleting would return the object to
+   * never-spoken and the fixture would spring back, so a Release button on a
+   * seeded case would visibly do nothing.
+   *
+   * It also means a virgin object answers `held_by_other` when somebody who is
+   * not the fixture holder tries to claim it, which is the interaction the
+   * seeds exist to demonstrate rather than a side effect of showing it.
    */
-  async #liveClaim(now: string): Promise<CaseClaim | null> {
+  async #liveClaim(caseId: string, now: string): Promise<CaseClaim | null> {
     const stored = await this.ctx.storage.get<CaseClaim>(STORAGE_KEY.claim);
-    if (stored === undefined) return null;
-    return claimIsLive(stored, now) ? stored : null;
+    if (stored !== undefined) {
+      return claimIsLive(stored, now) ? stored : null;
+    }
+    return seededHolder(caseId, now as IsoDateTime);
   }
 
-  async state(now: string): Promise<CoordinatorState> {
+  /**
+   * Write the row the queue reads.
+   *
+   * Inside the caller's `#once` turn, so a replayed submission does not rewrite
+   * it, and awaited rather than deferred: `ctx.waitUntil` would let the mirror
+   * land after the Server Action's `revalidatePath` has already re-rendered the
+   * queue, which is a stale queue on the one screen this row exists to update.
+   *
+   * A failure here must not fail the claim — the same trade `recordAudit`
+   * makes — but it is reported rather than swallowed. A silent mirror failure
+   * looks exactly like the bug this was written to fix, and the likeliest
+   * cause is the most boring one: migration 0003 not applied yet.
+   */
+  async #mirror(caseId: string, claim: CaseClaim): Promise<void> {
+    const binding = this.env.DB;
+    if (binding === undefined) return;
+
+    const row = {
+      caseId,
+      reviewerId: claim.reviewerId,
+      displayName: claim.displayName,
+      heldSince: claim.heldSince,
+      expiresAt: claim.expiresAt,
+      updatedAt: new Date().toISOString(),
+    };
+
+    try {
+      await dbFrom(binding)
+        .insert(schema.claims)
+        .values(row)
+        .onConflictDoUpdate({ target: schema.claims.caseId, set: row });
+    } catch (error) {
+      audit({
+        actor: "system",
+        action: "mirror_claim",
+        target: caseId,
+        outcome: "failure",
+        detail: {
+          reason: error instanceof Error ? error.message : "unknown",
+        },
+      });
+    }
+  }
+
+  /**
+   * `caseId` alongside `now` because a virgin object has no stored case id and
+   * the seeded fallback needs one. `DurableObjectId.name` would carry it, but
+   * it is `string | undefined` under strict, and every other method here
+   * already takes the id explicitly.
+   */
+  async state(caseId: string, now: string): Promise<CoordinatorState> {
     const [claim, ruling, clock] = await Promise.all([
-      this.#liveClaim(now),
+      this.#liveClaim(caseId, now),
       this.ctx.storage.get<ReviewerRuling>(STORAGE_KEY.ruling),
       this.ctx.storage.get<ArmedClock>(STORAGE_KEY.clock),
     ]);
@@ -196,7 +287,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     idempotencyKey: string | null = null,
   ): Promise<ClaimOutcome> {
     return this.#once(idempotencyKey, async () => {
-      const existing = await this.#liveClaim(now);
+      const existing = await this.#liveClaim(caseId, now);
 
       if (existing !== null && existing.reviewerId !== reviewerId) {
         audit({
@@ -217,6 +308,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
       };
 
       await this.ctx.storage.put(STORAGE_KEY.claim, claim);
+      await this.#mirror(caseId, claim);
 
       audit({
         actor: reviewerId,
@@ -237,6 +329,13 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
    *
    * Only the holder may release. Otherwise "release" is just "steal" spelled
    * politely, and the guarantee this class exists for is gone.
+   *
+   * The claim is OVERWRITTEN with a lapsed copy rather than deleted, which
+   * looks like a detail and is the thing that makes the seeded holders work.
+   * Deleting returns the object to never-spoken, and `#liveClaim` reads
+   * never-spoken as "the fixture holds this" — so releasing a seeded case
+   * would hand it straight back to A. Okonkwo. Keeping the lapsed row also
+   * says something true: who had it, and until when.
    */
   async release(
     caseId: string,
@@ -245,9 +344,14 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     idempotencyKey: string | null = null,
   ): Promise<CoordinatorState> {
     return this.#once(idempotencyKey, async () => {
-      const existing = await this.#liveClaim(now);
+      const existing = await this.#liveClaim(caseId, now);
       if (existing !== null && existing.reviewerId === reviewerId) {
-        await this.ctx.storage.delete(STORAGE_KEY.claim);
+        const surrendered: CaseClaim = {
+          ...existing,
+          expiresAt: now as IsoDateTime,
+        };
+        await this.ctx.storage.put(STORAGE_KEY.claim, surrendered);
+        await this.#mirror(caseId, surrendered);
         audit({
           actor: reviewerId,
           action: "release_case",
@@ -255,7 +359,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
           outcome: "success",
         });
       }
-      return this.state(now);
+      return this.state(caseId, now);
     });
   }
 
@@ -284,7 +388,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
       decision is logged, that is a defect in the log itself.
     */
     return this.#once(idempotencyKey, async () => {
-      const existing = await this.#liveClaim(now);
+      const existing = await this.#liveClaim(caseId, now);
 
       if (existing === null) {
         audit({
@@ -297,7 +401,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
         return {
           ok: false,
           reason: "Claim this case before ruling on it.",
-          state: await this.state(now),
+          state: await this.state(caseId, now),
         };
       }
 
@@ -312,7 +416,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
         return {
           ok: false,
           reason: `${existing.displayName} is holding this case.`,
-          state: await this.state(now),
+          state: await this.state(caseId, now),
         };
       }
 
@@ -329,7 +433,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
         },
       });
 
-      return { ok: true, reason: null, state: await this.state(now) };
+      return { ok: true, reason: null, state: await this.state(caseId, now) };
     });
   }
 
@@ -429,7 +533,11 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
       return;
     }
 
-    const claim = await this.ctx.storage.get<CaseClaim>(STORAGE_KEY.claim);
+    // Through `#liveClaim`, not the raw key. Reading storage directly reports
+    // "nobody" for a lapsed claim and for a seeded case this object has never
+    // been written to — so the deadline line could name nobody while `state()`
+    // was naming A. Okonkwo on the screen beside it.
+    const claim = await this.#liveClaim(armed.caseId, new Date().toISOString());
     const ruling = await this.ctx.storage.get<ReviewerRuling>(
       STORAGE_KEY.ruling,
     );

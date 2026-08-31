@@ -17,14 +17,27 @@ import * as schema from "./schema";
  * pool to keep warm — and a cached instance would capture the `env` of
  * whichever request happened to be first, which on Workers is a genuine
  * cross-request bug rather than a theoretical one.
+ *
+ * Two doors rather than one, and they are different questions. `getDb()` finds
+ * the binding in the ambient request context; `dbFrom()` is handed one. The
+ * split exists because a Durable Object HAS `this.env.DB` and cannot use
+ * `getDb()` to reach it: `getCloudflareContext()` throws outside a fetch
+ * handler, and the ambient env is only set for the queue and cron handlers, so
+ * `getDb()` inside a DO returns null every time. Construction still happens in
+ * exactly one place, which is the part that was worth protecting.
  */
 export type Db = ReturnType<typeof drizzle<typeof schema>>;
+
+/** Drizzle over a binding somebody already holds. */
+export function dbFrom(binding: D1Database): Db {
+  return drizzle(binding, { schema });
+}
 
 export async function getDb(): Promise<Db | null> {
   const env = await getCloudflareEnv();
   const binding = env?.DB;
   if (binding === undefined) return null;
-  return drizzle(binding, { schema });
+  return dbFrom(binding);
 }
 
 export { schema };

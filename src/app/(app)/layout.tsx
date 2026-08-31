@@ -6,7 +6,7 @@ import { getSession } from "@/lib/auth";
 import { loadQueue } from "@/lib/queue/entries";
 import { buildRows } from "@/lib/queue/view";
 import { countAll } from "@/lib/queue/filter";
-import { getClaimStore } from "@/lib/store/claim-store";
+import { getCaseCoordination } from "@/lib/coordinator";
 import type { IsoDate } from "@/lib/schemas";
 
 /**
@@ -42,7 +42,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const rows = buildRows({
     entries: await loadQueue(today),
     today,
-    claims: await (await getClaimStore()).all(),
+    claims: await (await getCaseCoordination()).held(),
     // Null, not this reviewer's real last visit: reading it here would stamp
     // it on every page load, and the queue's "arrived since your last visit"
     // dot would be spent before the queue rendered.
