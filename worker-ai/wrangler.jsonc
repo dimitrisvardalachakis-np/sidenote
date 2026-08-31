@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sidenote-assess",
+  "main": "index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+
+  // NO PUBLIC URL. The only route to this Worker is the app's `services`
+  // binding, so there is no `sidenote-assess.<subdomain>.workers.dev` for
+  // anyone to find. The shared-secret check in index.ts is the second half of
+  // that: this line is a dashboard setting somebody can change, and the check
+  // is in the code.
+  "workers_dev": false,
+
+  "observability": { "enabled": true },
+
+  // `server-only` throws unless the resolver runs with React's "react-server"
+  // condition, and wrangler builds this bundle with no such condition. Same
+  // aliasing, and the same reasoning, as the app Worker — see
+  // worker/server-only.js.
+  "alias": {
+    "server-only": "../worker/server-only.js"
+  },
+
+  // What this Worker exists to hold, and what the app therefore does not.
+  "ai": {
+    "binding": "AI"
+  },
+
+  // The dense half of hybrid retrieval. Company documents and public labels
+  // are namespaced inside the index, not split across two.
+  "vectorize": [
+    {
+      "binding": "VECTORIZE",
+      "index_name": "sidenote-chunks"
+    }
+  ]
+
+  // SIDENOTE_ASSESS_SECRET is NOT declared here, deliberately, for the same
+  // reason the Turnstile keys are not declared in the app's config: `wrangler
+  // types` would give it the literal type `""` and every comparison against it
+  // would narrow to never. It is a secret — `wrangler secret put
+  // SIDENOTE_ASSESS_SECRET` — and the same value goes in the app's secrets, so
+  // the two ends agree.
+}

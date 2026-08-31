@@ -1,114 +1,103 @@
 # Next actions — after the merge, before the demo
 
-Written 31 Aug 2026 against `main @ 83f1389`. Two of these are mine to hand over;
-the first is urgent.
+Written 31 Aug 2026 against `main @ 83f1389`. Items 1 and 2 are done — see the
+notes under each, which record what the original diagnosis got right and the
+two decisions it left open. Items 3 onwards are unchanged and still outstanding,
+and 2b is new.
 
 ---
 
-## 1. BUG: claiming a case does not change what any screen shows
+## 1. DONE — claiming a case now changes what the screens show
 
-**Severity: demo-killer.** This is the contested write — the one interaction the
-README spends a page justifying and the demo opens on.
+Fixed in `348941b`, and the diagnosis above was right in every particular.
+`ClaimStore.put` and `ClaimStore.clear` turned out to have no callers left
+anywhere, which is the sharpest statement of it: the write half of that store
+was already dead and only its reads were still wired up.
 
-### What is wrong
+Option **(a)** as recommended. `CaseCoordinator` writes a `claims` row inside
+the same turn it grants or releases; the queue and the rail read it through a
+new `held()` on `CaseCoordination`; the case screen reads the object, because
+that value gates the ruling form and a write control should be drawn from the
+thing that would refuse the write.
 
-The write path and the read path point at two different stores, and nothing
-bridges them.
+Two decisions the note left open:
 
-**Writes** — `src/app/(app)/case/[id]/actions.ts`
-```
-:246   coordination.claim(...)
-:302   coordination.release(...)
-:411   coordination.rule(...)
-```
-go to `getCaseCoordination()` → `UnarbitratedCoordination`'s private in-memory
-`Map` under `next dev`, or `CaseCoordinator` (the Durable Object) deployed.
+- **`release()` writes a lapsed claim instead of deleting one.** The seeds
+  apply only where the coordinator has never spoken, so deleting would return
+  the object to never-spoken and hand case 105 back to A. Okonkwo. It is also
+  why there is no `released_at` column — nothing here distinguishes released
+  from lapsed, and `claimIsLive` stays the only liveness rule.
+- **`claim-store.ts` is deleted, not kept as the stand-in's backing.** Its UUID
+  guard nulls out `coordination.test.ts`'s `case-N` ids, so every
+  contested-claim test would have passed against an empty store, and on real
+  uuids `npm test` would write live 30-minute claims into `.data` that leak
+  into the next run. The stand-in keeps its Map and gains the same seeded
+  fallback, so `arbitrates: false` still behaves.
 
-**Reads** — every render site
-```
-src/app/(app)/case/[id]/page.tsx:138   (await getClaimStore()).get(record.id)
-src/app/(app)/queue/page.tsx:49,85     (await getClaimStore()).all()
-src/app/(app)/layout.tsx:45            (await getClaimStore()).all()
-```
-go to `getClaimStore()` → `.data/claims/*.json` plus the two hardcoded `SEEDED`
-holders.
+`arbitrates` is now genuinely rendered, under the claim control. It never had
+been — the only read in the repository was an assertion in a unit test, while
+three comments claimed the screen reported it.
 
-`grep getClaimStore src/lib/coordinator/` → nothing. `grep getCaseCoordination
-src/lib/store/claim-store.ts` → only prose. `case-store.ts:276` uses the
-coordinator, but only for `mintReference`. **There is no sync.**
-
-`revalidatePath()` at `:262`, `:314`, `:462` re-renders the page, which re-reads
-the store the write never touched.
-
-### Symptom
-
-Press "Claim this case" → the action returns `granted`, an `[AUDIT] claim_case`
-line is written, and the screen still says nobody holds it. Press again →
-`already_yours`. The queue never shows a live claim at all; it shows the two
-seeded holders and nothing else, forever.
-
-### Why the tests miss it
-
-`coordination.test.ts` exercises the coordinator in isolation and passes. There
-is no test that claims through the action and then re-reads a page, so the seam
-between the two is untested. **Add that test as part of the fix** — it is the
-only kind that would have caught this.
-
-### How it got here
-
-`ef51bce` ("Collapse the two retrieval stacks, the two AI stacks and the two
-claim modules") correctly moved the *writes* onto the coordinator and left the
-*reads* on the store. Pre-merge both went through `getClaimStore()`, so it
-worked.
-
-### The fix — and the real design question
-
-The per-case screen is easy: read `(await getCaseCoordination()).state(id).claim`
-instead of `getClaimStore().get(id)`.
-
-**The queue listing is the actual problem.** It needs "who holds each of the 16
-cases", and a Durable Object addressed `idFromName(caseId)` cannot answer a
-question about all cases. Three options:
-
-- **(a) Mirror claims into D1.** `CaseCoordinator` writes a `claims` row on every
-  successful claim/release. The queue reads that table; the case screen still
-  reads the DO, which stays the single source of truth. There is currently **no
-  `claims` table** — the D1 schema has `assessments, audit_log, cases, chunks,
-  documents, drugs, reactions` — so this needs a fourth migration.
-  *Recommended.* It matches how the rest of the app already mirrors DO state,
-  it makes the queue one query instead of sixteen, and a stale mirror is
-  harmless because the DO refuses the write anyway.
-- **(b) Fan out from the queue** — call `state()` on every case's DO per render.
-  16 round trips per page load, and it grows with the queue. Correct but wrong
-  shape.
-- **(c) Keep `claim-store` as the mirror** and have the coordinator dual-write.
-  Cheapest change, but it leaves a filesystem store on the Workers path, which
-  is the thing the whole migration removed.
-
-Take (a). Add the `claims` table, have the DO write it inside the same method
-that grants the claim, point the queue at D1 and the case screen at the DO, and
-keep `claim-store` only as the `next dev` stand-in's backing so `arbitrates =
-false` still behaves.
-
-**Note the seeded holders.** `claim-store.ts:83` `SEEDED` exists so a second
-reviewer can see the "held by someone else" screen without a second identity.
-That has to survive the fix — seed those two rows into D1 (or into the DO on
-first touch) or the most important screen in the demo becomes unreachable.
+`src/app/(app)/case/[id]/actions.test.ts` is the seam test. Written first
+against the old read path, it failed exactly as predicted.
 
 ---
 
-## 2. Still unwritten: the separate AI Worker and its service binding
+## 1b. DONE — six stores asked the storage type a question it could not answer
 
-The only Cluster E line with nothing behind it. There is no `services` array in
-`wrangler.jsonc` and no second worker — `src/lib/assess/` runs in-process.
+Fixed in `c3d394d`, found while tracing the read path. `StorageBacking` has
+three members and six callers tested it as `!== "ephemeral"`, which asks "is
+storage durable" rather than "is there a disk". On a deployed Worker with D1
+bound those differ, so `assessment-store`, `last-visit`, `audit-store` and
+`document-store` all took the disk branch and threw out of `nodeFs()`.
 
-Needs: a second Worker exposing the RAG path, `workers_dev: false`, a
-shared-secret header check, a `services` binding from the app, and the app
-calling it through that binding rather than in-process. The fallback the rubric
-asks for already exists and needs no change — `resolveAiBinding` returns null
-with a reason and every caller degrades honestly.
+That is a 500 on every reviewer route, and `assessment-store` is reached by
+`loadQueue` for every entry — so it would have fired before any of the claim
+work above was observable. `hasLocalDisk()` now sits beside
+`isStorageDurable()` and each site asks the one it meant.
 
 ---
+
+## 2. DONE — the AI Worker and its service binding
+
+Landed as the third commit. `worker-ai/` is a second Worker with
+`workers_dev: false`, its own `AI` and Vectorize bindings and a constant-time
+shared-secret check that runs before the body is parsed. The app declares a
+`services` binding named `ASSESS` and reaches it through
+`assessThroughService()`, which falls back to running the identical code
+in-process when the binding is absent — which is every run under `next dev` and
+in the suite.
+
+One zod module, `src/lib/assess/wire.ts`, is imported by both sides and parsed
+by both. Scope does not cross: which documents belong to a case is decided
+app-side before anything is sent. Every span that comes back is re-checked
+against the chunks that were sent, and a finding that fails is discarded whole.
+
+**Not proven end to end.** A `services` binding needs two deployed Workers.
+What is tested is this side of the boundary against a stand-in Fetcher, and the
+Worker's front door by calling its handler directly.
+
+---
+
+## 2b. NEW — the test suite flakes about one run in six
+
+Not introduced by any of the above; measured on `c3d394d`'s parent at **3
+failures in 14 runs**, and on the finished work at 2 in 16.
+`src/lib/schedule/schedule.test.ts` fails intermittently on the two cases that
+run the sweeps.
+
+Cause is cross-file interference: `runDeadlineSweep` and `runLabelDiff` both
+call `getCaseStore()`, which reads `.data/` on a developer machine, while other
+suites write and `rm` files in the same directory. `npx vitest run
+--no-file-parallelism` was clean 6/6.
+
+`label-diff.ts` also calls `fetchJson` against openFDA, so the unrecognised-cron
+case makes a real network request during `npm test`.
+
+This matters because `npm run build` runs the suite, so the build gate is
+unreliable about one time in six. Worth fixing before the demo — most likely by
+giving the schedule tests their own temp `.data` root, or stubbing the store and
+the fetch the way `acquire.test.ts` stubs its own.
 
 ## 3. Deploy — blocked on a wider API token, then mechanical
 

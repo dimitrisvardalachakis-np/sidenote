@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
 import { audit } from "@/lib/audit";
 import { requireSession } from "@/lib/auth";
-import { assessCase } from "@/lib/assess/assess";
+import { assessThroughService } from "@/lib/assess/service";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
 import { resolveDenseFor } from "@/lib/retrieval/resolve";
 import { ensurePublicLabel, withAcquiredLabel } from "@/lib/labels/acquire";
@@ -140,7 +140,17 @@ export async function runAssessment(caseId: string): Promise<void> {
     (d) => d.sourceType === "public" && inScope.has(d.id),
   );
 
-  const findings = await assessCase({
+  /*
+    Through the service seam, not straight into `assessCase`.
+
+    `assessThroughService` calls the `sidenote-assess` Worker when its binding
+    is there and runs the identical code in-process when it is not — which is
+    every run under `next dev` and every run in the test suite. The `ai`,
+    `dense` and `gateway` values below are only used on the in-process path;
+    the remote path resolves its own from its own bindings, which is the point
+    of moving it, and is why this app can hold no model credentials at all.
+  */
+  const findings = await assessThroughService({
     chunks,
     documentIds: inScope,
     reactionTerm: reaction.verbatimTerm,

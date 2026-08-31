@@ -238,6 +238,16 @@ citation traces to a public FDA record anyone can check. The two seeded
 products stay as fixtures, because the divergence they demonstrate — company
 document and public label disagreeing — is the case the demo exists to show.
 
+**The RAG path has its own Worker.** `worker-ai/` holds retrieval, fusion and
+the two generations, with `workers_dev: false`, its own `AI` and Vectorize
+bindings and a constant-time shared-secret check that runs before the body is
+parsed — so the app keeps none of the credentials inference uses. One zod
+module is imported and parsed by both sides, scope is decided app-side before
+anything crosses, and every span that comes back is re-checked against the
+chunks that were sent. `assessThroughService()` resolves the binding the way
+`resolveAiBinding` resolves its own, and runs the identical code in-process
+when there is none.
+
 **Wired, and it runs.** `assessCase` is called by a server action behind the
 "Assess this case" control on the case screen, and the result is stored and
 rendered in place of the fixture. The public search page asks the same
@@ -253,12 +263,16 @@ Workers AI REST API, so generation runs under `next dev` or any Node host with
 two environment variables — see SETUP.md. Before it was a stub returning null
 whose parameter type could not have held a binding.
 
-**The verdict has a write path, and it goes through the Durable Object.**
-Claiming, releasing and ruling are wired on the case screen and all three call
-`getCaseCoordination()` — `CaseCoordinator` when the binding is present, an
-in-process stand-in that reports `arbitrates: false` when it is not. The
-read-then-write race `claim-store.ts` documented is gone: `idFromName(caseId)`
-makes the check and the write one turn. A ruling asks the coordinator first and
+**The verdict has a write path, and the screens read the same place it
+writes.** Claiming, releasing and ruling are wired on the case screen and all
+three call `getCaseCoordination()` — `CaseCoordinator` when the binding is
+present, an in-process stand-in that reports `arbitrates: false` when it is
+not, which the claim panel now prints. The read-then-write race the old
+`claim-store.ts` documented is gone: `idFromName(caseId)` makes the check and
+the write one turn. For a while the writes went there and every screen still
+read that store, so claiming a case changed nothing anybody could see; the
+store is deleted, the queue and the rail read a `claims` mirror the objects
+write themselves, and the case screen reads the object. A ruling asks the coordinator first and
 mirrors to the assessment store second, so a claim that lapsed in between is
 refused rather than written and discovered later. Every mutating method takes
 an idempotency key, so a retried submission returns its first result instead of
@@ -274,10 +288,10 @@ worse failure.
 
 **Cloudflare is configured, not deployed.** `wrangler.jsonc` declares D1, KV,
 R2, Vectorize, Queues with a DLQ, two Durable Objects, two cron triggers, two
-rate-limit bindings and Workers AI, and `worker/index.ts` exports `fetch`,
-`queue` and `scheduled`. What has not happened is `wrangler deploy`: the
-resource ids are placeholders and `scripts/preflight-deploy.mjs` refuses to
-deploy over them. Vectorize is opt-in; the default vector store is a local file
+rate-limit bindings, Workers AI and a `services` binding to a second Worker,
+and `worker/index.ts` exports `fetch`, `queue` and `scheduled`. What has not
+happened is `wrangler deploy`: nothing here has served traffic, and a service
+binding in particular cannot be exercised at all until both Workers exist. Vectorize is opt-in; the default vector store is a local file
 doing brute-force cosine over every vector, and it says so on the screen and
 the audit line.
 

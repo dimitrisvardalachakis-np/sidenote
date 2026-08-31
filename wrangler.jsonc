@@ -176,6 +176,27 @@
 
   // Workers AI. Embeddings today; CLAUDE.md's Whisper and Llama rows are not
   // built, and no code pretends they are.
+  // ---------------------------------------------------------------------
+  // The RAG path, in a Worker of its own.
+  //
+  // Everything that spends money or takes time — retrieval, fusion, and the
+  // two generations per case — runs in `sidenote-assess`, which has its own
+  // AI and Vectorize bindings and no public URL. This app holds none of the
+  // credentials it uses, and reaches it only through this binding.
+  //
+  // The app still works without it. `getAssessService()` falls back to running
+  // the same code in-process when the binding is absent, which is what `next
+  // dev` and the test suite do, and a remote failure falls back too rather
+  // than breaking the case screen.
+  // ---------------------------------------------------------------------
+  "services": [
+    {
+      "binding": "ASSESS",
+      "service": "sidenote-assess",
+      "entrypoint": "default"
+    }
+  ],
+
   "ai": {
     "binding": "AI"
   },
