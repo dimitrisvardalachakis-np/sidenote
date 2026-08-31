@@ -259,20 +259,33 @@ export async function claimCase(
     object.
   */
   const coordination = await getCaseCoordination();
-  const outcome = await coordination.claim(
+  const { result: outcome, replayed } = await coordination.claim(
     caseId,
     session.reviewerId,
     session.displayName,
     idempotencyKeyFrom(formData),
   );
 
+  /*
+    A replay is recorded as a replay, not as a second grant.
+
+    The coordinator recognised this submission as one it had already answered
+    and did not run it again, so writing `result: "granted"` here a second time
+    would put a grant in the log that never happened. The line is still
+    emitted, because a retry that reached the server IS an event worth having;
+    what changes is that it says which one it was.
+  */
   audit({
     actor: session.reviewerId,
     action: "claim_case",
     target: entry.record.reference,
     // Losing the race is a refusal, not a failure: the system worked.
     outcome: outcome.kind === "held_by_other" ? "rejected" : "success",
-    detail: { result: outcome.kind, heldBy: outcome.claim.reviewerId },
+    detail: {
+      result: outcome.kind,
+      heldBy: outcome.claim.reviewerId,
+      ...(replayed ? { replayed: true } : {}),
+    },
   });
 
   revalidatePath(`/case/${caseId}`);
@@ -315,7 +328,7 @@ export async function releaseCase(
     };
   }
 
-  await coordination.release(
+  const released = await coordination.release(
     caseId,
     session.reviewerId,
     idempotencyKeyFrom(formData),
@@ -325,6 +338,7 @@ export async function releaseCase(
     action: "release_case",
     target: entry.record.reference,
     outcome: "success",
+    ...(released.replayed ? { detail: { replayed: true } } : {}),
   });
 
   revalidatePath(`/case/${caseId}`);
@@ -424,7 +438,7 @@ export async function recordRuling(
     which is the whole reason a lapse is safe to have at all. Only once it has
     accepted is the mirror updated.
   */
-  const ruled = await coordination.rule(
+  const { result: ruled, replayed } = await coordination.rule(
     caseId,
     parsed.data,
     idempotencyKeyFrom(form),
@@ -441,6 +455,35 @@ export async function recordRuling(
       status: "rejected",
       error: ruled.reason ?? "That ruling could not be recorded.",
     };
+  }
+
+  /*
+    A REPLAY WRITES NOTHING AND RECORDS NOTHING NEW.
+
+    Everything below used to run on a replayed submission: the mirror was
+    re-written with a fresh `updatedAt`, and a second `rule_case` success line
+    was emitted at a second instant. The coordinator was idempotent and the two
+    things that make a ruling visible were not — so a double-click produced an
+    audit trail saying the determination was made twice, which case-coordinator
+    .ts names as exactly the defect the mechanism exists to prevent.
+
+    Returning early rather than skipping each write in turn: there is one
+    decision here, and it was already recorded the first time.
+  */
+  if (replayed) {
+    audit({
+      actor: session.reviewerId,
+      action: "rule_case",
+      target: entry.record.reference,
+      outcome: "success",
+      detail: { replayed: true },
+    });
+    // Still revalidated. Nothing changed on the server, but the client that
+    // retried has not necessarily seen the first result, and re-rendering a
+    // page that is already correct costs nothing.
+    revalidatePath(`/case/${caseId}`);
+    revalidatePath("/queue");
+    return { status: "recorded", error: null };
   }
 
   await store.put(

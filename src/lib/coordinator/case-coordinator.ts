@@ -122,6 +122,23 @@ export interface CoordinatorState {
   readonly clock: ArmedClock | null;
 }
 
+/**
+ * A result, and whether it is the first one or a replay of it.
+ *
+ * `#once` knew this and threw it away, so a caller could not tell a mutation
+ * that happened from one that was recognised as already having happened. That
+ * sounds academic and was not: `recordRuling` re-ran its D1 mirror write and
+ * re-emitted its `rule_case` audit line on every replay, so a double-submitted
+ * ruling produced two success lines at different instants — a regulatory trail
+ * saying a determination was made twice. Which is, word for word, the defect
+ * the idempotency comment above says this mechanism exists to prevent. It
+ * protected the object's state and nothing else.
+ */
+export interface Replayed<T> {
+  readonly result: T;
+  readonly replayed: boolean;
+}
+
 export interface RuleOutcome {
   readonly ok: boolean;
   /** Why not, when `ok` is false. Shown to the reviewer. */
@@ -141,12 +158,17 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
    * single-threaded turn as the mutation, so there is no window in which the
    * work has happened and the key does not yet record it.
    */
-  async #once<T>(key: string | null, work: () => Promise<T>): Promise<T> {
-    if (key === null || key === "") return work();
+  async #once<T>(
+    key: string | null,
+    work: () => Promise<T>,
+  ): Promise<Replayed<T>> {
+    if (key === null || key === "") {
+      return { result: await work(), replayed: false };
+    }
 
     const slot = `${IDEMPOTENCY_PREFIX}${key}`;
     const seen = await this.ctx.storage.get<StoredResult<T>>(slot);
-    if (seen !== undefined) return seen.result;
+    if (seen !== undefined) return { result: seen.result, replayed: true };
 
     const result = await work();
     await this.ctx.storage.put(slot, {
@@ -162,7 +184,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
       await this.ctx.storage.setAlarm(Date.now() + IDEMPOTENCY_TTL_MS);
     }
 
-    return result;
+    return { result, replayed: false };
   }
 
   /** Drop keys past their window. Called from the alarm. */
@@ -285,7 +307,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     displayName: string,
     now: string,
     idempotencyKey: string | null = null,
-  ): Promise<ClaimOutcome> {
+  ): Promise<Replayed<ClaimOutcome>> {
     return this.#once(idempotencyKey, async () => {
       const existing = await this.#liveClaim(caseId, now);
 
@@ -342,7 +364,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     reviewerId: string,
     now: string,
     idempotencyKey: string | null = null,
-  ): Promise<CoordinatorState> {
+  ): Promise<Replayed<CoordinatorState>> {
     return this.#once(idempotencyKey, async () => {
       const existing = await this.#liveClaim(caseId, now);
       if (existing !== null && existing.reviewerId === reviewerId) {
@@ -378,7 +400,7 @@ export class CaseCoordinator extends DurableObject<CloudflareEnv> {
     ruling: ReviewerRuling,
     now: string,
     idempotencyKey: string | null = null,
-  ): Promise<RuleOutcome> {
+  ): Promise<Replayed<RuleOutcome>> {
     /*
       The method this whole mechanism exists for.
 

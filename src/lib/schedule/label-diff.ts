@@ -4,7 +4,7 @@ import { recordAudit } from "@/lib/audit-log";
 import { CACHE_KEY, getCache } from "@/lib/cache/kv";
 import { fetchJson } from "@/lib/fetch";
 import { dispatch } from "@/lib/pipeline";
-import { assessmentsForCases } from "@/lib/db/assessments";
+import { getAssessmentStore } from "@/lib/store/assessment-store";
 import { getCaseStore } from "@/lib/store/case-store";
 import { CaseId } from "@/lib/schemas";
 
@@ -134,7 +134,11 @@ export async function runLabelDiff(): Promise<LabelDiffReport> {
     // Re-assess only cases that HAVE an assessment. One that was never assessed
     // is already queued or already visibly unassessed; adding it here would
     // hide a pipeline failure behind a nightly retry.
-    const assessments = await assessmentsForCases(caseIds);
+    // Through the store, for the reason deadline-sweep.ts gives at length.
+    // It matters more here: this gate is the ONLY producer the ingest queue
+    // has, and the only writer of the rows it was reading was the queue's own
+    // consumer — so nothing could ever prime it and the queue could not start.
+    const assessments = await (await getAssessmentStore()).getMany(caseIds);
     // Counted per substance. `reflagged` is the run total and reporting it on
     // a per-substance line would say "12 cases" for a drug that had two.
     let reflaggedHere = 0;

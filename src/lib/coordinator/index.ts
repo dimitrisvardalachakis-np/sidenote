@@ -12,7 +12,11 @@ import { SEEDED_CASE_IDS, seededHolder } from "@/lib/case/seeded-claims";
 import { dbFrom, schema } from "@/lib/db/client";
 import type { ReviewerRuling } from "@/lib/schemas/assessment";
 import type { IsoDate, IsoDateTime } from "@/lib/schemas/primitives";
-import type { CoordinatorState, RuleOutcome } from "./case-coordinator";
+import type {
+  CoordinatorState,
+  Replayed,
+  RuleOutcome,
+} from "./case-coordinator";
 
 /**
  * The app's view of case coordination.
@@ -57,17 +61,25 @@ export interface CaseCoordination {
     reviewerId: string,
     displayName: string,
     idempotencyKey?: string | null,
-  ): Promise<ClaimOutcome>;
+  ): Promise<Replayed<ClaimOutcome>>;
   release(
     caseId: string,
     reviewerId: string,
     idempotencyKey?: string | null,
-  ): Promise<CoordinatorState>;
+  ): Promise<Replayed<CoordinatorState>>;
+  /**
+   * `replayed` is the half of idempotency the callers need.
+   *
+   * A mutation that was recognised as already done must not be written a
+   * second time OR logged a second time, and only the object knows which it
+   * was. See `Replayed` in case-coordinator.ts for what the audit trail looked
+   * like while this was thrown away.
+   */
   rule(
     caseId: string,
     ruling: ReviewerRuling,
     idempotencyKey?: string | null,
-  ): Promise<RuleOutcome>;
+  ): Promise<Replayed<RuleOutcome>>;
   /** Idempotent. `null` stands the clock down. */
   armClock(
     caseId: string,
@@ -177,7 +189,7 @@ class DurableObjectCoordination implements CaseCoordination {
     reviewerId: string,
     displayName: string,
     idempotencyKey: string | null = null,
-  ): Promise<ClaimOutcome> {
+  ): Promise<Replayed<ClaimOutcome>> {
     return this.#forCase(caseId).claim(
       caseId,
       reviewerId,
@@ -191,7 +203,7 @@ class DurableObjectCoordination implements CaseCoordination {
     caseId: string,
     reviewerId: string,
     idempotencyKey: string | null = null,
-  ): Promise<CoordinatorState> {
+  ): Promise<Replayed<CoordinatorState>> {
     return this.#forCase(caseId).release(
       caseId,
       reviewerId,
@@ -204,7 +216,7 @@ class DurableObjectCoordination implements CaseCoordination {
     caseId: string,
     ruling: ReviewerRuling,
     idempotencyKey: string | null = null,
-  ): Promise<RuleOutcome> {
+  ): Promise<Replayed<RuleOutcome>> {
     return this.#forCase(caseId).rule(
       caseId,
       ruling,
@@ -261,12 +273,19 @@ class UnarbitratedCoordination implements CaseCoordination {
    */
   readonly #replays = new Map<string, unknown>();
 
-  async #once<T>(key: string | null, work: () => Promise<T>): Promise<T> {
-    if (key === null || key === "") return work();
-    if (this.#replays.has(key)) return this.#replays.get(key) as T;
+  async #once<T>(
+    key: string | null,
+    work: () => Promise<T>,
+  ): Promise<Replayed<T>> {
+    if (key === null || key === "") {
+      return { result: await work(), replayed: false };
+    }
+    if (this.#replays.has(key)) {
+      return { result: this.#replays.get(key) as T, replayed: true };
+    }
     const result = await work();
     this.#replays.set(key, result);
-    return result;
+    return { result, replayed: false };
   }
 
   /**
@@ -317,7 +336,7 @@ class UnarbitratedCoordination implements CaseCoordination {
     reviewerId: string,
     displayName: string,
     idempotencyKey: string | null = null,
-  ): Promise<ClaimOutcome> {
+  ): Promise<Replayed<ClaimOutcome>> {
     return this.#once(idempotencyKey, async () => {
       const now = new Date().toISOString();
       const existing = this.#live(caseId, now);
@@ -344,7 +363,7 @@ class UnarbitratedCoordination implements CaseCoordination {
     caseId: string,
     reviewerId: string,
     idempotencyKey: string | null = null,
-  ): Promise<CoordinatorState> {
+  ): Promise<Replayed<CoordinatorState>> {
     return this.#once(idempotencyKey, async () => {
       const now = new Date().toISOString();
       const existing = this.#live(caseId, now);
@@ -363,7 +382,7 @@ class UnarbitratedCoordination implements CaseCoordination {
     caseId: string,
     ruling: ReviewerRuling,
     idempotencyKey: string | null = null,
-  ): Promise<RuleOutcome> {
+  ): Promise<Replayed<RuleOutcome>> {
     return this.#once(idempotencyKey, async () => {
       const existing = this.#live(caseId, new Date().toISOString());
       if (existing === null) {
@@ -430,4 +449,4 @@ export async function getCaseCoordination(): Promise<CaseCoordination> {
   return new DurableObjectCoordination(cases, minter, env?.DB);
 }
 
-export type { CoordinatorState, RuleOutcome };
+export type { CoordinatorState, Replayed, RuleOutcome };

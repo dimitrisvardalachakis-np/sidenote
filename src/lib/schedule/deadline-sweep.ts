@@ -1,7 +1,7 @@
 import "server-only";
 import { alreadyRecorded, recordAudit } from "@/lib/audit-log";
 import { getCaseCoordination } from "@/lib/coordinator";
-import { assessmentsForCases } from "@/lib/db/assessments";
+import { getAssessmentStore } from "@/lib/store/assessment-store";
 import { getCaseStore } from "@/lib/store/case-store";
 import {
   anyReactionSerious,
@@ -58,7 +58,23 @@ export async function runDeadlineSweep(today: IsoDate): Promise<SweepReport> {
     (record) => record.status !== "reported" && record.status !== "closed",
   );
 
-  const assessments = await assessmentsForCases(open.map((c) => c.id));
+  /*
+    Through the store, not straight into D1.
+
+    This read `assessmentsForCases` directly, which answers from D1 and only
+    from D1 — while every reviewer assessment was written through the store.
+    With no D1 bound the map came back empty whatever anybody had done, so
+    `listed` was null for every case, `applies` was false for every case, and
+    the expedited clock this sweep exists to arm could never arm at all. With
+    D1 bound it was empty for a different reason: the store had no D1 branch,
+    so the write went to per-isolate memory.
+
+    One interface over one table now, so the sweep sees what the reviewer
+    wrote, whichever backing this is running on.
+  */
+  const assessments = await (await getAssessmentStore()).getMany(
+    open.map((c) => c.id),
+  );
   const coordination = await getCaseCoordination();
 
   let armed = 0;

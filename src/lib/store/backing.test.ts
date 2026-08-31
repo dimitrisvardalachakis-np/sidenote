@@ -62,22 +62,26 @@ describe("what is underneath the stores", () => {
 
 /**
  * The accessor above is only worth having if the callers use it, so one caller
- * is exercised for real. `getAssessmentStore()` is the sharpest of the six:
- * `loadQueue` calls it once per entry, so it is reached before anything else
- * on every reviewer route. Under the old check it selected the disk store on a
- * Worker with D1 bound and threw out of `nodeFs()` on the first read.
+ * is exercised for real.
+ *
+ * `readAuditTrail` is the one to pick now. It has no D1 branch and is unlikely
+ * to grow one soon — Logpush is where a deployed trail belongs — and the case
+ * screen AWAITS it, so under the old check it threw out of `nodeFs()` and made
+ * the whole page a 500 rather than a page with an empty history panel.
+ *
+ * This used to exercise `getAssessmentStore()`, which was then the sharpest of
+ * the six. It has a D1 branch now, so on a Worker with D1 bound it no longer
+ * degrades at all — which is the point of that change and the reason this test
+ * had to move rather than be deleted.
  */
-describe("a store that has no D1 branch, on a Worker with D1 bound", () => {
-  it("degrades to memory instead of reaching for node:fs", async () => {
+describe("a reader that has no D1 branch, on a Worker with D1 bound", () => {
+  it("degrades to empty instead of reaching for node:fs", async () => {
     onWorkers();
     env.value = { DB: {} };
 
-    const { getAssessmentStore } = await import("./assessment-store");
-    const store = await getAssessmentStore();
+    const { readAuditTrail } = await import("./audit-store");
 
     // The throw was here: `nodeFs()` rejects before this ever returned.
-    await expect(
-      store.get("00000002-0000-4000-8000-000000000101"),
-    ).resolves.toBeNull();
+    await expect(readAuditTrail("SN-2026-000101")).resolves.toEqual([]);
   });
 });

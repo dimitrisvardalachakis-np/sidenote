@@ -42,7 +42,7 @@ describe("claiming", () => {
     const c = await getCaseCoordination();
     const id = caseId();
 
-    const outcome = await c.claim(id, ALICE.id, ALICE.name);
+    const { result: outcome } = await c.claim(id, ALICE.id, ALICE.name);
 
     expect(outcome.kind).toBe("granted");
     expect((await c.state(id)).claim?.reviewerId).toBe(ALICE.id);
@@ -53,7 +53,7 @@ describe("claiming", () => {
     const id = caseId();
     await c.claim(id, ALICE.id, ALICE.name);
 
-    const outcome = await c.claim(id, BOB.id, BOB.name);
+    const { result: outcome } = await c.claim(id, BOB.id, BOB.name);
 
     expect(outcome.kind).toBe("held_by_other");
     if (outcome.kind !== "held_by_other") throw new Error("expected a refusal");
@@ -65,8 +65,8 @@ describe("claiming", () => {
   it("refreshes rather than refusing when the holder re-claims", async () => {
     const c = await getCaseCoordination();
     const id = caseId();
-    const first = await c.claim(id, ALICE.id, ALICE.name);
-    const second = await c.claim(id, ALICE.id, ALICE.name);
+    const { result: first } = await c.claim(id, ALICE.id, ALICE.name);
+    const { result: second } = await c.claim(id, ALICE.id, ALICE.name);
 
     // A reviewer who reloads the page has not lost their claim, and a system
     // that says "you cannot have this, you have it" is one people distrust.
@@ -97,7 +97,7 @@ describe("claiming", () => {
     await c.claim(id, ALICE.id, ALICE.name);
     await c.release(id, ALICE.id);
 
-    expect((await c.claim(id, BOB.id, BOB.name)).kind).toBe("granted");
+    expect((await c.claim(id, BOB.id, BOB.name)).result.kind).toBe("granted");
   });
 });
 
@@ -106,7 +106,7 @@ describe("ruling", () => {
     const c = await getCaseCoordination();
     const id = caseId();
 
-    const result = await c.rule(id, ruling(ALICE.id));
+    const { result: result } = await c.rule(id, ruling(ALICE.id));
 
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/Claim this case/);
@@ -117,7 +117,7 @@ describe("ruling", () => {
     const id = caseId();
     await c.claim(id, ALICE.id, ALICE.name);
 
-    const result = await c.rule(id, ruling(BOB.id));
+    const { result: result } = await c.rule(id, ruling(BOB.id));
 
     // Two people deciding one case is the same failure as two people opening
     // it, with a regulatory consequence attached.
@@ -130,7 +130,7 @@ describe("ruling", () => {
     const id = caseId();
     await c.claim(id, ALICE.id, ALICE.name);
 
-    const result = await c.rule(id, ruling(ALICE.id));
+    const { result: result } = await c.rule(id, ruling(ALICE.id));
 
     expect(result.ok).toBe(true);
     expect(result.state.ruling?.listedness).toBe("unlisted");
@@ -163,8 +163,8 @@ describe("idempotency keys", () => {
     await c.claim(id, ALICE.id, ALICE.name);
 
     const key = "ruling-attempt-1";
-    const first = await c.rule(id, ruling(ALICE.id), key);
-    const replay = await c.rule(id, ruling(ALICE.id), key);
+    const { result: first } = await c.rule(id, ruling(ALICE.id), key);
+    const { result: replay } = await c.rule(id, ruling(ALICE.id), key);
 
     expect(first.ok).toBe(true);
     // Not merely "also ok" — the SAME result object, because the second call
@@ -177,8 +177,8 @@ describe("idempotency keys", () => {
     const id = "case-idem-claim";
 
     const key = "claim-attempt-1";
-    const first = await c.claim(id, ALICE.id, ALICE.name, key);
-    const replay = await c.claim(id, ALICE.id, ALICE.name, key);
+    const { result: first } = await c.claim(id, ALICE.id, ALICE.name, key);
+    const { result: replay } = await c.claim(id, ALICE.id, ALICE.name, key);
 
     expect(first.kind).toBe("granted");
     // Without the key this would come back "already_yours" with a moved
@@ -190,8 +190,8 @@ describe("idempotency keys", () => {
     const c = await getCaseCoordination();
     const id = "case-idem-distinct";
 
-    const first = await c.claim(id, ALICE.id, ALICE.name, "press-1");
-    const second = await c.claim(id, ALICE.id, ALICE.name, "press-2");
+    const { result: first } = await c.claim(id, ALICE.id, ALICE.name, "press-1");
+    const { result: second } = await c.claim(id, ALICE.id, ALICE.name, "press-2");
 
     expect(first.kind).toBe("granted");
     // A genuine second press, deliberately made: it extends rather than
@@ -204,10 +204,49 @@ describe("idempotency keys", () => {
     const id = "case-idem-contested";
 
     await c.claim(id, ALICE.id, ALICE.name, "alice-press");
-    const bob = await c.claim(id, BOB.id, BOB.name, "bob-press");
+    const { result: bob } = await c.claim(id, BOB.id, BOB.name, "bob-press");
 
     // The guarantee the whole class exists for is not weakened by any of this.
     expect(bob.kind).toBe("held_by_other");
+  });
+});
+
+describe("a replay says it is one", () => {
+  it("reports replayed:false the first time and true after", async () => {
+    const c = await getCaseCoordination();
+    const id = "case-replay-flag";
+    const key = "one-intent";
+
+    const first = await c.claim(id, ALICE.id, ALICE.name, key);
+    const again = await c.claim(id, ALICE.id, ALICE.name, key);
+
+    expect(first.replayed).toBe(false);
+    expect(again.replayed).toBe(true);
+    // Same answer, and now the caller can tell that it is the same answer
+    // rather than a second grant — which is what stops `recordRuling`
+    // writing a second determination into the audit trail.
+    expect(again.result).toEqual(first.result);
+  });
+
+  it("reports replayed:false for a ruling under a fresh key", async () => {
+    const c = await getCaseCoordination();
+    const id = "case-replay-fresh";
+    await c.claim(id, ALICE.id, ALICE.name);
+
+    const first = await c.rule(id, ruling(ALICE.id), "key-one");
+    const second = await c.rule(id, ruling(ALICE.id), "key-two");
+
+    expect(first.replayed).toBe(false);
+    // A different key is a different intent, however identical the payload:
+    // the reviewer pressed the button again on purpose.
+    expect(second.replayed).toBe(false);
+  });
+
+  it("treats no key as never a replay", async () => {
+    const c = await getCaseCoordination();
+    const id = caseId();
+    expect((await c.claim(id, ALICE.id, ALICE.name)).replayed).toBe(false);
+    expect((await c.claim(id, ALICE.id, ALICE.name)).replayed).toBe(false);
   });
 });
 
