@@ -27,18 +27,31 @@
     "enabled": true
   },
 
-  // NOT reachable at sidenote.<subdomain>.workers.dev.
+  // REACHABLE at sidenote.<subdomain>.workers.dev, and that was a decision
+  // rather than a default.
   //
-  // The default is true, which publishes a guessable public hostname for a
-  // Worker serving a queue of confidential safety cases. The password in front
-  // of that queue is one shared string, so the workers.dev URL is a second
-  // front door nobody chose to open — and it stays open after a custom domain
-  // is attached, which is when people stop thinking about it.
+  // This was false, for a reason worth keeping in front of whoever changes it
+  // next: the default publishes a guessable public hostname for a Worker
+  // serving a queue of confidential safety cases, the password in front of
+  // that queue is one shared string, and the workers.dev URL stays open after
+  // a custom domain is attached — which is when people stop thinking about it.
   //
-  // Cluster E's service-binding split needs this false on the RAG worker for
-  // the same reason: a service binding is private, and a worker that also
-  // answers on workers.dev is not.
-  "workers_dev": false,
+  // Turned on so the demo has a front door, and the objection above answered
+  // rather than ignored: `SIDENOTE_REVIEWER_PASSWORD` is now a secret, so the
+  // shared string is no longer the one printed in auth.ts and in this
+  // repository. The data behind it remains synthetic and public-source only.
+  //
+  // The RAG worker stays false. A service binding is private, and a worker
+  // that also answers on workers.dev is not — that one has no reason to have
+  // a front door at all.
+  "workers_dev": true,
+
+  // And ONLY that one door. With workers.dev on, Cloudflare enables Preview
+  // URLs by default — a separate public hostname per VERSION, each serving the
+  // same queue, none of them mentioned anywhere. One front door somebody chose
+  // is the decision above; a new one per deploy that nobody chose is the thing
+  // that decision was guarding against.
+  "preview_urls": false,
 
   // ---------------------------------------------------------------- Cluster F
 
