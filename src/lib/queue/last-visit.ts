@@ -2,9 +2,9 @@ import "server-only";
 import {
   dataPath,
   ephemeralSingleton,
+  hasLocalDisk,
   nodeFs,
   nodePath,
-  storageBacking,
 } from "@/lib/store/backing";
 
 /**
@@ -41,7 +41,7 @@ export async function readLastVisit(reviewerId: string): Promise<string | null> 
   const name = safeName(reviewerId);
   if (name === null) return null;
 
-  if ((await storageBacking()) === "ephemeral") {
+  if (!(await hasLocalDisk())) {
     return visits().get(name) ?? null;
   }
 
@@ -62,7 +62,7 @@ export async function recordVisit(reviewerId: string): Promise<void> {
   if (name === null) return;
   const now = new Date().toISOString();
 
-  if ((await storageBacking()) === "ephemeral") {
+  if (!(await hasLocalDisk())) {
     visits().set(name, now);
     return;
   }

@@ -79,6 +79,25 @@ export async function isStorageDurable(): Promise<boolean> {
 }
 
 /**
+ * Is there a filesystem under this process?
+ *
+ * The question every `nodeFs()` caller actually has. Five of them used to ask
+ * it as `storageBacking() !== "ephemeral"`, which reads as "is storage
+ * durable" — a DIFFERENT question that happens to agree on two of the three
+ * values and disagrees on the one that matters. A deployed Worker with D1
+ * bound is `"cloudflare"`: durable, and with no disk whatsoever. So those five
+ * took the disk branch on Workers and threw out of `nodeFs()` below, turning
+ * the graceful degradation each of them was written to have into a 500 on
+ * every reviewer route.
+ *
+ * Named for the question so the answer cannot drift from it again. The type
+ * has three members; a boolean built from two of them has to say which two.
+ */
+export async function hasLocalDisk(): Promise<boolean> {
+  return (await storageBacking()) === "local-disk";
+}
+
+/**
  * Emitted on every ephemeral WRITE, and not on reads.
  *
  * A write is where the false promise is made — a read of something that is not

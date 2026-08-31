@@ -13,9 +13,9 @@ import {
   announceEphemeralWrite,
   dataPath,
   ephemeralSingleton,
+  hasLocalDisk,
   nodeFs,
   nodePath,
-  storageBacking,
 } from "./backing";
 
 /**
@@ -225,7 +225,7 @@ export async function getDocumentLibrary(): Promise<DocumentLibrary> {
   const db = await getDb();
   if (db !== null) return new D1DocumentLibrary(db);
 
-  if ((await storageBacking()) !== "ephemeral") return localLibrary;
+  if (await hasLocalDisk()) return localLibrary;
 
   return ephemeralSingleton(
     "document_library",

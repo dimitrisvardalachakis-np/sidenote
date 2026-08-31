@@ -4,9 +4,9 @@ import {
   announceEphemeralWrite,
   dataPath,
   ephemeralSingleton,
+  hasLocalDisk,
   nodeFs,
   nodePath,
-  storageBacking,
 } from "./backing";
 
 /**
@@ -80,7 +80,11 @@ class EphemeralAssessmentStore implements AssessmentStore {
 const localStore: AssessmentStore = new LocalFileAssessmentStore();
 
 export async function getAssessmentStore(): Promise<AssessmentStore> {
-  if ((await storageBacking()) !== "ephemeral") return localStore;
+  // `hasLocalDisk()`, not "is it durable". This store has no D1 branch, so on
+  // a Worker with D1 bound there is nowhere durable to put an assessment and
+  // no disk either — per-isolate memory is the honest answer, and it announces
+  // itself. Asking the durability question here reached for `node:fs` instead.
+  if (await hasLocalDisk()) return localStore;
   return ephemeralSingleton(
     "assessment_store",
     () => new EphemeralAssessmentStore(),

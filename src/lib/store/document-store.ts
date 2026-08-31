@@ -5,9 +5,9 @@ import {
   announceEphemeralWrite,
   dataPath,
   ephemeralSingleton,
+  hasLocalDisk,
   nodeFs,
   nodePath,
-  storageBacking,
 } from "./backing";
 
 /**
@@ -270,7 +270,11 @@ export async function getDocumentStore(): Promise<DocumentStore> {
   const bucket = env?.DOCUMENTS;
   if (bucket !== undefined) return new R2DocumentStore(bucket);
 
-  if ((await storageBacking()) !== "ephemeral") return localStore;
+  // `hasLocalDisk()`, and here the distinction bites hardest: the guard above
+  // asks about R2 while `storageBacking()` asks about D1, so a Worker with D1
+  // bound and no bucket — this project's exact current state — reached the
+  // disk and threw. The two bindings are not the same question.
+  if (await hasLocalDisk()) return localStore;
 
   return ephemeralSingleton("document_store", () => new EphemeralDocumentStore());
 }

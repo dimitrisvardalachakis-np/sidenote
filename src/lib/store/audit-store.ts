@@ -1,6 +1,6 @@
 import "server-only";
 import { setAuditSink, type AuditRecord } from "@/lib/audit";
-import { dataPath, nodeFs, nodePath, storageBacking } from "./backing";
+import { dataPath, hasLocalDisk, nodeFs, nodePath } from "./backing";
 
 /**
  * The audit trail, kept so a screen can show it.
@@ -82,7 +82,13 @@ function append(record: AuditRecord): void {
       // No disk: the console line has already been written, which is the
       // record non-negotiable #9 actually requires. The journal is what lets a
       // SCREEN show it, and a screen that shows nothing is honest.
-      if ((await storageBacking()) === "ephemeral") return;
+      //
+      // "No disk" is `hasLocalDisk()`, not "not durable". A Worker with D1
+      // bound is durable and diskless, and asking the other question sent this
+      // straight into `nodeFs()`. It threw into the `.catch` below, so the
+      // journal silently wrote nothing on the deployed app while the console
+      // line — and `recordAudit`'s D1 mirror — carried on as normal.
+      if (!(await hasLocalDisk())) return;
       const path = await fileFor(record.target);
       if (path === null) return;
       const { appendFile, mkdir } = await nodeFs();
@@ -114,7 +120,10 @@ export async function readAuditTrail(
   limit = 50,
 ): Promise<readonly AuditRecord[]> {
   await flushAuditTrail();
-  if ((await storageBacking()) === "ephemeral") return [];
+  // Same correction as `append` above, and here the throw was NOT swallowed:
+  // `case/[id]/page.tsx` awaits this, so on a Worker with D1 bound every case
+  // screen was a 500 rather than a case screen with an empty history panel.
+  if (!(await hasLocalDisk())) return [];
 
   const path = await fileFor(target);
   if (path === null) return [];

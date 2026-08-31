@@ -9,9 +9,9 @@ import {
   announceEphemeralWrite,
   dataPath,
   ephemeralSingleton,
+  hasLocalDisk,
   nodeFs,
   nodePath,
-  storageBacking,
 } from "./backing";
 
 /**
@@ -305,7 +305,7 @@ export async function getCaseStore(): Promise<CaseStore> {
   const db = await getDb();
   if (db !== null) return new D1CaseStore(db);
 
-  if ((await storageBacking()) !== "ephemeral") return localStore;
+  if (await hasLocalDisk()) return localStore;
 
   // Anchored to the isolate rather than to this module: Next instantiates the
   // module once per bundle, so a plain `const` gives the queue page and the
