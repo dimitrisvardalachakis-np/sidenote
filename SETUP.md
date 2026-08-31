@@ -214,6 +214,31 @@ Only worth doing when you deploy. It removes the token and the egress hop.
 No code changes. `resolveAiBinding` prefers `env.AI` whenever it is present and
 falls back to HTTP otherwise, so both routes work from the same build.
 
+### Seed the fixture cases into D1 — required, once per database
+
+```bash
+npm run seed:cases:sql && npx wrangler d1 execute sidenote --remote --file=drizzle/seed-cases.sql
+```
+
+Skip this and the deployment looks fine until somebody presses **Assess this
+case**, which returns a 500.
+
+The twelve demo cases are built in code by `buildSeedCases()` and are not rows
+in any database — which is invisible locally, because with no D1 binding the
+assessment store falls through to the disk and there are no foreign keys there
+to violate. On a deployment there are: `assessments.case_id` references
+`cases(id)`, so storing an assessment against a case that is not in the table
+fails the constraint and takes the case screen down with it. Ruling fails the
+same way, for the same reason.
+
+The rows are anchors for that key, not a second copy of the truth.
+`loadQueue` filters them back out of the store listing and renders the code
+fixture, so the queue shows each case once and the clocks stay honest as the
+days pass — `src/lib/queue/entries.ts` says so next to the filter. Re-running
+the seed is safe: it upserts, and deliberately does not use `REPLACE INTO`,
+which would delete the case row first and cascade every assessment hanging off
+it.
+
 ---
 
 ## Turning it off again

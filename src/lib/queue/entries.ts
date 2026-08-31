@@ -44,8 +44,28 @@ export const loadQueue = cache(async function loadQueue(
     record: s.record,
     assessment: s.assessment,
   }));
+  const seededIds = new Set(seeded.map((entry) => entry.record.id));
 
-  const submitted = await (await getCaseStore()).list();
+  /*
+    The seeded cases ALSO exist as rows in D1, and must be listed once.
+
+    They are anchors for a foreign key rather than a second copy of the truth.
+    `assessments.case_id` references `cases(id)`, so until those twelve rows
+    existed every attempt to store an assessment against a fixture — the one
+    thing that puts a real model reading on the demo data — failed the
+    constraint and took the case screen down with it. Nothing local could show
+    that: with no D1 binding the assessment store falls through to the disk,
+    which has no foreign keys.
+
+    The fixture wins, and that direction is the point. `buildSeedCases` recomputes
+    every date from `today`, so the fixture is what keeps the clocks honest as
+    the days pass; the row is a stable id the database can point at. Dropping
+    the row from this list rather than the fixture is what keeps the two from
+    both appearing.
+  */
+  const submitted = (await (await getCaseStore()).list()).filter(
+    (record) => !seededIds.has(record.id),
+  );
   const store = await getAssessmentStore();
 
   /*
