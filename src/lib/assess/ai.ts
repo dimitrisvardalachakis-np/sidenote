@@ -14,8 +14,28 @@
 import { z } from "zod";
 import { createHttpAiBinding } from "./http-binding";
 
-/** Cluster C and E both name this model. It is recorded on every reading. */
-export const GENERATION_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+/**
+ * Cluster C and E both name this model. It is recorded on every reading.
+ *
+ * `-fp8` since the first run against workerd, where the previous name —
+ * `@cf/meta/llama-3.1-8b-instruct` — turned out to have been RETIRED:
+ *
+ *   5028: @cf/meta/infire-llama-3.1-8b-instruct was deprecated on 2026-05-30
+ *
+ * Three months before that run, and nothing in this repository noticed,
+ * because every layer degraded exactly as designed: `generate.ts` caught the
+ * transport error, returned `unavailable`, and the screen said the reading
+ * could not be produced. Honest, and indistinguishable from the model simply
+ * being down. The audit line said `status: "unavailable"` and nothing more
+ * until the reason was added beside it — which is what turned a shrug into
+ * this fix in one request.
+ *
+ * The same 8B family and size, so the failure modes the prompt and the
+ * verifier are written against still apply — `verify.ts` reasons explicitly
+ * about "the reply an 8B model gives", and a jump to a 70B would quietly
+ * invalidate that reasoning rather than improve it.
+ */
+export const GENERATION_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 
 /**
  * Low, but not zero.

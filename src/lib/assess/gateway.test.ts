@@ -7,7 +7,12 @@ import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
 import { DrugId, type SuspectDrug } from "@/lib/schemas";
 import { assessCase } from "./assess";
 import { extractReport } from "@/lib/extract/extract";
-import { GATEWAY_CACHE_TTL_SECONDS, resolveGateway, type AiBinding } from "./ai";
+import {
+  GATEWAY_CACHE_TTL_SECONDS,
+  GENERATION_MODEL,
+  resolveGateway,
+  type AiBinding,
+} from "./ai";
 import { documentsForDrug } from "./scope";
 
 const HEPALEX: SuspectDrug = {
@@ -196,7 +201,12 @@ describe("the audit line ties a verdict to its inference", () => {
       target: "SN-2026-000101",
       outcome: "success",
       detail: {
-        model: "@cf/meta/llama-3.1-8b-instruct",
+        // The constant, not a copy of it. This assertion held a literal until
+        // the model behind that literal was retired and the whole name had to
+        // change; the test then failed for the one reason it should not — the
+        // code being right. What is worth pinning is that the audit line
+        // records WHICH model ran, not which model it was in 2026.
+        model: GENERATION_MODEL,
         gatewayRequestId: "aig-log-42",
         gateway: "sidenote",
       },

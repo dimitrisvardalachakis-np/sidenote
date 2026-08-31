@@ -239,6 +239,28 @@ export async function answerPublicQuestion(
     outcome: reading.status === "unavailable" ? "failure" : "success",
     detail: {
       status: reading.status,
+      /*
+        WHY THE READING FAILED, not merely that it did.
+
+        Added after the first run against workerd, where this line said
+        `status: "unavailable"` and nothing else — so an operator could see
+        that no reading was produced and had no way to tell a model that is
+        down from a token that is wrong from a request that timed out. The
+        three need different people to fix them, and the audit trail is the
+        only record that a cron run or a public search leaves behind.
+
+        Safe to record, on the same argument the `denseUnavailable` comment
+        below makes, and bounded rather than assumed: every string that
+        reaches here is authored in `generate.ts`, interpolating either a
+        transport error's message or the name of a failed check — never the
+        prompt, which is where the question would be. Truncated anyway,
+        because "never" is a property of today's call sites and this is a log
+        line that a member of the public can cause to be written.
+      */
+      reason:
+        reading.status === "unavailable"
+          ? reading.reason.slice(0, 200)
+          : "none",
       model: reading.model ?? "none",
       gatewayRequestId: reading.gatewayRequestId ?? "none",
       source: ai.source,

@@ -44,4 +44,48 @@ R2_S3_BUCKET=sidenote-documents
 # every model call" — and every embedding call routes through it when set.
 #
 # Without it: model calls go direct, uncached and uncapped.
-AI_GATEWAY_ID=
+#
+# NOTE THE PREFIX. This used to read `AI_GATEWAY_ID`, which nothing in the
+# codebase reads — `ai.ts` looks up `SIDENOTE_AI_GATEWAY_ID`. Anyone who
+# followed this file got a gateway that was configured and never used, with no
+# error to say so.
+SIDENOTE_AI_GATEWAY_ID=
+
+# --- REQUIRED IN PRODUCTION ------------------------------------------------
+# Everything above is optional. This one is not, and it is the only variable
+# here whose absence is fatal rather than degrading.
+#
+# `sessionSecrets()` THROWS when NODE_ENV is production and this is unset,
+# rather than signing with the key printed in auth.ts — anyone who has read
+# this repository could otherwise mint a reviewer session. Correct, and easy to
+# be surprised by: `next dev` runs with NODE_ENV=development and falls back to
+# that default happily, while `wrangler dev` serves an OpenNext PRODUCTION
+# build, so the guard fires there and every reviewer route returns 500. Found
+# exactly that way, on the first run against workerd.
+#
+# Any long random string. Deployed it goes through `wrangler secret put`.
+#   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+SIDENOTE_SESSION_SECRET=
+
+# Only when rotating: the outgoing key, so sessions signed under it still
+# verify until they expire. See the rotation drill in SETUP.md.
+SIDENOTE_SESSION_SECRET_PREVIOUS=
+
+# --- Cluster E: the AI Worker ----------------------------------------------
+# Shared secret between the app and `worker-ai`. The SAME value must be in
+# worker-ai/.dev.vars, or the service binding returns 401 and the app falls
+# back to running the RAG path in-process — which works, and is slower and
+# silent apart from one audit line.
+#
+# Without it: the same in-process fallback, announced as
+# [AUDIT] assess_service / binding_present_but_no_shared_secret.
+SIDENOTE_ASSESS_SECRET=
+
+# --- Opt in to real Vectorize ----------------------------------------------
+# The `vectorize` block in wrangler.jsonc does NOT switch this on: nothing
+# reads `env.VECTORIZE`, because vectorize-store.ts talks to the REST API so
+# the same code path works under `next dev`. THIS is the switch.
+#
+# Without it: the local file-backed index, brute-force cosine over every
+# vector, which says so on the screen and in the audit line.
+SIDENOTE_VECTORIZE_INDEX=

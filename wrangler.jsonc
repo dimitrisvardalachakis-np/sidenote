@@ -192,8 +192,16 @@
   "services": [
     {
       "binding": "ASSESS",
-      "service": "sidenote-assess",
-      "entrypoint": "default"
+      "service": "sidenote-assess"
+      // NO "entrypoint". It names a `WorkerEntrypoint` subclass exported from
+      // the target Worker — it is not the string "default", and setting it to
+      // that stops the runtime starting at all:
+      //
+      //   binding "ASSESS" refers to service "sidenote-assess" with a named
+      //   entrypoint "default", but it has no such named entrypoint
+      //
+      // Omitting it means the default export's fetch handler, which is what
+      // worker-ai/index.ts provides. Nothing catches this before workerd does.
     }
   ],
 

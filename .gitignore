@@ -48,6 +48,8 @@ next-env.d.ts
 # state directory. Both are build output.
 /.open-next
 /.wrangler
+# The AI Worker keeps its own, and the anchored pattern above misses it.
+worker-ai/.wrangler
 # Local secrets for `wrangler dev`. TURNSTILE_SECRET_KEY lives here in
 # development and in `wrangler secret put` everywhere else. Never committed.
 .dev.vars

@@ -27,7 +27,8 @@ import { parseExtraction, verifyExtraction, type ExtractRejection } from "./veri
 import type { Extraction } from "./schema";
 
 /** Cluster C names this model; it is recorded on every extraction. */
-export const EXTRACTION_MODEL = "@cf/meta/llama-3.1-8b-instruct";
+/** Retired on 2026-05-30 under its old name — see GENERATION_MODEL in ai.ts. */
+export const EXTRACTION_MODEL = "@cf/meta/llama-3.1-8b-instruct-fp8";
 
 /** A report is longer than a rationale, and there are more fields to fill. */
 export const EXTRACTION_MAX_TOKENS = 640;
