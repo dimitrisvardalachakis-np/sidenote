@@ -193,10 +193,16 @@ audit line.
 **Not deployed.** `wrangler.jsonc` ships with placeholder resource ids and the
 preflight refuses to deploy over them.
 
-**Deliberately still standing in.** The intake chat's retrieval is lexical-only.
-That is a refusal, not a gap: it is the one surface that asserts what a document
-says with no model reading the passage, so a better retriever there would only
-make it more confident. That is a shape problem to fix before a ranking problem.
+**Fixed since, and worth saying how.** The intake chat used to be lexical-only,
+and deliberately so: it was the one surface that asserted what a document said
+with no model reading the passage, so a better retriever there would only have
+made it more confident. The shape was corrected first — the conversation now
+ends in a review step that retrieves, has a model read the passages, and shows
+the reporter what will be filed before anything is written. Because that step
+calls `answerPublicQuestion`, the same function the public search uses, the
+hybrid ranking, the verbatim check and the honest degraded state all arrived
+with it. A ranking problem is only worth fixing once the shape underneath it is
+honest.
 
 ---
 

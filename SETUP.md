@@ -382,31 +382,27 @@ the cache, so each label is fetched once. `OPENFDA_API_KEY` is not read by
 anything; a key would only raise the rate limit, and the cache is what keeps
 this inside the unauthenticated one.
 
-**The intake chat's retrieval is lexical-only, and that is now a refusal
-rather than a gap.** It still relies on literal overlap plus the 24-entry synonym table, so
-measured against the seeded corpus all three of these return nothing:
+**The intake chat is hybrid now, and the order it got there in is the point.**
+It used to be lexical-only — literal overlap plus a 24-entry synonym table — and
+measured against the seeded corpus it missed "my face puffed up" (*angioedema*),
+"heart was racing" (*tachycardia*) and "my muscles ached all over" (*myalgia*).
 
-- "my face puffed up" → *angioedema* — **missed**. The table has a `swelling`
-  entry that reaches `angioedema`, but the reporter wrote "puffed up", and a
-  lookup table only fires on the word somebody thought to list.
-- "heart was racing" → *tachycardia* — **missed**
-- "my muscles ached all over" → *myalgia* — **missed**
+Adding the dense half was the obvious next step and it was the wrong one first.
+`assessAgainstDocuments` turned a bare retrieval hit into `alreadyDescribed`,
+which tells a member of the public their reaction *"does appear in the published
+information"* — with **no model reading the passage**. A better retriever on
+that path would not have made the answer truer, only more confident.
 
-Adding the dense half there was the obvious next step and it is the wrong one
-until something else changes first. `assessAgainstDocuments` turns a bare
-retrieval hit into `alreadyDescribed`, which tells a member of the public their
-reaction *"does appear in the published information"* — with **no model reading
-the passage**. Every other surface puts a model between the ranking and the
-claim. A better retriever on that path would not make the answer truer, only
-more confident, and a semantic hit carries no `matched` terms, so the passage
-shown underneath would be the chunk's opening heading rather than the sentence
-that matched — removing the one safeguard that path relies on.
-
-The report reaches a reviewer either way, so nothing is suppressed; what is at
-stake is telling somebody something untrue about a safety document. The order
-is: give `IntakeVerdict` a third state (it currently cannot distinguish
-"searched and found nothing" from "nothing was in scope to search"), stop
-asserting on a ranking alone, and then add dense.
+So the shape was fixed first, in this order: give the verdict a third state, so
+"searched and found nothing" stops reading the same as "nothing was in scope to
+search"; stop asserting on a ranking alone by putting a model between the
+ranking and the sentence; and only then add dense. The conversation now ends in
+a review step that retrieves, has a model read the passages, shows the reporter
+what will be filed, and writes nothing until they press send. It reaches that
+through `answerPublicQuestion` — the same function the public search page calls
+— so the verbatim check, the single retry, the honest degraded state and the
+public-only namespace lock all apply here unchanged, and the hybrid ranking came
+with them rather than being bolted on.
 
 **Nothing is automatic.** Assessment runs when a reviewer presses the button,
 not when a case arrives. An inference costs money and a button makes it obvious
