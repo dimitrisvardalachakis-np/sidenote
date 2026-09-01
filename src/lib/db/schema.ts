@@ -170,11 +170,30 @@ export const documents = sqliteTable(
     rejectionReason: text("rejection_reason"),
     chunkCount: integer("chunk_count").notNull().default(0),
     uploadedAt: text("uploaded_at").notNull(),
+    /**
+     * SHA-256 of the extracted text. Content identity for the whole document,
+     * where `chunks.text_hash` is content identity for one passage.
+     *
+     * WHAT WENT WRONG WITHOUT IT. Saving the same file twice produced two
+     * documents, two R2 objects and two sets of vectors, and the next
+     * assessment then told a reviewer it had "Searched Cardiquel Company Core
+     * Data Sheet v4.2, Cardiquel Company Core Data Sheet v4.2" and offered the
+     * same passage twice from two document ids. Duplicated evidence reads as
+     * corroboration, which is the one thing an evidence panel must never
+     * manufacture.
+     *
+     * Nullable rather than defaulted, and the difference matters: "" would
+     * claim every document stored before this column existed has the hash of
+     * the empty string, and they would all collide with each other. Null is
+     * "not known", and `findDuplicate` skips it.
+     */
+    contentHash: text("content_hash"),
   },
   (table) => [
     index("documents_source_type_idx").on(table.sourceType),
     index("documents_substance_idx").on(table.activeSubstance),
     index("documents_uploaded_idx").on(table.uploadedAt),
+    index("documents_content_hash_idx").on(table.contentHash),
   ],
 );
 

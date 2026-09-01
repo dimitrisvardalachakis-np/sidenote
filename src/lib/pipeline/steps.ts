@@ -3,6 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { audit } from "@/lib/audit";
 import { getDb, schema } from "@/lib/db/client";
 import { chunkDocument } from "@/lib/ingest/chunk";
+import { sha256 } from "@/lib/ingest/hash";
 import { assessCase } from "@/lib/assess/assess";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
 import { aiEnv } from "@/lib/assess/env";
@@ -56,24 +57,6 @@ export async function runStep(
 // ---------------------------------------------------------------------------
 // chunk
 // ---------------------------------------------------------------------------
-
-/**
- * SHA-256 of the chunk text, for the dedupe step.
- *
- * WebCrypto rather than a hand-rolled hash: it is on Workers and in Node, it is
- * not going to collide, and a cheap 32-bit hash that collides once in a corpus
- * of a hundred thousand chunks would silently give two different passages the
- * same embedding.
- */
-async function sha256(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(text),
-  );
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 async function chunkStep(
   documentId: string,

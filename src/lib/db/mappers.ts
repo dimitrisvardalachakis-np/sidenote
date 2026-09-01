@@ -190,6 +190,7 @@ export function documentToRow(
     rejectionReason: document.rejectionReason,
     chunkCount: document.chunkCount,
     uploadedAt: document.uploadedAt,
+    contentHash: document.contentHash,
   };
 }
 
@@ -207,6 +208,7 @@ export function rowToDocument(row: DocumentRow): SafetyDocument {
     rejectionReason: row.rejectionReason,
     chunkCount: row.chunkCount,
     uploadedAt: row.uploadedAt,
+    contentHash: row.contentHash,
   });
 }
 

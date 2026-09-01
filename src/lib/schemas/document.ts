@@ -111,6 +111,16 @@ export const SafetyDocument = z
      * steep price for an additive field.
      */
     uploadedBy: ReviewerId.nullable().default(null),
+    /**
+     * SHA-256 of the extracted text, or null when it is not known.
+     *
+     * Null for every document stored before this field existed, and for a
+     * rejected one — a scanned PDF has no text to be the same as anything.
+     * Nullable with a default for the reason `uploadedBy` is: a stored document
+     * that fails to parse disappears from the library, which is a steep price
+     * for an additive field.
+     */
+    contentHash: z.string().length(64).nullable().default(null),
   })
   .refine(
     (doc) =>

@@ -367,6 +367,42 @@ export function UploadPanel() {
         </div>
       )}
 
+      {/*
+        ALREADY HELD.
+
+        Not red. Nothing has gone wrong and nothing is at risk — the library
+        holds this already, which is the system working. `--signal` is reserved
+        for expedited and overdue, and spending it here would teach the eye to
+        discount it where it means a 15-day clock.
+
+        The message names the held document rather than saying "duplicate",
+        because "duplicate" asks the reviewer to go and find out what they
+        collided with.
+      */}
+      {state.status === "duplicate" && state.duplicate !== null && (
+        <div className="mt-4 border-l-2 border-rule bg-surface-sunken px-3 py-2">
+          <p className="text-base">{state.duplicate.message}</p>
+
+          {state.duplicate.kind === "same_version" && (
+            <label className="mt-3 flex items-start gap-2 text-meta text-slate">
+              <input
+                type="checkbox"
+                name="confirmSupersedes"
+                className="mt-0.5 size-4 shrink-0 accent-steady"
+              />
+              <span>
+                Store this as a second document anyway. I have read what is
+                already held above.
+              </span>
+            </label>
+          )}
+
+          <p className="mt-2 font-mono text-micro text-slate">
+            {state.duplicate.heldDocumentId}
+          </p>
+        </div>
+      )}
+
       {errors.form !== undefined && (
         <p className="mt-4 text-base font-medium text-ink">{errors.form}</p>
       )}

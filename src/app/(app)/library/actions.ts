@@ -14,6 +14,8 @@ import {
 import { DocumentId, REJECTION_MESSAGES, SafetyDocument } from "@/lib/schemas";
 import { getDocumentStore, objectKeyFor } from "@/lib/store/document-store";
 import { getDocumentLibrary } from "@/lib/store/library-store";
+import { sha256 } from "@/lib/ingest/hash";
+import { duplicateMessage, findDuplicate } from "@/lib/library/duplicates";
 import { resolveAiBinding } from "@/lib/assess/ai";
 import { aiEnv } from "@/lib/assess/env";
 import { embedAndUpsert } from "@/lib/retrieval/ingest";
@@ -53,6 +55,7 @@ export async function saveDocument(
       errors: toUploadFieldErrors(parsed.error),
       values,
       saved: null,
+      duplicate: null,
     };
   }
 
@@ -63,6 +66,7 @@ export async function saveDocument(
       errors: { file: "Choose a file to upload." },
       values,
       saved: null,
+      duplicate: null,
     };
   }
   if (!isAcceptedFilename(file.name)) {
@@ -71,6 +75,7 @@ export async function saveDocument(
       errors: { file: REJECTION_MESSAGES.unsupported_format },
       values,
       saved: null,
+      duplicate: null,
     };
   }
   if (file.size > MAX_BYTES) {
@@ -81,6 +86,7 @@ export async function saveDocument(
       },
       values,
       saved: null,
+      duplicate: null,
     };
   }
 
@@ -90,6 +96,74 @@ export async function saveDocument(
     pageCount: Number.isFinite(rawPageCount) ? rawPageCount : 0,
     text: typeof extractedText === "string" ? extractedText : "",
   });
+
+  /*
+    ALREADY HELD? — asked here, which is BEFORE the R2 write below.
+
+    Order is the whole point. A refusal after the put leaves an object in the
+    bucket that no document row references, and the reviewer is told nothing
+    was saved while something was. Everything this check needs is already in
+    hand: the text came up from the browser with the form.
+
+    A rejected extraction has no hash and is never a duplicate — a scanned PDF
+    with no text layer is not "the same as" anything, and hashing the empty
+    string would make every one of them identical to every other.
+  */
+  const contentHash = assessment.ok ? await sha256(assessment.text) : null;
+
+  if (assessment.ok) {
+    /*
+      The whole library, scanned in memory. Six rows today, and the natural-key
+      half wants a compound match that no single index serves — so this stays a
+      scan rather than a pair of queries whose cost is the same at this size.
+      A library of thousands wants `documents_content_hash_idx` and a lookup;
+      the index is already there for that day.
+    */
+    const held = await (await getDocumentLibrary()).list();
+    const clash = findDuplicate(held, {
+      contentHash,
+      activeSubstance: parsed.data.activeSubstance,
+      kind: parsed.data.kind,
+      version: parsed.data.version,
+    });
+
+    /*
+      `confirmSupersedes` is read straight off the FormData rather than through
+      `DocumentUpload`, and deliberately: it is not a property of the document.
+      It is one reviewer acknowledging one warning on one submission, it must
+      never reach a stored record, and putting it in the entity schema — the
+      schema non-negotiable #2 has the client form and this action share —
+      would mean the client validating a field about our storage.
+
+      It only ever excuses `same_version`. Identical text has no acknowledgement
+      that makes a second copy worth having.
+    */
+    const acknowledged = formData.get("confirmSupersedes") === "on";
+    const refuse =
+      clash !== null && !(clash.kind === "same_version" && acknowledged);
+
+    if (refuse && clash !== null) {
+      audit({
+        actor: session.reviewerId,
+        action: "upload_document",
+        target: clash.held.id,
+        outcome: "rejected",
+        detail: { reason: clash.kind, heldSince: clash.held.uploadedAt },
+      });
+      return {
+        status: "duplicate",
+        errors: {},
+        values,
+        saved: null,
+        duplicate: {
+          kind: clash.kind,
+          message: duplicateMessage(clash),
+          heldTitle: clash.held.title,
+          heldDocumentId: clash.held.id,
+        },
+      };
+    }
+  }
 
   const documentId = DocumentId.parse(crypto.randomUUID());
   const sourceType = sourceTypeForKind(parsed.data.kind);
@@ -117,6 +191,7 @@ export async function saveDocument(
       errors: { form: "The file could not be stored. Nothing was saved." },
       values,
       saved: null,
+      duplicate: null,
     };
   }
 
@@ -132,6 +207,9 @@ export async function saveDocument(
       objectKey,
       status: "rejected",
       rejectionReason: assessment.reason,
+      // Null by construction here: `contentHash` is only computed for an
+      // extraction that succeeded, and this branch is the one where it did not.
+      contentHash,
       chunkCount: 0,
       uploadedAt: new Date().toISOString(),
       uploadedBy: session.reviewerId,
@@ -151,6 +229,7 @@ export async function saveDocument(
       errors: { file: assessment.message },
       values,
       saved: null,
+      duplicate: null,
     };
   }
 
@@ -178,6 +257,7 @@ export async function saveDocument(
     */
     status: "chunking",
     rejectionReason: null,
+    contentHash,
     chunkCount: chunks.length,
     uploadedAt: new Date().toISOString(),
     uploadedBy: session.reviewerId,
@@ -227,5 +307,6 @@ export async function saveDocument(
     errors: {},
     values,
     saved: { title: document.title, chunkCount: chunks.length, objectKey },
+    duplicate: null,
   };
 }
