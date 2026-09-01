@@ -180,10 +180,23 @@ Being specific about this is the point of the document.
 
 **Real.** The Durable Objects, D1 schema and its FTS5 index, R2 presigning over
 SigV4, the queue consumer and its DLQ, both cron sweeps, Turnstile against
-siteverify, the rate-limit binding, and openFDA — a real label is fetched,
+siteverify (the code — see the caveat below), the rate-limit binding, and
+openFDA — a real label is fetched,
 chunked, embedded, mirrored and cited through the identical pipeline an upload
 uses, with `spl_set_id` as the document id so a citation traces to a public FDA
 record anyone can check.
+
+**Written but switched OFF in production: Turnstile.** The siteverify client and
+its widget are real and tested, but no Turnstile widget exists on the Cloudflare
+account and no `TURNSTILE_*` secret is set on the deployed Worker. Production
+therefore runs with `SIDENOTE_UNPROTECTED_INTAKE=1`, an explicit opt-out that
+exists because the honest alternative — refusing every submission when the gate
+is unconfigured — took the public form down. The opt-out is deliberately narrow:
+it only applies when the reason is `no_turnstile_configured`, it demands the
+literal string `1`, it changes nothing outside production, and it stamps
+`optedOut` on every audit line so the state is greppable rather than inferred
+from an absence of rejections. It is still an ungated public form, and it closes
+the moment the widget is created and the two secrets are set.
 
 **Opt-in, and switched on in production.** Vectorize turns on with
 `SIDENOTE_VECTORIZE_INDEX`, which is set as a secret on the deployed Worker —
