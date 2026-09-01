@@ -245,6 +245,17 @@
       "name": "CONVERSE_RATE_LIMIT",
       "namespace_id": "1002",
       "simple": { "limit": 20, "period": 60 }
+    },
+    // The public lookup gets its OWN ceiling because it costs its own money.
+    // /report/search is anonymous and answering one runs an openFDA fetch, a
+    // chunking pass, an embedding call and up to four inferences. The chat
+    // costs at most two. Sharing the chat's 20/minute meant the most expensive
+    // anonymous path in the app was governed by a number chosen for the
+    // cheapest. Six a minute is more than any person types.
+    {
+      "name": "SEARCH_RATE_LIMIT",
+      "namespace_id": "1003",
+      "simple": { "limit": 6, "period": 60 }
     }
   ]
 

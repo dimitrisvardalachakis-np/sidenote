@@ -4,7 +4,11 @@ import { getCloudflareEnv, readSetting } from "@/lib/platform/env";
 import { clientIp } from "./client-ip";
 import { getBotGate } from "./bot-gate";
 import type { RateLimiter } from "./rate-limit";
-import { getConverseRateLimiter, getSubmitRateLimiter } from "./rate-limit";
+import {
+  getConverseRateLimiter,
+  getSearchRateLimiter,
+  getSubmitRateLimiter,
+} from "./rate-limit";
 
 /**
  * One check in front of everything the public can reach.
@@ -221,9 +225,22 @@ export async function guardPublicConversation(
  * link, and that is worth keeping. The rate limit is the right instrument for
  * "this costs money"; the bot gate is the right instrument for "this writes
  * something", and this route writes nothing.
+ *
+ * ITS OWN LIMITER, WHICH IT DID NOT HAVE. This borrowed the intake chat's,
+ * and therefore the chat's ceiling of twenty a minute — so a walkthrough
+ * firing eight rapid GETs got eight 200s and reported the route unlimited.
+ * Both halves of that were true. See SEARCH_BINDING_POLICY.
+ *
+ * AND IT STILL ANSWERS 200 WHEN IT REFUSES, which is worth saying out loud
+ * because it is what made the finding hard to see. This is a server component:
+ * it cannot set a 429, and it deliberately keeps rendering the form and the
+ * passages rather than replacing the page, since a reader told to wait a
+ * minute should not also lose what they were reading. The evidence that the
+ * limiter ran is the `rate_limited / public_search` audit line, not the status
+ * code.
  */
 export async function guardPublicSearch(): Promise<GuardResult> {
-  return guard(await getConverseRateLimiter(), "public_search", {
+  return guard(await getSearchRateLimiter(), "public_search", {
     kind: "machine",
   });
 }

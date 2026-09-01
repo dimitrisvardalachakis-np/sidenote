@@ -83,6 +83,37 @@ export const CONVERSE_BINDING_POLICY: WindowPolicy = {
   windowSeconds: 60,
 };
 
+/**
+ * THE PUBLIC LOOKUP, WHICH IS THE EXPENSIVE ONE AND WAS BORROWING THE CHEAP
+ * ONE'S NUMBER.
+ *
+ * `/report/search` has been behind `guardPublicSearch` since ebdb4b8, and a
+ * walkthrough still reported it unlimited — eight rapid GETs, eight 200s. Both
+ * observations were right. It borrowed `getConverseRateLimiter()`, so the
+ * ceiling was the chat's 20 a minute and eight requests never approached it.
+ *
+ * The two do not deserve one number. Answering a search runs an openFDA fetch,
+ * a chunking pass, an embedding call and up to four inferences; a chat turn
+ * costs at most two. So the most expensive anonymous path in the application
+ * was governed by a limit chosen for the cheapest.
+ *
+ * SIX A MINUTE, and the justification is arithmetic rather than taste: six
+ * searches is roughly twenty-four inferences a minute from one address, which
+ * is a ceiling rather than an obstacle. A person typing a question and reading
+ * an answer does not reach it; a loop does, immediately. It stays a burst
+ * limit for the reason the comment above gives — 10 or 60 seconds is all the
+ * binding can express.
+ *
+ * A separate `namespace_id` matters as much as the number. Sharing one with
+ * the chat would have a reporter's conversation eating a reader's allowance,
+ * which turns two ceilings into one that neither was designed to be.
+ */
+export const SEARCH_POLICY: WindowPolicy = { limit: 20, windowSeconds: 600 };
+export const SEARCH_BINDING_POLICY: WindowPolicy = {
+  limit: 6,
+  windowSeconds: 60,
+};
+
 interface Bucket {
   count: number;
   windowStartMs: number;
@@ -188,6 +219,7 @@ const signInLimiter: RateLimiter = new InMemoryRateLimiter(SIGNIN_POLICY);
 const localConverseLimiter: RateLimiter = new InMemoryRateLimiter(
   CONVERSE_POLICY,
 );
+const localSearchLimiter: RateLimiter = new InMemoryRateLimiter(SEARCH_POLICY);
 
 /**
  * The lines Cluster C changed to the real binding.
@@ -216,6 +248,20 @@ export async function getConverseRateLimiter(): Promise<RateLimiter> {
     binding,
     CONVERSE_BINDING_POLICY,
     "CONVERSE_RATE_LIMIT",
+  );
+}
+
+/**
+ * The public lookup's own limiter. See SEARCH_BINDING_POLICY for the number.
+ */
+export async function getSearchRateLimiter(): Promise<RateLimiter> {
+  const env = await getCloudflareEnv();
+  const binding = env?.SEARCH_RATE_LIMIT;
+  if (binding === undefined) return localSearchLimiter;
+  return new BindingRateLimiter(
+    binding,
+    SEARCH_BINDING_POLICY,
+    "SEARCH_RATE_LIMIT",
   );
 }
 

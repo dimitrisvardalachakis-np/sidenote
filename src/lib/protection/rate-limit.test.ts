@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BindingRateLimiter,
   CONVERSE_BINDING_POLICY,
+  SEARCH_BINDING_POLICY,
   InMemoryRateLimiter,
   SUBMIT_BINDING_POLICY,
 } from "./rate-limit";
@@ -194,16 +195,32 @@ describe("wrangler.jsonc and the policy constants", () => {
     (config.ratelimits ?? []).map((entry) => [entry.name, entry]),
   );
 
-  it("binds both limiters", () => {
+  it("binds every limiter the guards reach for", () => {
     expect([...byName.keys()].sort()).toEqual([
       "CONVERSE_RATE_LIMIT",
+      "SEARCH_RATE_LIMIT",
       "SUBMIT_RATE_LIMIT",
     ]);
+  });
+
+  /*
+    The public lookup is the expensive one and must not share the chat's
+    number. Answering a search runs an openFDA fetch, a chunking pass, an
+    embedding and up to four inferences; a chat turn costs at most two. It
+    borrowed the chat's limiter until now, which is why eight rapid GETs
+    against the deployed app all returned 200 — twenty a minute was never
+    approached.
+  */
+  it("gives the search a tighter ceiling than the chat", () => {
+    expect(SEARCH_BINDING_POLICY.limit).toBeLessThan(
+      CONVERSE_BINDING_POLICY.limit,
+    );
   });
 
   it.each([
     ["SUBMIT_RATE_LIMIT", SUBMIT_BINDING_POLICY],
     ["CONVERSE_RATE_LIMIT", CONVERSE_BINDING_POLICY],
+    ["SEARCH_RATE_LIMIT", SEARCH_BINDING_POLICY],
   ])("%s matches its policy constant", (name, policy) => {
     const bound = byName.get(name);
     expect(bound).toBeDefined();

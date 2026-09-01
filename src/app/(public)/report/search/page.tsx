@@ -224,8 +224,22 @@ export default async function SearchPage({
         </p>
       </form>
 
+      {/*
+        The ceiling, when it is reached.
+
+        `role="status"` because this page cannot answer 429 — it is a server
+        component, and it deliberately keeps rendering the form and the
+        passages rather than replacing them, so a reader told to wait a minute
+        does not also lose what they were reading. That means the only signal
+        a screen-reader user gets that their search did not run is this
+        sentence, and it needs to announce rather than sit there.
+      */}
       {!guard.allowed && (
-        <p className="mt-6 rounded-card border border-rule bg-surface p-4 text-body shadow-card">
+        <p
+          role="status"
+          aria-live="polite"
+          className="mt-6 rounded-card border border-rule bg-surface p-4 text-body shadow-card"
+        >
           {guard.message}
         </p>
       )}
