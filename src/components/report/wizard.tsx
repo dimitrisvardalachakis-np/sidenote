@@ -296,14 +296,26 @@ export function ReportWizard({ siteKey }: { readonly siteKey: string | null }) {
           under it.
         */}
         <div className="mt-6 flex items-center justify-between gap-3 border-t border-rule pt-4">
-          <button
-            type="button"
-            onClick={() => goTo(stepIndex - 1)}
-            disabled={stepIndex === 0}
-            className="min-h-11 cursor-pointer rounded-soft border border-rule px-4 py-2 text-body hover:bg-surface-sunken disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Back
-          </button>
+          {/*
+            NOT RENDERED on the first step, rather than rendered disabled.
+
+            A disabled control is a promise that there is something there and
+            you cannot have it yet. On step 1 of 5 there is nothing behind the
+            form at all, so the honest thing is an absence. The empty <div>
+            keeps `justify-between` pushing Next to the right, so the footer
+            does not reflow when Back appears on step 2.
+          */}
+          {stepIndex === 0 ? (
+            <div />
+          ) : (
+            <button
+              type="button"
+              onClick={() => goTo(stepIndex - 1)}
+              className="min-h-11 cursor-pointer rounded-soft border border-rule px-4 py-2 text-body hover:bg-surface-sunken"
+            >
+              Back
+            </button>
+          )}
 
           <div className="flex items-center gap-3">
             {/*
