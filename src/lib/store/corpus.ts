@@ -30,13 +30,33 @@ export interface Corpus {
 
 export async function loadCorpus(): Promise<Corpus> {
   const library = await await getDocumentLibrary();
-  const uploaded = await library.list();
+  const stored = await library.list();
+
+  /*
+    A seeded document can ALSO have a stored record, and then there is exactly
+    one of it. Same shape as `loadQueue`'s handling of the seeded cases, and
+    for the same reason — two rows for one document is the duplicated-evidence
+    bug `findDuplicate` exists to prevent, arriving by a different door.
+
+    WHICH HALF WINS IS SPLIT, and deliberately. The RECORD comes from the
+    stored row, because the only thing that writes one for a fixture is the
+    backfill, and the only thing it changes is `status: "embedded"` — a fact
+    about whether the vectors reached the index, which the fixture literal
+    cannot know because it differs per environment. The CHUNKS still come from
+    `SEED_CHUNKS`, because those are built by `chunkDocument` at module load
+    and are the single source of the text every citation is checked against.
+  */
+  const seededIds = new Set(SEED_DOCUMENTS.map((doc) => doc.id));
+  const storedById = new Map(stored.map((doc) => [doc.id, doc]));
 
   const chunks: DocumentChunk[] = [...SEED_CHUNKS];
   const products = new Set<string>(SEED_PRODUCTS);
 
-  for (const document of uploaded) {
+  for (const document of stored) {
     products.add(document.activeSubstance);
+    // A fixture's chunks are already in the list above; taking them from the
+    // library too would put every seeded passage in retrieval twice.
+    if (seededIds.has(document.id)) continue;
     // Title words are not products; only the substance is reliable.
     const entry = await library.get(document.id);
     if (entry !== null) chunks.push(...entry.chunks);
@@ -44,7 +64,10 @@ export async function loadCorpus(): Promise<Corpus> {
 
   return {
     chunks,
-    documents: [...SEED_DOCUMENTS, ...uploaded],
+    documents: [
+      ...SEED_DOCUMENTS.map((doc) => storedById.get(doc.id) ?? doc),
+      ...stored.filter((doc) => !seededIds.has(doc.id)),
+    ],
     products: [...products],
   };
 }

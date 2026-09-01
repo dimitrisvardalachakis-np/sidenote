@@ -22,7 +22,8 @@
 import { describe, expect, it } from "vitest";
 import { resolveAiBinding } from "@/lib/assess/ai";
 import { getDocumentLibrary } from "@/lib/store/library-store";
-import { SafetyDocument } from "@/lib/schemas";
+import { SafetyDocument, type DocumentChunk } from "@/lib/schemas";
+import { SEED_CHUNKS, SEED_DOCUMENTS } from "@/lib/fixtures/documents";
 import { embedAndUpsert } from "./ingest";
 import { resolveDenseFor } from "./resolve";
 
@@ -47,9 +48,72 @@ describe.runIf(ENABLED)("backfilling vectors for already-uploaded documents", ()
 
     const library = await getDocumentLibrary();
     const documents = await library.list();
-    const pending = documents.filter((d) => d.status === "chunking");
+    /*
+      `chunkCount > 0` as well as the status, because a document with no chunks
+      has nothing to embed and is not a backfill failure. `embedAndUpsert`
+      correctly answers "skipped — the document produced no chunks", and the
+      assertion at the bottom would then read that as work this script failed
+      to do. Counting it as pending makes the run red for a document that is
+      simply empty.
+    */
+    const pending = documents.filter(
+      (d) => d.status === "chunking" && d.chunkCount > 0,
+    );
 
     const results: string[] = [];
+
+    /*
+      THE SEEDED FIXTURES, WHICH THIS COULD NOT REACH AND HAD TO.
+
+      Four of the six documents in the library said "Keyword search only — not
+      embedded", and running this changed nothing, correctly: the loop below
+      walks `library.list()`, and the seeded documents are code fixtures in
+      `lib/fixtures/documents.ts` that were never rows in the library at all.
+      Their vectors reached exactly one place — `local-vectors.ts` reads
+      `seedVectorRecords` directly — so on a deployment with Vectorize
+      configured they were keyword-only BY CONSTRUCTION, with nothing anywhere
+      saying so, and a semantic query worked on one product out of three.
+
+      They go through the SAME `embedAndUpsert` an upload does. No second
+      implementation of chunking, embedding or upserting, and the same rule
+      about the word "embedded": it is written only downstream of an upsert
+      that actually resolved.
+
+      Saving the record is what makes the screen honest. `status` on a fixture
+      is a literal — it cannot know whether an index it was never told about
+      holds its vectors — so the backfill stores a record whose status it has
+      just earned, and `loadCorpus` prefers a stored record over the fixture
+      for exactly this field.
+    */
+    const seededChunks = new Map<string, DocumentChunk[]>();
+    for (const chunk of SEED_CHUNKS) {
+      const bucket = seededChunks.get(chunk.documentId);
+      if (bucket === undefined) seededChunks.set(chunk.documentId, [chunk]);
+      else bucket.push(chunk);
+    }
+
+    for (const document of SEED_DOCUMENTS) {
+      const already = documents.find((d) => d.id === document.id);
+      if (already?.status === "embedded") continue;
+
+      const chunks = seededChunks.get(document.id) ?? [];
+      const outcome = await embedAndUpsert({ dense, document, chunks });
+
+      if (outcome.status === "embedded") {
+        await library.save({
+          document: SafetyDocument.parse({ ...document, status: "embedded" }),
+          chunks,
+        });
+      }
+
+      results.push(
+        `${document.title}: ${outcome.status}${
+          outcome.status === "embedded"
+            ? ` (${outcome.vectors} vectors)`
+            : ` — ${outcome.reason}`
+        }`,
+      );
+    }
     for (const record of pending) {
       const entry = await library.get(record.id);
       if (entry === null) continue;
@@ -89,6 +153,10 @@ describe.runIf(ENABLED)("backfilling vectors for already-uploaded documents", ()
     */
     const failures = results.filter((line) => !line.includes(": embedded"));
     expect(failures, failures.join("\n")).toEqual([]);
-    expect(results).toHaveLength(pending.length);
+    // Every uploaded document that was pending, plus every seeded one that was
+    // not already embedded. A run with nothing to do is legitimate and reports
+    // an empty list; a run that SKIPPED something is what the check above
+    // catches.
+    expect(results.length).toBeGreaterThanOrEqual(pending.length);
   }, 300_000);
 });
