@@ -28,14 +28,14 @@ const CHUNK: DocumentChunk = {
 
 const GOOD = JSON.stringify({
   found: true,
-  chunkId: "ccds#1",
+  chunkId: "P1",
   quotedSpan: "Jaundice has been reported rarely.",
   rationale: "The passage records jaundice as a rare event.",
 });
 
 const FABRICATED = JSON.stringify({
   found: true,
-  chunkId: "ccds#1",
+  chunkId: "P1",
   quotedSpan: "Fatal hepatic failure occurred in 3% of patients.",
   rationale: "The passage describes fatal hepatic failure.",
 });
@@ -115,8 +115,9 @@ describe("the happy path", () => {
       now: "2026-08-26T10:00:00Z",
     });
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.user).toContain("ccds#1");
-    expect(calls[0]?.user).toContain("ccds#2");
+    // Both passages, under the labels the model is asked to cite.
+    expect(calls[0]?.user).toContain('id="P1"');
+    expect(calls[0]?.user).toContain('id="P2"');
   });
 
   it("passes a found:false reply through as a reading, not a failure", async () => {

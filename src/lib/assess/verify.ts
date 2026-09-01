@@ -29,7 +29,7 @@ import {
   containsRecommendation,
   isSingleSentence,
 } from "@/lib/schemas/reading";
-import { sanitisePassage } from "./prompt";
+import { resolveCitedPassage, sanitisePassage } from "./prompt";
 
 /**
  * The literal shape the model is asked for. Deliberately permissive about
@@ -223,7 +223,7 @@ export function verifyGeneration(input: VerifyInput): VerifyResult {
     };
   }
 
-  const cited = chunks.find((chunk) => chunk.id === raw.chunkId);
+  const cited = resolveCitedPassage(chunks, raw.chunkId);
   if (cited === undefined) {
     return {
       ok: false,

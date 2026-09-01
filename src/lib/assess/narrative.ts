@@ -37,6 +37,7 @@ import {
   containsRecommendation,
   isSingleSentence,
 } from "@/lib/schemas/reading";
+import { resolveCitedPassage } from "./prompt";
 import { isEmptySpan, spanOccursIn, unwrapFence, type Rejection } from "./verify";
 
 /**
@@ -202,7 +203,7 @@ export function verifyNarrative(
       continue;
     }
 
-    const cited = chunks.find((chunk) => chunk.id === point.chunkId);
+    const cited = resolveCitedPassage(chunks, point.chunkId);
     if (cited === undefined) {
       // A chunk id we did not send, discarded even when the quote is real
       // text from a different passage that we did send.

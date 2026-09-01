@@ -10,6 +10,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { ChunkId, DocumentId, GroundedNarrative, type DocumentChunk } from "@/lib/schemas";
+import { NARRATIVE_MAX_POINTS } from "@/lib/schemas/narrative";
 import { parseNarrative, verifyNarrative, type RawNarrative } from "./narrative";
 
 const DOC = DocumentId.parse("00000001-0000-4000-8000-000000000001");
@@ -39,6 +40,19 @@ const B = chunk(
 const C = chunk("ccds#3", "Hepatic failure was not observed during the trials.");
 const CHUNKS = [A, B, C];
 
+/*
+  What the MODEL cites, which is no longer what the chunk is called.
+
+  Passages are offered to the model under short labels — P1, P2, P3 by
+  position — because copying a 38-character uuid back for every point spent
+  most of the reply budget on identifiers; see `passageLabel`. So a reply
+  names a label and the verifier resolves it to the chunk. These constants are
+  the model's side of that; `A.id` remains the verified OUTPUT.
+*/
+const LABEL_A = "P1";
+const LABEL_B = "P2";
+const LABEL_C = "P3";
+
 const SPAN_A = "Jaundice has been reported rarely.";
 const SPAN_B = "Headache and nausea were the most frequently reported adverse reactions.";
 const SPAN_C = "Hepatic failure was not observed during the trials.";
@@ -51,7 +65,7 @@ interface PointOver {
 
 function point(over: PointOver = {}) {
   return {
-    chunkId: over.chunkId === undefined ? A.id : over.chunkId,
+    chunkId: over.chunkId === undefined ? LABEL_A : over.chunkId,
     quotedSpan: over.quotedSpan === undefined ? SPAN_A : over.quotedSpan,
     sentence:
       over.sentence === undefined
@@ -74,7 +88,7 @@ describe("a well-formed narrative", () => {
   it("accepts points quoting different passages character for character", () => {
     const result = verify([
       point(),
-      point({ chunkId: B.id, quotedSpan: SPAN_B, sentence: "The passage names headache and nausea." }),
+      point({ chunkId: LABEL_B, quotedSpan: SPAN_B, sentence: "The passage names headache and nausea." }),
     ]);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -86,7 +100,7 @@ describe("a well-formed narrative", () => {
   });
 
   it("stores the chunk's own branded id, not the string the model sent", () => {
-    const result = verify([point({ chunkId: "ccds#1" })]);
+    const result = verify([point({ chunkId: LABEL_A })]);
     expect(result.ok).toBe(true);
     if (!result.ok || result.narrative.status !== "narrated") return;
     expect(result.narrative.points[0]?.chunkId).toBe(A.id);
@@ -102,28 +116,33 @@ describe("a well-formed narrative", () => {
 
 describe("a point that cannot be verified is dropped, and the rest stand", () => {
   /*
-    THE claim this design rests on. Three points, one fabricated: the two real
-    ones survive, because each is an independent claim with its own citation
+    THE claim this design rests on. Two points, one fabricated: the real one
+    survives, because each point is an independent claim with its own citation
     and there is no summary tying them together that a missing point could
     orphan.
+
+    It used to be three points with two surviving, which said the same thing
+    with one more example. NARRATIVE_MAX_POINTS came down to 2 for a latency
+    reason — see the constant — so three is now a whole-reply refusal and this
+    case has to be expressed within the contract it is testing.
   */
-  it("drops only the fabricated point out of three", () => {
+  it("drops only the fabricated point, and the other stands", () => {
     const result = verify([
       point(),
-      point({ chunkId: B.id, quotedSpan: "Nothing like this appears anywhere.", sentence: "The passage says something else." }),
-      point({ chunkId: C.id, quotedSpan: SPAN_C, sentence: "The passage records no such observation in the trials." }),
+      point({ chunkId: LABEL_B, quotedSpan: "Nothing like this appears anywhere.", sentence: "The passage says something else." }),
     ]);
     expect(result.ok).toBe(true);
     if (!result.ok || result.narrative.status !== "narrated") return;
-    expect(result.narrative.points).toHaveLength(2);
+    expect(result.narrative.points).toHaveLength(1);
+    expect(result.narrative.points[0]?.chunkId).toBe(A.id);
     expect(result.dropped).toEqual([
-      { index: 1, reason: "span_not_verbatim", chunkId: B.id },
+      { index: 1, reason: "span_not_verbatim", chunkId: LABEL_B },
     ]);
   });
 
   it("drops a span lifted from a different chunk than the one it cites", () => {
     // Both halves exist somewhere; the pairing is the lie.
-    const result = verify([point({ chunkId: A.id, quotedSpan: SPAN_B })]);
+    const result = verify([point({ chunkId: LABEL_A, quotedSpan: SPAN_B })]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.dropped[0]?.reason).toBe("span_not_verbatim");
@@ -134,8 +153,24 @@ describe("a point that cannot be verified is dropped, and the rest stand", () =>
     expect(result.ok).toBe(false);
   });
 
-  it("drops an unknown chunk id even when the span is real text from a supplied chunk", () => {
-    const result = verify([point({ chunkId: "ccds#99", quotedSpan: SPAN_B })]);
+  it("drops a label outside the range of passages actually sent", () => {
+    const result = verify([point({ chunkId: "P99", quotedSpan: SPAN_B })]);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.dropped[0]?.reason).toBe("unknown_chunk");
+  });
+
+  /*
+    The tightening the labels bought, asserted.
+
+    A chunk id is a string that can appear inside a passage's own text — this
+    corpus is safety documents, and one of them citing another's identifier is
+    not far-fetched. Under the old scheme a model that copied such a string
+    would have cited a real chunk. A label it was never offered resolves to
+    nothing.
+  */
+  it("drops a real chunk id, which is no longer how a passage is cited", () => {
+    const result = verify([point({ chunkId: "ccds#2", quotedSpan: SPAN_B })]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.dropped[0]?.reason).toBe("unknown_chunk");
@@ -180,7 +215,7 @@ describe("the sentence gate", () => {
   it("drops a point whose sentence reaches a determination", () => {
     const result = verify([
       point({ sentence: "This reaction is listed in the company document." }),
-      point({ chunkId: B.id, quotedSpan: SPAN_B, sentence: "The passage names headache and nausea." }),
+      point({ chunkId: LABEL_B, quotedSpan: SPAN_B, sentence: "The passage names headache and nausea." }),
     ]);
     expect(result.ok).toBe(true);
     if (!result.ok || result.narrative.status !== "narrated") return;
@@ -203,7 +238,8 @@ describe("the sentence gate", () => {
       raw: {
         points: [
           {
-            chunkId: withSerious.id,
+            // The only passage sent, so P1. See `passageLabel`.
+            chunkId: "P1",
             quotedSpan: "Serious hepatic events were reported in a small number of patients.",
             sentence: "The passage describes hepatic events in a small number of patients.",
           },
@@ -259,12 +295,20 @@ describe("the sentence gate", () => {
 });
 
 describe("whole-reply refusals", () => {
-  it("refuses more than three points outright, dropping nothing individually", () => {
-    const result = verify([point(), point(), point(), point()]);
+  it("refuses more than NARRATIVE_MAX_POINTS outright, dropping nothing individually", () => {
+    // Three well-formed points about three different passages: every one of
+    // them would stand on its own, which is what makes refusing the reply
+    // whole rather than trimming it to two a real decision.
+    const result = verify([
+      point(),
+      point({ chunkId: LABEL_B, quotedSpan: SPAN_B, sentence: "The passage names headache and nausea." }),
+      point({ chunkId: LABEL_C, quotedSpan: SPAN_C, sentence: "The passage reports no hepatic failure in the trials." }),
+    ]);
+    expect(NARRATIVE_MAX_POINTS).toBe(2);
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.rejection.kind).toBe("too_many_points");
-    // Not trimmed to the first three: the reply is refused, not repaired.
+    // Not trimmed to the first two: the reply is refused, not repaired.
     expect(result.dropped).toHaveLength(0);
   });
 
@@ -279,7 +323,7 @@ describe("whole-reply refusals", () => {
   it("reports every point failing as no points surviving", () => {
     const result = verify([
       point({ quotedSpan: "Nope." }),
-      point({ chunkId: B.id, quotedSpan: "Also nope." }),
+      point({ chunkId: LABEL_B, quotedSpan: "Also nope." }),
     ]);
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -318,7 +362,7 @@ describe("fence parity with the single-reading path", () => {
       raw: {
         points: [
           {
-            chunkId: poisoned.id,
+            chunkId: "P1",
             quotedSpan: "Before the fence. [removed] after the fence.",
             sentence: "The passage contains text either side of a removed marker.",
           },

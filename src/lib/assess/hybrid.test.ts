@@ -166,9 +166,28 @@ const base = {
   target: "SN-2026-000101",
 };
 
-/** Every passage id the prompt was given, in the order it was given them. */
+/**
+ * Every passage LABEL the prompt was given, in the order it was given them.
+ *
+ * Labels rather than chunk ids since `passageLabel` landed — the prompt no
+ * longer contains a chunk id anywhere, which is the point of it. Still exactly
+ * what the count and distinctness assertions below need.
+ */
 function passageIds(prompt: string): string[] {
   return [...prompt.matchAll(/<<<PASSAGE id="([^"]+)"/g)].map((m) => m[1] ?? "");
+}
+
+/**
+ * Whether a specific chunk reached the prompt, by its TEXT.
+ *
+ * "Was this passage sent?" used to be answerable by looking for its id. Now
+ * that passages are cited by position the id is not in the prompt at all, so
+ * the question is asked of the one thing that is: the passage itself.
+ */
+function promptCarries(prompt: string, chunkId: string): boolean {
+  const chunk = SEED_CHUNKS.find((c) => c.id === chunkId);
+  if (chunk === undefined) throw new Error(`no such seed chunk: ${chunkId}`);
+  return prompt.includes(chunk.text.slice(0, 60));
 }
 
 describe("the gap this feature exists to close", () => {
@@ -290,7 +309,7 @@ describe("the slice", () => {
 
     const ids = passageIds(prompts.at(-1) ?? "");
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toContain(MYALGIA);
+    expect(promptCarries(prompts.at(-1) ?? "", MYALGIA)).toBe(true);
   });
 });
 

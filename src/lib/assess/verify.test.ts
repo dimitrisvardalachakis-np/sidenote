@@ -41,9 +41,17 @@ const B = chunk(
 );
 const CHUNKS = [A, B];
 
+/*
+  What the MODEL cites. Passages are offered under short labels — P1, P2 by
+  position — rather than under their uuid chunk ids; see `passageLabel` for the
+  measurements that forced it. `A.id` remains the verified OUTPUT.
+*/
+const LABEL_A = "P1";
+const LABEL_B = "P2";
+
 const raw = (over: Partial<RawGeneration>): RawGeneration => ({
   found: true,
-  chunkId: "ccds#1",
+  chunkId: LABEL_A,
   quotedSpan: "Jaundice has been reported rarely.",
   rationale: "The passage records jaundice as a rare event.",
   ...over,
@@ -96,7 +104,15 @@ describe("the model does not get to invent a quotation", () => {
   it("rejects a span lifted from a different chunk than the one cited", () => {
     // Both halves exist somewhere, which is precisely what makes this the
     // subtle case. A reviewer opening ccds#1 must find those words in ccds#1.
-    const r = verify({ chunkId: "ccds#1", quotedSpan: "Headache and nausea" });
+    const r = verify({ chunkId: LABEL_A, quotedSpan: "Headache and nausea" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.rejection.kind).toBe("span_not_verbatim");
+  });
+
+  it("rejects the same swap the other way round", () => {
+    // The mirror of the case above: cite the second passage, quote the first.
+    // Direction is not what makes it wrong; the pairing is.
+    const r = verify({ chunkId: LABEL_B, quotedSpan: "Jaundice has been reported rarely." });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.rejection.kind).toBe("span_not_verbatim");
   });
@@ -127,7 +143,19 @@ describe("the model does not get to invent a quotation", () => {
 
 describe("only the passages we sent are citable", () => {
   it("rejects a chunk id that was not supplied", () => {
-    const r = verify({ chunkId: "ccds#999", quotedSpan: "Jaundice has been reported rarely." });
+    const r = verify({ chunkId: "P999", quotedSpan: "Jaundice has been reported rarely." });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.rejection.kind).toBe("unknown_chunk");
+  });
+
+  /*
+    And a real chunk id is no longer a way in either.
+
+    Chunk ids are strings that can occur inside a passage's own text. Citing by
+    position means a model that copied one out of a document cites nothing.
+  */
+  it("rejects a real chunk id, which is not how a passage is cited", () => {
+    const r = verify({ chunkId: "ccds#1", quotedSpan: "Jaundice has been reported rarely." });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.rejection.kind).toBe("unknown_chunk");
   });

@@ -2,7 +2,7 @@
  * GroundedNarrative — a short account of several retrieved passages, in which
  * every sentence carries the passage it came from.
  *
- * `ModelReading` reports one passage. This reports two or three, and it exists
+ * `ModelReading` reports one passage. This reports two, and it exists
  * because a single quoted sentence does not read as an answer to "what do
  * these documents say about this reaction" — it reads as a quotation, which is
  * what it is. The narrative is the answer, and the whole design problem is
@@ -46,21 +46,35 @@ import {
 } from "./reading";
 
 /**
- * Three points, 240 characters each.
+ * Two points, 140 characters each.
  *
  * "A few sentences, more than enough, not multi-paragraph" expressed as a
  * number a test can assert rather than as a request in the prompt, because a
- * model may ignore a request. 720 characters is the whole budget.
+ * model may ignore a request. 280 characters is the whole budget.
+ *
+ * IT WAS THREE AT 240, AND THE REASON IT IS NOT IS LATENCY, NOT TASTE. The
+ * model decodes at ~63 ms per output token against a 10s timeout, so ~158
+ * tokens is the entire budget for a reply — see NARRATIVE_MAX_OUTPUT_TOKENS,
+ * which carries the measurements. Three 240-character points is roughly 445
+ * tokens and could not return; two 140-character ones are roughly 130 and can.
+ *
+ * These two numbers and that one MUST move together. Capping the tokens alone
+ * truncates a reply the prompt still asked to be long, which is invalid JSON
+ * rather than a shorter narrative; loosening these alone reintroduces the
+ * timeout. The cost is honest and worth stating: an account of three passages
+ * is now an account of two.
  */
-export const NARRATIVE_MAX_POINTS = 3;
+export const NARRATIVE_MAX_POINTS = 2;
 
 /**
- * Its own constant, not a re-export of RATIONALE_MAX_CHARS, even though the
- * two are equal today. They bound different things — one gloss on one span
- * versus one point of a multi-point account — and should be able to move
- * independently without a silent effect on the other.
+ * Its own constant, not a re-export of RATIONALE_MAX_CHARS, and now visibly
+ * not equal to it. They bound different things — one gloss on one span versus
+ * one point of a multi-point account — and this is the change that proves
+ * keeping them separate was right: the narrative's limit came down for a
+ * latency reason that has nothing to do with a rationale, and RATIONALE_MAX_CHARS
+ * did not have to move with it.
  */
-export const NARRATIVE_POINT_MAX_CHARS = 240;
+export const NARRATIVE_POINT_MAX_CHARS = 140;
 
 /**
  * One sentence of the narrative.
@@ -104,7 +118,7 @@ export type NarrativePoint = z.output<typeof NarrativePoint>;
 
 export const GroundedNarrative = z.discriminatedUnion("status", [
   /**
-   * One to three verified points.
+   * One or two verified points.
    *
    * `.min(1)` — a narrated narrative with no points is not a narrative, and
    * making that unconstructible is what lets the renderer map the array

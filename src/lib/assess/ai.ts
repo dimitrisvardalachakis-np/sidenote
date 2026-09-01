@@ -57,22 +57,41 @@ export const TEMPERATURE = 0.1;
 export const MAX_OUTPUT_TOKENS = 320;
 
 /**
- * The narrative's own output ceiling.
+ * The narrative's own output ceiling, and it is a LATENCY budget.
  *
  * A separate constant rather than a raised `MAX_OUTPUT_TOKENS`, because that
  * one is shared with the single-reading path and with `lib/extract/`. Both of
  * those provably fit in 320 and neither asked for more; raising it would more
  * than double their per-call spend ceiling as a side effect of a feature they
  * are not part of. Two constants also make the arithmetic writable — the worst
- * case for an assessment is `4 x 320 + 2 x 700`, which one number cannot say.
+ * case for an assessment is `4 x 320 + 2 x 160`, which one number cannot say.
  *
- * 700 comes from the shape of the reply, not from a round number: three
- * points, each a 240-character sentence (~60 tokens) plus a quoted span (~75
- * tokens for a long one) plus the JSON around it, is roughly 445. The headroom
- * matters in one direction only — a reply truncated mid-string is invalid
- * JSON, which costs the whole inference and renders as unavailable.
+ * IT WAS 700, AND 700 COULD NEVER RETURN. The old number was derived from the
+ * shape of the reply — three points at ~148 tokens each is ~445, plus headroom
+ * so a truncated string could not invalidate the JSON. Correct reasoning about
+ * the wrong constraint. Measured from the live AI Gateway logs, this model
+ * decodes at ~63 ms per output token:
+ *
+ *     30 tokens ->  1,975 ms      156 tokens ->  8,835 ms
+ *     93 tokens ->  5,225 ms      214 tokens -> 13,587 ms
+ *
+ * which is `t = 63.1n + 80` to within a few percent. `GENERATION_TIMEOUT_MS`
+ * is 10s, so the budget is ~158 tokens and 700 extrapolates to 35-45 seconds.
+ * The narrative therefore could not finish inside its own timeout — not
+ * flakily, arithmetically — and rendered "the model could not be reached"
+ * every time, while the single reading survived on 30-93 tokens. Every layer
+ * degraded exactly as designed, which is again why it went unnoticed.
+ *
+ * 160 IS NOT A FIX ON ITS OWN, and that is the part worth carrying. Capping
+ * output while the prompt still asks for three points buys a reply truncated
+ * mid-string instead of a timeout: invalid JSON, the retry spent, the same
+ * `unavailable` screen reached faster. So the cap moves with the requested
+ * shape — see NARRATIVE_MAX_POINTS and NARRATIVE_POINT_MAX_CHARS, which came
+ * down in the same commit and for this reason. The timeout deliberately did
+ * NOT go up: a fifteen-minute demo cannot absorb a forty-second pause, and a
+ * short account that always appears beats a long one that never does.
  */
-export const NARRATIVE_MAX_OUTPUT_TOKENS = 700;
+export const NARRATIVE_MAX_OUTPUT_TOKENS = 260;
 
 export interface ChatTurn {
   readonly role: "system" | "user";

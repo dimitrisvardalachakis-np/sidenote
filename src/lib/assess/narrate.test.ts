@@ -19,7 +19,11 @@ import {
   type AiBinding,
   type TextGenerationInput,
 } from "./ai";
-import { narratePassages } from "./generate";
+import { GENERATION_TIMEOUT_MS, narratePassages } from "./generate";
+import {
+  NARRATIVE_MAX_POINTS,
+  NARRATIVE_POINT_MAX_CHARS,
+} from "@/lib/schemas/narrative";
 import { buildMessages, buildUserMessage } from "./prompt";
 
 const DOC = DocumentId.parse("00000001-0000-4000-8000-000000000001");
@@ -46,12 +50,13 @@ const SECOND: DocumentChunk = {
 const GOOD = JSON.stringify({
   points: [
     {
-      chunkId: "ccds#1",
+      // The label the passage was offered under, not its id. See `passageLabel`.
+      chunkId: "P1",
       quotedSpan: "Jaundice has been reported rarely.",
       sentence: "The passage records jaundice as an uncommon occurrence.",
     },
     {
-      chunkId: "ccds#2",
+      chunkId: "P2",
       quotedSpan: "Headache and nausea were the most frequently reported adverse reactions.",
       sentence: "The passage names headache and nausea as the most frequent.",
     },
@@ -242,7 +247,7 @@ describe("every failure produces unavailable", () => {
     const fabricated = JSON.stringify({
       points: [
         {
-          chunkId: "ccds#1",
+          chunkId: "P1",
           quotedSpan: "Fatal hepatic failure occurred in 3% of patients.",
           sentence: "The passage describes hepatic failure.",
         },
@@ -277,5 +282,98 @@ describe("every failure produces unavailable", () => {
     const { binding } = fakeBinding(["not json"], "aig-failed");
     const out = await run(binding);
     expect(out.narrative.gatewayRequestId).toBe("aig-failed");
+  });
+});
+
+
+/*
+  THE ARITHMETIC, AS AN EXECUTABLE CLAIM.
+
+  The narrative could not finish inside its own timeout, and that was not
+  flakiness — it was a sum nobody had done. `NARRATIVE_MAX_OUTPUT_TOKENS` was
+  700 while `GENERATION_TIMEOUT_MS` was 10s, and the model decodes at about
+  63 ms per output token. 700 tokens is 44 seconds. Every narrative on every
+  screen rendered "the model could not be reached", and every layer below
+  degraded exactly as designed, so nothing anywhere said the number was
+  impossible.
+
+  Four constants have to agree for a narrative to appear at all, and they live
+  in three files: the point count and the per-point length in
+  schemas/narrative.ts, the output ceiling in ai.ts, the timeout in generate.ts.
+  Nothing connected them. This does.
+*/
+describe("the reply the contract permits has to fit inside the timeout", () => {
+  /**
+   * MEASURED against @cf/meta/llama-3.1-8b-instruct-fp8 through the gateway
+   * with caching off, not estimated: runs came in at 56-74 ms per output
+   * token. 63 is the middle of that and the figure the AI Gateway logs give.
+   */
+  const MS_PER_OUTPUT_TOKEN = 63;
+  /** The usual working figure for English prose. */
+  const CHARS_PER_TOKEN = 4;
+  /** What the prompt asks a quoted span to stay under. */
+  const SPAN_CHARS = 80;
+  /** "P1" — the whole reason `passageLabel` exists. A uuid id cost ~25. */
+  const LABEL_TOKENS = 2;
+  /** `{"chunkId":"","quotedSpan":"","sentence":""},` and its punctuation. */
+  const PER_POINT_SCAFFOLD = 12;
+  /** `{"points":[ ... ]}` */
+  const ENVELOPE_TOKENS = 8;
+
+  const worstCaseTokens =
+    ENVELOPE_TOKENS +
+    NARRATIVE_MAX_POINTS *
+      (LABEL_TOKENS +
+        PER_POINT_SCAFFOLD +
+        Math.ceil(SPAN_CHARS / CHARS_PER_TOKEN) +
+        Math.ceil(NARRATIVE_POINT_MAX_CHARS / CHARS_PER_TOKEN));
+
+  it("decodes the longest permitted reply inside GENERATION_TIMEOUT_MS", () => {
+    expect(worstCaseTokens * MS_PER_OUTPUT_TOKEN).toBeLessThan(
+      GENERATION_TIMEOUT_MS,
+    );
+  });
+
+  /*
+    The other half, and the one that cost an extra inference per narrative
+    until it was measured.
+
+    Latency tracks the tokens actually EMITTED, not the ceiling — so a ceiling
+    set at the latency budget does not make anything faster, it just truncates
+    a well-formed reply into invalid JSON and spends the retry. At 160 the
+    first attempt was truncated 5 times out of 5 and every narrative cost two
+    inferences. The ceiling's job is to be above a good reply; the timeout's
+    job is the latency.
+  */
+  it("keeps the output ceiling above that, so a good reply is never truncated", () => {
+    expect(NARRATIVE_MAX_OUTPUT_TOKENS).toBeGreaterThan(worstCaseTokens);
+  });
+
+  /*
+    And the same claim behaviourally, against a model that decodes at the
+    measured rate. The clock is scaled so the suite does not sit for seven
+    seconds; the RATIO of reply length to timeout is what is under test, and
+    that is preserved exactly.
+  */
+  it("narrates rather than timing out, at the measured decode rate", async () => {
+    const SPEEDUP = 50;
+    const decodeMs = Math.round(
+      (worstCaseTokens * MS_PER_OUTPUT_TOKEN) / SPEEDUP,
+    );
+
+    const slow: AiBinding = {
+      run: () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ response: GOOD }), decodeMs),
+        ),
+      aiGatewayLogId: "aig-1",
+    };
+
+    const out = await run(slow, { timeoutMs: GENERATION_TIMEOUT_MS / SPEEDUP });
+
+    expect(out.narrative.status).toBe("narrated");
+    // One inference, not two. A retry here would mean the first attempt was
+    // truncated, which is the failure the ceiling above exists to prevent.
+    expect(out.attempts).toHaveLength(1);
   });
 });

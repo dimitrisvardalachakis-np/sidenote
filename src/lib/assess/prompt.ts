@@ -72,7 +72,8 @@ export const SYSTEM_MESSAGE = [
   '{"found": boolean, "chunkId": string|null, "quotedSpan": string|null, "rationale": string|null}',
   "",
   '- found: true only when a passage describes the reaction. Otherwise false.',
-  "- chunkId: the id of that one passage, copied exactly from its id attribute.",
+  "- chunkId: the id of that one passage, a short label like P1, copied",
+  "  exactly from its id attribute.",
   "  null when found is false.",
   "- quotedSpan: text copied CHARACTER FOR CHARACTER from that passage.",
   "  Do not reword it, shorten it, fix its punctuation or change its spelling.",
@@ -143,17 +144,22 @@ export const NARRATIVE_SYSTEM_MESSAGE = [
   "Reply with ONE JSON object and nothing else. No prose. No markdown fences.",
   '{"points": [{"chunkId": string, "quotedSpan": string, "sentence": string}]}',
   "",
-  "- Two or three points. Never more than three.",
+  "- Exactly two points. Never more than two.",
   "- Each point must be about a DIFFERENT passage. Never use the same chunkId",
   "  twice.",
-  "- chunkId: the id of that passage, copied exactly from its id attribute.",
-  "- quotedSpan: text copied CHARACTER FOR CHARACTER from THAT passage.",
-  "  Do not reword it, shorten it, fix its punctuation or change its spelling.",
-  "  If you cannot copy it exactly, leave that point out entirely.",
-  "- sentence: ONE sentence saying what that passage says, supported by the",
-  "  span you quoted beside it. Never advice, never a recommendation, never",
-  "  anything about reporting, urgency or deadlines, and never the words",
-  "  listed, unlisted, expected, unexpected, serious or expedited.",
+  "- chunkId: the id of that passage, a short label like P1, copied exactly",
+  "  from its id attribute.",
+  "- quotedSpan: at most 80 characters copied CHARACTER FOR CHARACTER from THAT",
+  "  passage. You may stop part-way through a sentence, but every character you",
+  "  copy must appear in the passage in that order. Do not reword it, shorten it",
+  "  by paraphrase, fix its punctuation or change its spelling. If you cannot",
+  "  copy it exactly, leave that point out entirely.",
+  "- sentence: ONE sentence, at most 90 characters, saying what that passage",
+  "  says, supported by the span you quoted beside it. Never advice, never a",
+  "  recommendation, never anything about reporting, urgency or deadlines, and",
+  "  never the words listed, unlisted, expected, unexpected, serious or",
+  "  expedited.",
+  "- BE BRIEF. A reply that runs long is cut off mid-word and thrown away.",
   "",
   'If no passage says anything about the reaction, reply {"points": []}.',
 ].join("\n");
@@ -166,11 +172,57 @@ export interface PromptInput {
   readonly chunks: readonly DocumentChunk[];
 }
 
-/** One passage block: the id and section the model may cite, then the text. */
-function renderPassage(chunk: DocumentChunk): string {
+/**
+ * The label a passage is offered under, and the reason it is not the chunk id.
+ *
+ * A chunk id is `${documentId}#${ordinal}` — a uuid and change, 38 characters,
+ * and uuids tokenise appallingly: digit runs and hyphens split into many small
+ * tokens rather than a few large ones. The model has to COPY that string back
+ * for every point it makes, so two points spent well over half the reply
+ * budget reproducing two identifiers that carry no meaning for the reader.
+ *
+ * MEASURED, because this was found by measuring rather than by reasoning.
+ * Against the live model, two points citing uuids ran ~11s and were truncated
+ * mid-JSON on the first attempt 5 times out of 5 — the retry rescued it, so
+ * every narrative cost two inferences. The identical prompt with `P1`/`P2`
+ * returned valid JSON 3 times out of 3, in 4.0-4.3s, on one inference.
+ *
+ * The label is also a TIGHTER check, not a looser one. The id space is now
+ * exactly the passages sent, so `resolveCitedPassage` can only ever return a
+ * chunk that was in this prompt; matching on chunk id let a model cite an
+ * identifier it had read inside some passage's text.
+ */
+export function passageLabel(index: number): string {
+  return `P${index + 1}`;
+}
+
+/**
+ * The label, back to the passage it names. The inverse of `passageLabel`, and
+ * deliberately in the same file: a labelling scheme with its two halves in
+ * different modules is one refactor away from disagreeing.
+ *
+ * Anything that is not a label we minted for THIS prompt returns undefined,
+ * which both verifiers report as an unknown chunk. No fallback to matching on
+ * the real chunk id: that would re-open the hole the labels closed.
+ */
+export function resolveCitedPassage(
+  chunks: readonly DocumentChunk[],
+  cited: string,
+): DocumentChunk | undefined {
+  const match = /^P(\d+)$/.exec(cited.trim());
+  if (match === null) return undefined;
+  const ordinal = Number(match[1]);
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > chunks.length) {
+    return undefined;
+  }
+  return chunks[ordinal - 1];
+}
+
+/** One passage block: the label and section the model may cite, then the text. */
+function renderPassage(chunk: DocumentChunk, index: number): string {
   const section = chunk.section === null ? "" : ` section=${JSON.stringify(chunk.section)}`;
   return [
-    `${PASSAGE_OPEN} id=${JSON.stringify(chunk.id)}${section}`,
+    `${PASSAGE_OPEN} id=${JSON.stringify(passageLabel(index))}${section}`,
     sanitisePassage(chunk.text),
     PASSAGE_CLOSE,
   ].join("\n");
@@ -182,7 +234,7 @@ export function buildUserMessage(input: PromptInput): string {
     `DRUG: ${sanitisePassage(input.drugName)}`,
     "",
     "PASSAGES:",
-    input.chunks.map(renderPassage).join("\n\n"),
+    input.chunks.map((chunk, index) => renderPassage(chunk, index)).join("\n\n"),
   ].join("\n");
 }
 

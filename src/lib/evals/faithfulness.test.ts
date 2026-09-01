@@ -331,7 +331,10 @@ describe("the gate agrees with the check it guards", () => {
     const verified = verifyGeneration({
       raw: {
         found: true,
-        chunkId: "company#12",
+        // The label the one passage was offered under, not its chunk id — see
+        // `passageLabel`. Being the same call the runtime makes is the whole
+        // point of this test, so it has to cite the way the runtime does.
+        chunkId: "P1",
         quotedSpan: "Hepatic [removed] failure was seen in two subjects.",
         rationale: null,
       },
