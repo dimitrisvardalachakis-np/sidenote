@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_SLOTS,
+  INTAKE_QUESTION_COUNT,
   advance,
   extractAge,
   extractDrug,
   extractSeriousness,
   extractSex,
+  intakeProgress,
   prefillFromSlots,
   remainingSlots,
   reopen,
@@ -297,5 +299,84 @@ describe("the reporter's answer always beats the model's", () => {
       extraction,
     });
     expect(state.slots.drug).toBe("Covaxil");
+  });
+});
+
+
+/**
+ * THE COUNTER, WHICH HAS NOW BEEN WRONG TWICE IN OPPOSITE DIRECTIONS.
+ *
+ * Once it read "Question 8 of 8" above the second question of a correction.
+ * Then, on a fresh chat with nothing answered, it read "QUESTION 2 OF 8" above
+ * question 1 — live on the deployed app.
+ *
+ * Both times the cause was the same shape rather than the same sign: a number
+ * derived from one set and read against another's total. The screen computed
+ * `INTAKE_QUESTION_COUNT - remainingSlots(slots).length`, and those two do not
+ * count the same questions — the constant includes the opening account, and
+ * `remainingSlots` filters ORDER, which does not. 8 - 7 = 1 answered before
+ * anybody had answered anything.
+ *
+ * These assert the derivation, not the offset. Fixing an offset a third time
+ * would leave the next person exactly where the last two were.
+ */
+describe("where the reporter is in the script", () => {
+  it("is question 1 of 8 before anything has been answered", () => {
+    const progress = intakeProgress(EMPTY_SLOTS);
+    expect(progress.answered).toBe(0);
+    expect(progress.current).toBe(1);
+    expect(progress.total).toBe(INTAKE_QUESTION_COUNT);
+  });
+
+  it("counts the opening account as the first question answered", () => {
+    const after = step(startConversation(), "My mother took Hepalex and her eyes went yellow.");
+    const progress = intakeProgress(after.slots);
+    // The opening turn IS a question, and the total has always said so. What
+    // it must not do is count as answered before it is given.
+    expect(progress.answered).toBeGreaterThanOrEqual(1);
+    expect(progress.current).toBe(progress.answered + 1);
+  });
+
+  it("never counts past the last question", () => {
+    const answered = {
+      ...EMPTY_SLOTS,
+      narrative: "n",
+      drug: "Hepalex",
+      reaction: "jaundice",
+      age: 61,
+      sex: "female" as const,
+      seriousness: [],
+      reporterName: "R. Patel",
+      reporterContact: "r@example.com",
+    };
+    const progress = intakeProgress(answered);
+    expect(progress.answered).toBe(INTAKE_QUESTION_COUNT);
+    // Not 9 of 8.
+    expect(progress.current).toBe(INTAKE_QUESTION_COUNT);
+  });
+
+  /*
+    THE MISMATCH ITSELF, PINNED — because the tempting invariant is false and
+    believing it is what produced the bug.
+
+    `answered + remainingSlots.length === total` looks like it should always
+    hold. It does not, and must not: `remainingSlots` drives `nextMissing` and
+    the checklist chips, so it filters ORDER and deliberately leaves out the
+    opening account, which is asked before there is anything to be missing.
+
+    The two agree ONLY once the narrative is in. Before that the gap is exactly
+    one — the unanswered opening question — and reading `remainingSlots`
+    against `INTAKE_QUESTION_COUNT` turned that gap into a phantom answer.
+  */
+  it("differs from what is outstanding by exactly the opening question", () => {
+    const fresh = intakeProgress(EMPTY_SLOTS);
+    expect(fresh.answered + remainingSlots(EMPTY_SLOTS).length).toBe(
+      INTAKE_QUESTION_COUNT - 1,
+    );
+
+    const started = { ...EMPTY_SLOTS, narrative: "n", drug: "Hepalex" };
+    expect(
+      intakeProgress(started).answered + remainingSlots(started).length,
+    ).toBe(INTAKE_QUESTION_COUNT);
   });
 });

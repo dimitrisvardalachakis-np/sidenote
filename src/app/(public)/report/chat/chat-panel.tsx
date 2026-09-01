@@ -14,7 +14,7 @@ import {
 } from "@/components/protection/turnstile";
 import { initialChatState } from "./chat-state";
 import {
-  INTAKE_QUESTION_COUNT,
+  intakeProgress,
   remainingSlots,
   type IntakeMessage,
 } from "@/lib/intake/conversation";
@@ -158,7 +158,15 @@ export function ChatPanel({ siteKey }: { readonly siteKey: string | null }) {
   }, [count]);
 
   const outstanding = remainingSlots(state.intake.slots);
-  const answeredCount = INTAKE_QUESTION_COUNT - outstanding.length;
+  /*
+    One derivation, in conversation.ts, rather than a subtraction here.
+
+    This line used to be `INTAKE_QUESTION_COUNT - outstanding.length`, which
+    subtracts the size of one set from the total of another: the count includes
+    the opening question and `remainingSlots` does not. On a fresh chat that is
+    8 - 7 = 1 answered, and the screen read "Question 2 of 8" above question 1.
+  */
+  const progress = intakeProgress(state.intake.slots);
 
   /*
     Everything the chat has collected, mirrored into the shared draft on every
@@ -349,7 +357,7 @@ export function ChatPanel({ siteKey }: { readonly siteKey: string | null }) {
               */}
               {state.intake.reviewed
                 ? "Changing one answer"
-                : `Question ${Math.min(answeredCount + 1, INTAKE_QUESTION_COUNT)} of ${INTAKE_QUESTION_COUNT}`}
+                : `Question ${progress.current} of ${progress.total}`}
             </p>
             {/*
               Eight segments, one per question, so two-done and six-done are
@@ -357,12 +365,12 @@ export function ChatPanel({ siteKey }: { readonly siteKey: string | null }) {
               only ever got shorter.
             */}
             <ol className="mt-2 flex gap-1.5" aria-hidden="true">
-              {Array.from({ length: INTAKE_QUESTION_COUNT }, (_, index) => (
+              {Array.from({ length: progress.total }, (_, index) => (
                 <li
                   key={index}
                   className={[
                     "h-1 flex-1 rounded-pill",
-                    index < answeredCount ? "bg-steady" : "bg-rule",
+                    index < progress.answered ? "bg-steady" : "bg-rule",
                   ].join(" ")}
                 />
               ))}

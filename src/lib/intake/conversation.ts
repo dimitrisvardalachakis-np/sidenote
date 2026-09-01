@@ -134,6 +134,11 @@ export interface IntakeState {
    * and the count cannot tell them apart — so a reporter re-asked for the
    * medicine was told "Question 8 of 8" above the second question in the
    * script. A count of what is left is the wrong readout for a correction.
+   *
+   * This is a fact about the CONVERSATION, not about the slots, which is why
+   * `intakeProgress` does not take it and the panel applies it. The counter
+   * has been wrong twice now and both times the cause was a number derived
+   * from one thing and read as another.
    */
   readonly reviewed: boolean;
 }
@@ -351,11 +356,26 @@ const ORDER: readonly IntakeSlot[] = [
 ];
 
 /**
- * How many questions the intake asks: the opening narrative, plus one per slot
- * in ORDER. Derived rather than typed, so a slot added above cannot leave the
- * progress readout quietly counting to the wrong number.
+ * Every question the intake asks, in order, INCLUDING the opening one.
+ *
+ * ORDER above is the follow-up script — what `nextMissing` walks once the
+ * opening account is in — and it deliberately excludes `narrative`, which is
+ * the first turn and is asked before there is anything to be missing.
+ *
+ * That distinction is correct and it is also what broke the progress readout
+ * twice, in opposite directions. `INTAKE_QUESTION_COUNT` was `ORDER.length + 1`
+ * — eight, counting the opening — while `remainingSlots` filtered ORDER and
+ * could therefore return at most seven. Subtracting one set's size from the
+ * other's total gave `8 - 7 = 1` answered on a fresh conversation, so the
+ * screen read "Question 2 of 8" above question 1.
+ *
+ * The repair is not another offset. It is one list that both the count and the
+ * progress are derived from, so the two can no longer disagree about what is
+ * being counted.
  */
-export const INTAKE_QUESTION_COUNT = ORDER.length + 1;
+const ASKED_IN_ORDER: readonly IntakeSlot[] = ["narrative", ...ORDER];
+
+export const INTAKE_QUESTION_COUNT = ASKED_IN_ORDER.length;
 
 const QUESTIONS: Readonly<Record<IntakeSlot, string>> = {
   narrative: OPENING,
@@ -597,9 +617,41 @@ export function reopen(state: IntakeState, slot: IntakeSlot): IntakeState {
 
 /** What the reporter still has to supply, for the progress readout. */
 export function remainingSlots(slots: IntakeSlots): readonly IntakeSlot[] {
-  return ORDER.filter((slot) =>
-    slot === "seriousness" ? slots.seriousness === null : slots[slot] === null,
-  );
+  return ORDER.filter((slot) => !isAnswered(slots, slot));
+}
+
+/** One rule for "this slot has an answer", so no caller invents a second. */
+function isAnswered(slots: IntakeSlots, slot: IntakeSlot): boolean {
+  return slots[slot] !== null;
+}
+
+/**
+ * Where the reporter is in the script, counted over ONE set.
+ *
+ * The screen used to compute this itself, as `INTAKE_QUESTION_COUNT -
+ * remainingSlots(...).length`, which mixes two different denominators — see
+ * ASKED_IN_ORDER. Derived here instead, and returned whole, so a caller cannot
+ * combine `answered` with some other total.
+ *
+ * `current` is the question now being asked, which is one past the last
+ * answered and never more than the last question. It is not meaningful once
+ * the conversation has reached review — a reporter correcting one answer is
+ * not on question N of eight — and that case is the panel's to render, since
+ * `reviewed` is a fact about the conversation rather than about the slots.
+ */
+export function intakeProgress(slots: IntakeSlots): {
+  readonly answered: number;
+  readonly current: number;
+  readonly total: number;
+} {
+  const answered = ASKED_IN_ORDER.filter((slot) =>
+    isAnswered(slots, slot),
+  ).length;
+  return {
+    answered,
+    current: Math.min(answered + 1, INTAKE_QUESTION_COUNT),
+    total: INTAKE_QUESTION_COUNT,
+  };
 }
 
 /**
