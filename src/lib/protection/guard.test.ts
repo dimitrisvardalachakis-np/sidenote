@@ -137,7 +137,11 @@ describe("guardPublicSubmission", () => {
     expect(auditLines()).toContainEqual(
       expect.objectContaining({
         action: "bot_check_unavailable",
-        detail: { reason: "no_turnstile_configured", refused: false },
+        detail: {
+          reason: "no_turnstile_configured",
+          refused: false,
+          optedOut: false,
+        },
       }),
     );
   });
@@ -178,7 +182,11 @@ describe("guardPublicSubmission", () => {
         expect.objectContaining({
           action: "bot_check_unavailable",
           outcome: "rejected",
-          detail: { reason: "no_turnstile_configured", refused: true },
+          detail: {
+            reason: "no_turnstile_configured",
+            refused: true,
+            optedOut: false,
+          },
         }),
       );
     } finally {
@@ -209,6 +217,108 @@ describe("guardPublicSubmission", () => {
       });
 
       expect(result).toEqual({ allowed: true });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  /*
+    THE OPT-OUT, AND WHY IT HAD TO EXIST.
+
+    The refusal above is right, and it shipped, and the deployed intake chat
+    then answered every member of the public "a configuration problem on our
+    side" — because the widget had not been created yet. The reviewer half
+    looked healthy throughout. A correct refusal nobody can see is an outage,
+    so there is one deliberate way past it and these three cases are its whole
+    contract: it must be set, it must be recorded, and it must not be a
+    default.
+  */
+  it("ALLOWS in production when the unprotected opt-out is deliberately set", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SIDENOTE_UNPROTECTED_INTAKE", "1");
+
+    try {
+      stub.verify.mockResolvedValue({
+        outcome: "unavailable",
+        reason: "no_turnstile_configured",
+      });
+
+      const result = await guardPublicConversation(null);
+
+      expect(result).toEqual({ allowed: true });
+      // LOUDER than the refusal it replaces, not quieter. "The gate is off on
+      // purpose" has to be greppable rather than inferred from an absence.
+      expect(auditLines()).toContainEqual(
+        expect.objectContaining({
+          action: "bot_check_unavailable",
+          detail: {
+            reason: "no_turnstile_configured",
+            refused: false,
+            optedOut: true,
+          },
+        }),
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  /*
+    Only the literal "1".
+
+    A truthy test would let "0", "false" and "no" — every value somebody sets
+    when they mean the opposite — switch the bot gate off.
+  */
+  it("REFUSES in production when the opt-out is set to anything but 1", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SIDENOTE_UNPROTECTED_INTAKE", "false");
+
+    try {
+      stub.verify.mockResolvedValue({
+        outcome: "unavailable",
+        reason: "no_turnstile_configured",
+      });
+
+      const result = await guardPublicSubmission({
+        kind: "browser",
+        token: null,
+      });
+
+      expect(result.allowed).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  /*
+    The opt-out covers the PERMANENT state only.
+
+    A real siteverify outage already fails open on its own reasoning, and the
+    opt-out must not quietly widen to cover a configured gate that is merely
+    unreachable — that would be a switch which turns a working bot check off.
+  */
+  it("does not report an opt-out for a genuine outage", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SIDENOTE_UNPROTECTED_INTAKE", "1");
+
+    try {
+      stub.verify.mockResolvedValue({
+        outcome: "unavailable",
+        reason: "TimeoutError",
+      });
+
+      const result = await guardPublicSubmission({
+        kind: "browser",
+        token: "solved",
+      });
+
+      expect(result).toEqual({ allowed: true });
+      expect(auditLines()).toContainEqual(
+        expect.objectContaining({
+          action: "bot_check_unavailable",
+          detail: { reason: "TimeoutError", refused: false, optedOut: false },
+        }),
+      );
     } finally {
       vi.unstubAllEnvs();
     }

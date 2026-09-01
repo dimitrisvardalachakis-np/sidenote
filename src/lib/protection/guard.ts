@@ -1,5 +1,6 @@
 import "server-only";
 import { audit } from "@/lib/audit";
+import { getCloudflareEnv, readSetting } from "@/lib/platform/env";
 import { clientIp } from "./client-ip";
 import { getBotGate } from "./bot-gate";
 import type { RateLimiter } from "./rate-limit";
@@ -129,15 +130,37 @@ async function guard(
     // Treating those two as one state was the hole. They still produce the
     // same audit line so the alarm stays visible either way; what differs is
     // that in production the permanent one refuses.
+    //
+    // AND THE ONE DELIBERATE WAY PAST IT.
+    //
+    // The refusal above is right and it shipped, which is how we learned what
+    // it costs: with no widget created yet, the deployed intake chat and
+    // report form answered every member of the public "a configuration
+    // problem on our side" while the reviewer half looked perfectly healthy.
+    // A correct refusal nobody can see is still an outage.
+    //
+    // So there is an opt-out, and its shape is the whole point. It has to be
+    // SET — `readSetting` treats absent and empty alike, and only the literal
+    // "1" counts, so no truthy accident switches the bot gate off. It changes
+    // nothing outside production, where the stub already waves everything
+    // through. And it is LOUDER than the refusal it replaces, not quieter:
+    // `optedOut` goes on every one of these lines, so "the gate is off on
+    // purpose" is a fact somebody can grep for rather than infer from the
+    // absence of rejections.
     const unconfigured = check.reason === "no_turnstile_configured";
-    const refuse = unconfigured && process.env.NODE_ENV === "production";
+    const optedOut =
+      unconfigured &&
+      readSetting(await getCloudflareEnv(), "SIDENOTE_UNPROTECTED_INTAKE") ===
+        "1";
+    const refuse =
+      unconfigured && process.env.NODE_ENV === "production" && !optedOut;
 
     audit({
       actor: "system",
       action: "bot_check_unavailable",
       target: action,
       outcome: refuse ? "rejected" : "success",
-      detail: { reason: check.reason, refused: refuse },
+      detail: { reason: check.reason, refused: refuse, optedOut },
     });
 
     if (refuse) {

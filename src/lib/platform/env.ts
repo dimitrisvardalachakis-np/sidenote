@@ -40,6 +40,23 @@ declare global {
      * UnprotectedBotGate reports loudly rather than treating as protection.
      */
     TURNSTILE_SECRET_KEY?: string;
+    /**
+     * The one deliberate way past the production refusal below, and it exists
+     * because the refusal was right and shipped anyway.
+     *
+     * `guard.ts` refuses a browser submission in production when Turnstile was
+     * never configured — correct, because that state is permanent rather than
+     * a wobble. The consequence, discovered on the deployed app rather than
+     * here: with no widget created yet, every intake chat turn and every
+     * report answered "a configuration problem on our side", so the public
+     * half of the demo was dead while the reviewer half looked fine.
+     *
+     * So: an opt-out that has to be SET, is never a default, and is recorded
+     * on every request it lets through. The literal string "1" and nothing
+     * else, so a truthy accident cannot switch the bot gate off. Delete the
+     * secret the moment the widget exists.
+     */
+    SIDENOTE_UNPROTECTED_INTAKE?: string;
   }
 }
 

@@ -185,13 +185,23 @@ chunked, embedded, mirrored and cited through the identical pipeline an upload
 uses, with `spl_set_id` as the document id so a citation traces to a public FDA
 record anyone can check.
 
-**Opt-in.** Vectorize has a real REST client and turns on with
-`SIDENOTE_VECTORIZE_INDEX`. The default vector store is a local file doing
-brute-force cosine over every vector, and it says so on the screen and on the
-audit line.
+**Opt-in, and switched on in production.** Vectorize turns on with
+`SIDENOTE_VECTORIZE_INDEX`, which is set as a secret on the deployed Worker —
+the `sidenote-chunks` index is live at 768 dimensions, cosine. Locally, with the
+variable unset, the vector store falls back to a file doing brute-force cosine
+over every vector, and it says so on the screen and on the audit line.
 
-**Not deployed.** `wrangler.jsonc` ships with placeholder resource ids and the
-preflight refuses to deploy over them.
+**Deployed.** Live at
+[sidenote.dimitrisvard.workers.dev](https://sidenote.dimitrisvard.workers.dev),
+with the RAG worker `sidenote-assess` deliberately not routable — `workers_dev`
+is false on it and it answers only over the service binding, behind a shared
+secret. `preview_urls` is false on the app for the same reason: a public
+hostname per version, serving a queue of safety cases, is not a thing to get by
+default.
+
+`npm run deploy` still refuses while `wrangler.jsonc` holds placeholder resource
+ids, and names the command that fixes each. That guard did its job before the
+real ids replaced it.
 
 **Fixed since, and worth saying how.** The intake chat used to be lexical-only,
 and deliberately so: it was the one surface that asserted what a document said
