@@ -47,6 +47,36 @@ import { parseGeneration, verifyGeneration, type Rejection } from "./verify";
  */
 export const GENERATION_TIMEOUT_MS = 10_000;
 
+/**
+ * The narrative gets longer, and only the narrative.
+ *
+ * Ten seconds is right for a single reading and for `lib/extract/`: both emit
+ * 30-90 tokens and land in 2-4s, so the timeout is catching a hang rather than
+ * cutting off work. The narrative emits about 110 — it reports two passages
+ * where a reading reports one, which is the entire reason it exists — and on
+ * the deployed Worker's native `env.AI` binding that lands at around 11s.
+ *
+ * MEASURED, on the deployed app rather than locally, because the two differ
+ * and the difference is the point. Through the REST client from a laptop the
+ * same call is 3.6-4.2s at 5 runs out of 5. Through `env.AI` it is ~11s, and
+ * at a 10s budget that was two searches in four showing prose and two falling
+ * back. The work is not slow because the reply is wasteful; it is slow because
+ * the reply is twice as long as a reading's, which is what was asked for.
+ *
+ * THE ALTERNATIVE WAS TO ASK FOR ONE POINT, and it was rejected deliberately.
+ * One point at ~55 tokens fits inside ten seconds comfortably, and produces
+ * something structurally indistinguishable from the `ModelReading` already on
+ * the same panel. A budget is the cheaper thing to spend than the feature.
+ *
+ * A TIMEOUT DOES NOT RETRY, so this is 20s once and not 40s twice — see the
+ * transport-failure branch in `narratePassages`. The expensive case is a reply
+ * that arrives and fails verification quickly, then a second attempt that
+ * hangs; that is bounded by roughly 20s plus the first attempt, and it is
+ * rare. The reading and the extraction are untouched at 10s, so nothing a
+ * reviewer needs in order to rule got slower.
+ */
+export const NARRATIVE_TIMEOUT_MS = 20_000;
+
 export interface GenerateInput {
   /** Null when there is no Workers AI in this environment. */
   readonly binding: AiBinding | null;
@@ -303,7 +333,8 @@ export async function narratePassages(
   input: NarrateInput,
 ): Promise<NarrateOutcome> {
   const { binding, chunks, now } = input;
-  const timeoutMs = input.timeoutMs ?? GENERATION_TIMEOUT_MS;
+  // Its own budget, not the reading's. See NARRATIVE_TIMEOUT_MS.
+  const timeoutMs = input.timeoutMs ?? NARRATIVE_TIMEOUT_MS;
 
   if (binding === null) {
     return {

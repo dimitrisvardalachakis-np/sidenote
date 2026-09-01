@@ -19,7 +19,11 @@ import {
   type AiBinding,
   type TextGenerationInput,
 } from "./ai";
-import { GENERATION_TIMEOUT_MS, narratePassages } from "./generate";
+import {
+  GENERATION_TIMEOUT_MS,
+  NARRATIVE_TIMEOUT_MS,
+  narratePassages,
+} from "./generate";
 import {
   NARRATIVE_MAX_POINTS,
   NARRATIVE_POINT_MAX_CHARS,
@@ -328,10 +332,36 @@ describe("the reply the contract permits has to fit inside the timeout", () => {
         Math.ceil(SPAN_CHARS / CHARS_PER_TOKEN) +
         Math.ceil(NARRATIVE_POINT_MAX_CHARS / CHARS_PER_TOKEN));
 
-  it("decodes the longest permitted reply inside GENERATION_TIMEOUT_MS", () => {
+  it("decodes the longest permitted reply inside NARRATIVE_TIMEOUT_MS", () => {
     expect(worstCaseTokens * MS_PER_OUTPUT_TOKEN).toBeLessThan(
-      GENERATION_TIMEOUT_MS,
+      NARRATIVE_TIMEOUT_MS,
     );
+  });
+
+  /*
+    And it needs a bigger budget than a reading, which is not a workaround.
+
+    A reading reports one passage; a narrative reports two, and two is the
+    whole reason it exists beside one. So it emits roughly twice the tokens and
+    it costs roughly twice the time — at the same rate, doing the work that was
+    asked for. Ten seconds was the reading's number applied to a different job.
+
+    Asserted so that anybody collapsing the two back into one constant has to
+    decide what the narrative should stop doing.
+  */
+  it("has a longer budget than the single reading, and says why in the constant", () => {
+    expect(NARRATIVE_TIMEOUT_MS).toBeGreaterThan(GENERATION_TIMEOUT_MS);
+  });
+
+  /*
+    The measured rate is the LOCAL one. The deployed native binding is slower —
+    ~11s against ~4s for an identical call — so the margin between the modelled
+    worst case and the budget is not slack, it is the gap between the two
+    runtimes. Two points at ~110 tokens have to fit on the slow one.
+  */
+  it("leaves room for the deployed binding, not just the local client", () => {
+    const modelled = worstCaseTokens * MS_PER_OUTPUT_TOKEN;
+    expect(NARRATIVE_TIMEOUT_MS / modelled).toBeGreaterThan(1.8);
   });
 
   /*
@@ -369,7 +399,7 @@ describe("the reply the contract permits has to fit inside the timeout", () => {
       aiGatewayLogId: "aig-1",
     };
 
-    const out = await run(slow, { timeoutMs: GENERATION_TIMEOUT_MS / SPEEDUP });
+    const out = await run(slow, { timeoutMs: NARRATIVE_TIMEOUT_MS / SPEEDUP });
 
     expect(out.narrative.status).toBe("narrated");
     // One inference, not two. A retry here would mean the first attempt was
