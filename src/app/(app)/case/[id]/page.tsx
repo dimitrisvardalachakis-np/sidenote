@@ -30,6 +30,7 @@ import { readAuditTrail } from "@/lib/store/audit-store";
 import { loadCorpus } from "@/lib/store/corpus";
 import { requireSession } from "@/lib/auth";
 import { claimCase, recordRuling, releaseCase, runAssessment } from "./actions";
+import { AssessControl } from "@/components/assess-control";
 import {
   EXPEDITED_WINDOW_DAYS,
   documentStance,
@@ -391,17 +392,18 @@ export default async function CasePage({ params }: PageProps<"/case/[id]">) {
                   {/*
                     Assess is demoted to what it is: a supporting step that
                     fetches passages, not the main event on this screen.
+
+                    A client component now, so that finishing can be announced
+                    as something that just happened rather than read off the
+                    stored assessment on every render. See AssessControl.
                   */}
-                  <form action={assess}>
-                    <button
-                      type="submit"
-                      disabled={ai.binding === null}
-                      title={ai.reason ?? "Search the safety documents and read the passages found"}
-                      className="min-h-8 cursor-pointer rounded-soft border border-rule bg-surface px-3 py-1 font-mono text-micro uppercase tracking-label text-slate hover:border-steady-line hover:text-steady disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      {assessment === null ? "Assess this case" : "Re-assess"}
-                    </button>
-                  </form>
+                  <AssessControl
+                    caseId={record.id}
+                    assessed={assessment !== null}
+                    disabled={ai.binding === null}
+                    title={ai.reason ?? "Search the safety documents and read the passages found"}
+                    action={assess}
+                  />
                 </div>
 
                 {assessment === null ? (

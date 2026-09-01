@@ -98,3 +98,73 @@ describe("the three states it was written for", () => {
     expect(screen.getByRole("button", { name: /claim this case/i })).toBeVisible();
   });
 });
+
+
+/**
+ * THE LIVE REGION, AND THE PROPERTY THAT MAKES IT ONE.
+ *
+ * A walkthrough reported "no aria-live regions anywhere" from
+ * `document.querySelectorAll("[aria-live]").length === 0`. The probe was
+ * measuring the wrong thing — `role="status"` carries an implicit
+ * `aria-live="polite"` and this panel already had one — but the conclusion was
+ * right for a reason the probe could not see: the region was rendered only
+ * once there was something to say. An element that arrives already containing
+ * its text is an insertion, not an update, and assistive technology routinely
+ * announces nothing.
+ *
+ * So the property under test is PRESENT AND EMPTY, in every state, before
+ * anything happens. Not "a live region exists somewhere".
+ */
+describe("the live region is there before there is anything to announce", () => {
+  const states = [
+    ["unclaimed", { claim: null, arbitrated: true }],
+    ["held by you", { claim: { ...HELD_BY_THEM, reviewerId: "reviewer-demo" }, arbitrated: true }],
+    ["held by somebody else", { claim: HELD_BY_THEM, arbitrated: true }],
+  ] as const;
+
+  it.each(states)("is mounted and empty when %s", (_name, over) => {
+    const { container } = panel(over);
+    const region = container.querySelector('[aria-live="polite"]');
+    expect(region).not.toBeNull();
+    // Empty. If this ever holds text on a first render the panel has started
+    // reading the case's state aloud on every page load, which is narration.
+    expect(region?.textContent).toBe("");
+  });
+
+  it("states the role and the attribute, so an audit can find it either way", () => {
+    const { container } = panel({ claim: null, arbitrated: true });
+    const region = container.querySelector('[aria-live="polite"]');
+    expect(region?.getAttribute("role")).toBe("status");
+    // Read the whole sentence rather than the words that changed.
+    expect(region?.getAttribute("aria-atomic")).toBe("true");
+  });
+
+  /*
+    And it announces the OUTCOME, not the state.
+
+    Deriving from `claim` would say "you now hold this case" on every render of
+    a case this reviewer claimed yesterday. The action state is only ever set
+    by something they just did.
+  */
+  it("announces a granted claim once the action reports one", async () => {
+    const granting = vi.fn(async () => ({
+      status: "granted" as const,
+      message: null,
+    }));
+    const { container } = render(
+      <ClaimPanel
+        claim={null}
+        reviewerId="reviewer-demo"
+        arbitrated
+        claimAction={granting}
+        releaseAction={noop}
+      />,
+    );
+
+    const { default: userEvent } = await import("@testing-library/user-event");
+    await userEvent.click(screen.getByRole("button", { name: /claim this case/i }));
+
+    const region = container.querySelector('[aria-live="polite"]');
+    expect(region?.textContent).toContain("You now hold this case");
+  });
+});

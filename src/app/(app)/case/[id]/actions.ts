@@ -17,7 +17,7 @@ import { getAssessmentStore } from "@/lib/store/assessment-store";
 import "@/lib/store/audit-store";
 import { canRelease, canWrite } from "@/lib/case/claim";
 import { getCaseCoordination } from "@/lib/coordinator";
-import { IDEMPOTENCY_FIELD } from "./ruling-state";
+import { IDEMPOTENCY_FIELD, type AssessActionState } from "./ruling-state";
 import type { IsoDateTime } from "@/lib/schemas";
 
 /** The instant a claim check is made against. Named so it reads at the call site. */
@@ -42,6 +42,7 @@ function idempotencyKeyFrom(formData: FormData | undefined): string | null {
 import {
   Assessment,
   ReviewerRuling,
+  documentStance,
   type IsoDate,
 } from "@/lib/schemas";
 import {
@@ -63,12 +64,18 @@ import {
  * date should not spend any, and a button makes it obvious that a model ran —
  * which matters more here than saving a click.
  */
-export async function runAssessment(caseId: string): Promise<void> {
+export async function runAssessment(
+  caseId: string,
+  _state: AssessActionState,
+  _formData: FormData,
+): Promise<AssessActionState> {
   const session = await requireSession();
   const today: IsoDate = new Date().toISOString().slice(0, 10);
 
   const entry = await findQueueEntry(today, caseId);
-  if (entry === null) return;
+  if (entry === null) {
+    return { status: "skipped", message: "That case could not be found." };
+  }
 
   const { record } = entry;
   const drug = record.drugs[0];
@@ -85,7 +92,11 @@ export async function runAssessment(caseId: string): Promise<void> {
       outcome: "rejected",
       detail: { reason: "no suspect drug or no reaction on the case" },
     });
-    return;
+    return {
+      status: "skipped",
+      message:
+        "Nothing to assess: this case has no suspect drug or no reaction recorded.",
+    };
   }
 
   const env = await aiEnv();
@@ -212,6 +223,30 @@ export async function runAssessment(caseId: string): Promise<void> {
 
   revalidatePath(`/case/${record.id}`);
   revalidatePath("/queue");
+
+  /*
+    What the run found, in the words the panels use.
+
+    Built from `documentStance` rather than from a second reading of the
+    findings, so this cannot say something the screen below does not show. It
+    reports what each source SAYS and stops there: no listedness, no
+    expectedness, no expedited status. Those are the reviewer's, and a summary
+    that reached one would be the model deciding out loud.
+  */
+  const says = (stance: ReturnType<typeof documentStance>): string =>
+    stance === "describes"
+      ? "describes this reaction"
+      : stance === "silent"
+        ? "does not appear to mention it"
+        : "could not be read";
+
+  return {
+    status: "assessed",
+    message:
+      `Assessment complete. The company documents ` +
+      `${says(documentStance(findings.listedness))}; the public label ` +
+      `${says(documentStance(findings.expectedness))}. Nothing has been ruled.`,
+  };
 }
 
 

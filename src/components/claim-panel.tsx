@@ -55,7 +55,7 @@ export function ClaimPanel({
     claimAction,
     INITIAL_CLAIM_STATE,
   );
-  const [, submitRelease, releasing] = useActionState(
+  const [releaseState, submitRelease, releasing] = useActionState(
     releaseAction,
     INITIAL_CLAIM_STATE,
   );
@@ -63,84 +63,139 @@ export function ClaimPanel({
   const mine = claim !== null && claim.reviewerId === reviewerId;
   const theirs = claim !== null && claim.reviewerId !== reviewerId;
 
+  /*
+    WHAT CHANGED, for somebody who cannot see the panel change.
+
+    Derived from the ACTION state and never from `claim`, and that is the whole
+    correctness of it. `claim` says who holds the case, which is equally true
+    on a first render as after a press — announcing from it would read the
+    holder aloud every time the page loaded, which is narration rather than
+    news. The action state is only ever set by something this reviewer just
+    did.
+  */
+  const announcement =
+    claimState.status === "granted"
+      ? "You now hold this case. You can record a ruling."
+      : claimState.status === "held_by_other"
+        ? claimState.message ?? "Somebody else claimed this case first."
+        : claimState.status === "already_yours"
+          ? "You already hold this case."
+          : releaseState.status === "released"
+            ? "Released. Anybody can claim this case now."
+            : "";
+
+  /*
+    The three panels below replace one another, so the live region cannot live
+    inside any of them: an element that appears at the same moment as its text
+    is inserted, not updated, and assistive technology routinely misses it. It
+    is rendered here, unconditionally and empty, in a fixed position — so every
+    branch below is a change to a region that was already there.
+
+    This is also why the audit's probe found nothing. `role="status"` carries an
+    implicit `aria-live="polite"`, so the attribute selector returned zero on
+    pages that did have live regions; what it could not see is that they were
+    all conditional. Both are stated now: the role for meaning, the attribute so
+    the next person auditing this finds it.
+  */
+  const announcer = (
+    <p
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className="sr-only"
+    >
+      {announcement}
+    </p>
+  );
+
   if (theirs) {
     return (
-      <div className="rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 shadow-card">
-        <p className="text-base">
-          Held by <span className="font-medium">{claim.displayName}</span> since{" "}
-          <span className="font-mono tabular-nums">{timeOf(claim.heldSince)}</span>
-        </p>
-        <p className="mt-1 text-meta text-slate">
-          You can read everything on this case, including the evidence and the
-          documents behind it. You cannot claim it, rule on it, or change a
-          seriousness flag while {claim.displayName} holds it.
-        </p>
-        {/*
-          The lost-race message, rendered in place rather than as a thrown
-          error. Only shown after an actual attempt.
-        */}
-        {claimState.status === "held_by_other" && claimState.message !== null && (
-          <p role="status" className="mt-1.5 text-meta text-ink">
-            {claimState.message}
+      <>
+        {announcer}
+        <div className="rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 shadow-card">
+          <p className="text-base">
+            Held by <span className="font-medium">{claim.displayName}</span> since{" "}
+            <span className="font-mono tabular-nums">{timeOf(claim.heldSince)}</span>
           </p>
-        )}
-      </div>
+          <p className="mt-1 text-meta text-slate">
+            You can read everything on this case, including the evidence and the
+            documents behind it. You cannot claim it, rule on it, or change a
+            seriousness flag while {claim.displayName} holds it.
+          </p>
+          {/*
+            The lost-race message, rendered in place rather than as a thrown
+            error. Only shown after an actual attempt — which is exactly why the
+            `role` lives on the announcer above and not here: an element that
+            arrives already carrying its text is inserted, not updated, and does
+            not announce.
+          */}
+          {claimState.status === "held_by_other" && claimState.message !== null && (
+            <p className="mt-1.5 text-meta text-ink">{claimState.message}</p>
+          )}
+        </div>
+      </>
     );
   }
 
   if (mine) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-soft bg-steady-wash px-4 py-2.5">
-        <p className="text-base text-steady">
-          You have this case since{" "}
-          <span className="font-mono tabular-nums">
-            {timeOf(claim.heldSince)}
-          </span>
-        </p>
-        {!arbitrated && (
-          <p className="w-full text-meta text-slate">
-            Held in this process only — not across machines.
+      <>
+        {announcer}
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-soft bg-steady-wash px-4 py-2.5">
+          <p className="text-base text-steady">
+            You have this case since{" "}
+            <span className="font-mono tabular-nums">
+              {timeOf(claim.heldSince)}
+            </span>
           </p>
-        )}
-        <IdempotentForm action={submitRelease}>
-          <button
-            type="submit"
-            disabled={releasing}
-            className="min-h-8 cursor-pointer rounded-soft border border-steady-line bg-surface px-3 py-1 text-meta text-steady hover:border-steady disabled:opacity-40"
-          >
-            {releasing ? "Releasing…" : "Release"}
-          </button>
-        </IdempotentForm>
-      </div>
+          {!arbitrated && (
+            <p className="w-full text-meta text-slate">
+              Held in this process only — not across machines.
+            </p>
+          )}
+          <IdempotentForm action={submitRelease}>
+            <button
+              type="submit"
+              disabled={releasing}
+              className="min-h-8 cursor-pointer rounded-soft border border-steady-line bg-surface px-3 py-1 text-meta text-steady hover:border-steady disabled:opacity-40"
+            >
+              {releasing ? "Releasing…" : "Release"}
+            </button>
+          </IdempotentForm>
+        </div>
+      </>
     );
   }
 
   return (
-    <IdempotentForm
-      action={submitClaim}
-      className="flex flex-wrap items-center gap-3"
-    >
-      <button
-        type="submit"
-        disabled={claiming}
-        className="min-h-10 cursor-pointer rounded-soft bg-steady px-4 py-2 text-base font-medium text-surface hover:opacity-90 disabled:opacity-40"
+    <>
+      {announcer}
+      <IdempotentForm
+        action={submitClaim}
+        className="flex flex-wrap items-center gap-3"
       >
-        {claiming ? "Claiming…" : "Claim this case"}
-      </button>
-      <p className="text-meta text-slate">
-        Nobody has this case. Claiming it lets you record a ruling and tells
-        your colleagues you are on it.
-        {!arbitrated && (
-          <>
-            {" "}
-            <span className="text-slate">
-              Claims are held in this process only, so they do not hold across
-              machines — no Durable Object is bound here.
-            </span>
-          </>
-        )}
-      </p>
-    </IdempotentForm>
+        <button
+          type="submit"
+          disabled={claiming}
+          className="min-h-10 cursor-pointer rounded-soft bg-steady px-4 py-2 text-base font-medium text-surface hover:opacity-90 disabled:opacity-40"
+        >
+          {claiming ? "Claiming…" : "Claim this case"}
+        </button>
+        <p className="text-meta text-slate">
+          Nobody has this case. Claiming it lets you record a ruling and tells
+          your colleagues you are on it.
+          {!arbitrated && (
+            <>
+              {" "}
+              <span className="text-slate">
+                Claims are held in this process only, so they do not hold across
+                machines — no Durable Object is bound here.
+              </span>
+            </>
+          )}
+        </p>
+      </IdempotentForm>
+    </>
   );
 }
 

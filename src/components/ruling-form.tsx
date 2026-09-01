@@ -200,15 +200,33 @@ export function RulingForm({
           ) : null}
         </div>
 
+        {/*
+          THE ANNOUNCERS, ALWAYS MOUNTED AND USUALLY EMPTY.
+
+          A live region has to exist before its content changes. The two
+          paragraphs below appear at the same moment as their text, so they are
+          insertions rather than updates and assistive technology routinely
+          misses them — which is how recording a ruling, the most consequential
+          write in the application, came to happen in silence.
+
+          Two regions rather than one, because they are not equally urgent. A
+          refused ruling should interrupt; a recorded one should wait for a
+          pause. A single region cannot be both, and switching `aria-live` on an
+          element is not reliably picked up.
+        */}
+        <p role="alert" aria-live="assertive" aria-atomic="true" className="sr-only">
+          {state.error ?? ""}
+        </p>
+        <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+          {state.status === "recorded" ? "Ruling recorded." : ""}
+        </p>
+
+        {/* The visible half. The announcing is done above. */}
         {state.error !== null && (
-          <p role="alert" className="mt-2 text-meta text-ink">
-            {state.error}
-          </p>
+          <p className="mt-2 text-meta text-ink">{state.error}</p>
         )}
         {state.status === "recorded" && (
-          <p role="status" className="mt-2 text-meta text-steady">
-            Ruling recorded.
-          </p>
+          <p className="mt-2 text-meta text-steady">Ruling recorded.</p>
         )}
       </fieldset>
 
