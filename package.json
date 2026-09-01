@@ -16,7 +16,7 @@
     "embed:backfill": "SIDENOTE_EMBED_BACKFILL=1 vitest run src/lib/retrieval/backfill.test.ts",
     "build:worker": "npm run lint && npm run test && opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare preview",
-    "deploy": "node scripts/preflight-deploy.mjs && opennextjs-cloudflare deploy",
+    "deploy": "npm run build:worker && node scripts/preflight-deploy.mjs && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv",
     "cf:setup": "./scripts/cloudflare-setup.sh",
     "db:generate": "drizzle-kit generate",

@@ -1,6 +1,18 @@
 /**
  * Refuses to deploy against placeholder resource ids.
  *
+ * A SECOND THING THIS FILE CANNOT CHECK, RECORDED HERE BECAUSE IT COST TWO
+ * DEPLOYS. `opennextjs-cloudflare deploy` does not build — it uploads whatever
+ * is already in `.open-next`. So `npm run deploy` used to ship the last bundle
+ * anybody happened to have built, reported complete success, and printed a new
+ * Version ID for code that was not in it. Two deploys landed that way and the
+ * evidence was a single easily-missed line: "No updated asset files to
+ * upload." Everything then verified against the OLD app, including a
+ * measurement that sent the narrative work down a wrong path for an hour.
+ *
+ * `npm run deploy` now runs `build:worker` first, which is lint, the suite and
+ * the OpenNext build. That is the guard; this comment is why it is there.
+ *
  * wrangler.jsonc ships with `database_id: "0000…"` and a KV id of the same
  * shape, so that the whole app can be built and tested locally without a
  * Cloudflare account — local D1 and KV ignore the id entirely and use a file
