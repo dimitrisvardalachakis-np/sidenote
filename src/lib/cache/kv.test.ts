@@ -64,7 +64,18 @@ describe("featureFlag", () => {
 
 describe("cache keys", () => {
   it("are built in one place, so a typo is a compile error not a miss", () => {
-    expect(CACHE_KEY.triageQueue).toBe("queue:triage:v1");
+    expect(CACHE_KEY.triageQueue("2026-09-01")).toBe(
+      "queue:triage:2026-09-01:v2",
+    );
+    /*
+      Day-scoped, and that is not cosmetic. `buildSeedCases` recomputes every
+      fixture's dates from `today`, so an undated key would serve yesterday's
+      day-count across midnight for as long as the TTL — on the number this
+      application exists to get right.
+    */
+    expect(CACHE_KEY.triageQueue("2026-09-01")).not.toBe(
+      CACHE_KEY.triageQueue("2026-09-02"),
+    );
     // Case-folded: openFDA lookups are keyed by substance, and "Covaxil" and
     // "covaxil" are the same drug asked about twice.
     expect(CACHE_KEY.label("Covaxil")).toBe(CACHE_KEY.label("covaxil"));
@@ -74,7 +85,7 @@ describe("cache keys", () => {
     // The alternative is a deploy that reads yesterday's shape out of a key
     // that outlived it — which the schema check would reject, correctly, but
     // only after everyone's first request rebuilt.
-    expect(CACHE_KEY.triageQueue).toMatch(/:v\d+$/);
+    expect(CACHE_KEY.triageQueue("2026-09-01")).toMatch(/:v\d+$/);
     expect(CACHE_KEY.label("x")).toMatch(/:v\d+$/);
   });
 });

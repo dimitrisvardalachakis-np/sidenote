@@ -3,7 +3,13 @@ import { cache } from "react";
 import { buildSeedCases } from "@/lib/fixtures/seed";
 import { getCaseStore } from "@/lib/store/case-store";
 import { getAssessmentStore } from "@/lib/store/assessment-store";
-import type { Assessment, Case, IsoDate } from "@/lib/schemas";
+import { z } from "zod";
+import { Assessment, Case, type IsoDate } from "@/lib/schemas";
+import {
+  CACHE_KEY,
+  TRIAGE_QUEUE_TTL_SECONDS,
+  getCache,
+} from "@/lib/cache/kv";
 
 /**
  * One row in the reviewer queue.
@@ -37,9 +43,54 @@ export interface QueueEntry {
  * assessed a moment ago is still fresh on the next render; it is a
  * deduplicator, not a store.
  */
+/**
+ * The cached shape, parsed on the way back out.
+ *
+ * `Case` and `Assessment` are the real entity schemas, so a value serialised
+ * by an older deploy is REJECTED and rebuilt rather than rendered — which is
+ * the reason `cached()` demands a schema at all. Loose here would mean a
+ * shape the queue no longer expects reaching a screen that is showing somebody
+ * regulatory deadlines.
+ */
+const CachedQueue = z.array(
+  z.object({ record: Case, assessment: Assessment.nullable() }),
+);
+
 export const loadQueue = cache(async function loadQueue(
   today: IsoDate,
 ): Promise<readonly QueueEntry[]> {
+  /*
+    KV, at last, and this is the read that was missing.
+
+    `CACHE_KEY.triageQueue` and `TRIAGE_QUEUE_TTL_SECONDS` have existed since
+    Cluster D, and `case-store.ts` has dropped the key on every case write with
+    a good comment about why the store owns its own invalidation. Nothing ever
+    wrote it. An invalidation with no cache behind it is why the CACHE
+    namespace was still empty after a full session — sign-in, several queue
+    loads, a claim, an upload and two assessments.
+
+    THE ENTRIES, NEVER THE ROWS. `buildRows` folds in claims and the reviewer's
+    last visit, both per-reviewer and both live; caching those would show one
+    reviewer another's "new since your last visit" marks and a claim that had
+    since moved. What is cached here is the two things that are the same for
+    everybody, and both are rebuildable from D1 and the fixtures — which is the
+    "(rebuildable only)" constraint CLAUDE.md puts on KV, and the reason
+    `cached()` takes the rebuild function rather than offering a `put`.
+
+    Wrapped INSIDE the per-request `cache()` rather than outside, so one render
+    pass still reads once. The two do different jobs: React's dedupes within a
+    request, KV's spans requests.
+  */
+  const cacheLayer = await getCache();
+  return cacheLayer.cached(
+    CACHE_KEY.triageQueue(today),
+    CachedQueue,
+    TRIAGE_QUEUE_TTL_SECONDS,
+    async () => [...(await buildQueue(today))],
+  );
+});
+
+async function buildQueue(today: IsoDate): Promise<readonly QueueEntry[]> {
   const seeded: QueueEntry[] = buildSeedCases(today).map((s) => ({
     record: s.record,
     assessment: s.assessment,
@@ -92,7 +143,7 @@ export const loadQueue = cache(async function loadQueue(
   );
 
   return [...submittedEntries, ...seededWithRuns];
-});
+}
 
 export async function findQueueEntry(
   today: IsoDate,

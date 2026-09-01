@@ -14,6 +14,7 @@ import {
   nodeFs,
   nodePath,
 } from "./backing";
+import { CACHE_KEY, getCache } from "@/lib/cache/kv";
 
 /**
  * Assessments produced by an actual model run, as opposed to the seeded ones.
@@ -164,10 +165,59 @@ class D1AssessmentStore implements AssessmentStore {
 const localStore: AssessmentStore = new LocalFileAssessmentStore();
 
 /**
+ * Drops the cached queue whenever an assessment is written.
+ *
+ * A wrapper rather than a line in each of the three `put` implementations,
+ * which is where the case store puts its equivalent — there is only one D1
+ * class there, and there are three backings here, so the same rule written
+ * three times is two chances to forget it.
+ *
+ * WHY THIS IS NEEDED AT ALL. `loadQueue` returns assessments as well as cases,
+ * and the queue renders a ruling and the expedited clock that follows from it.
+ * Only `case-store` invalidated, so a reviewer who recorded a ruling and went
+ * back to the queue would have seen the case still unruled with its clock
+ * still running, for as long as the TTL. A cache is allowed to be a minute
+ * behind on when a case arrived; it is not allowed to be a minute behind on a
+ * determination a human just made.
+ *
+ * The drop is awaited and its failure is the cache layer's problem, not this
+ * one's: `KvCache.drop` swallows, because an assessment that stored correctly
+ * must not be reported as failed because a cache key would not delete.
+ */
+class QueueInvalidating implements AssessmentStore {
+  readonly #inner: AssessmentStore;
+  constructor(inner: AssessmentStore) {
+    this.#inner = inner;
+  }
+
+  async put(record: Assessment): Promise<void> {
+    await this.#inner.put(record);
+    const cache = await getCache();
+    await cache.drop(
+      CACHE_KEY.triageQueue(new Date().toISOString().slice(0, 10)),
+    );
+  }
+
+  async get(caseId: string): Promise<Assessment | null> {
+    return this.#inner.get(caseId);
+  }
+
+  async getMany(
+    caseIds: readonly string[],
+  ): Promise<ReadonlyMap<string, Assessment>> {
+    return this.#inner.getMany(caseIds);
+  }
+}
+
+/**
  * Ordered by how real the storage is, like `getCaseStore()`: D1 when it is
  * bound, the disk when there is one, and memory only when there is neither.
  */
 export async function getAssessmentStore(): Promise<AssessmentStore> {
+  return new QueueInvalidating(await resolveAssessmentStore());
+}
+
+async function resolveAssessmentStore(): Promise<AssessmentStore> {
   if ((await getDb()) !== null) return new D1AssessmentStore();
 
   // `hasLocalDisk()`, not "is it durable" — the two differ on exactly the

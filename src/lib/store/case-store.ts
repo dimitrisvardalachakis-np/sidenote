@@ -185,7 +185,7 @@ class D1CaseStore implements CaseStore {
     // missing a report somebody was just told had been filed — with a
     // reference number to quote for it.
     const cache = await getCache();
-    await cache.drop(CACHE_KEY.triageQueue);
+    await cache.drop(CACHE_KEY.triageQueue(new Date().toISOString().slice(0, 10)));
   }
 
   async get(caseId: string): Promise<Case | null> {

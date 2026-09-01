@@ -151,8 +151,18 @@ export async function featureFlag(
 
 /** Cache keys, in one place so a typo is a compile error rather than a miss. */
 export const CACHE_KEY = {
-  /** The reviewer queue, as rendered. Dropped on every case write. */
-  triageQueue: "queue:triage:v1",
+  /**
+   * The reviewer queue's ENTRIES — records and assessments, never the rendered
+   * rows. Dropped on every case and every assessment write.
+   *
+   * Scoped by day, because `buildSeedCases` recomputes every fixture's dates
+   * from `today` so that the expedited clocks stay honest as the days pass. A
+   * single undated key would serve yesterday's day-count across midnight for
+   * as long as the TTL, on the one number this application exists to get
+   * right. Yesterday's key is left to expire rather than swept: it is at most
+   * one stale entry and it costs a minute.
+   */
+  triageQueue: (today: string) => `queue:triage:${today}:v2`,
   /** An openFDA label lookup, keyed by substance. */
   label: (substance: string) => `label:${substance.toLowerCase()}:v1`,
 } as const;
@@ -160,9 +170,16 @@ export const CACHE_KEY = {
 /**
  * How long the queue may lag.
  *
- * Short, and paired with an explicit drop on every case write. A stale queue
- * is tolerable for a minute — the cases in it were already waiting. A queue
- * that is MISSING a case somebody just filed is not tolerable at any duration,
- * which is why the write path invalidates rather than waiting this out.
+ * Short, and paired with an explicit drop on every write that changes it. A
+ * stale queue is tolerable for a minute — the cases in it were already
+ * waiting. A queue that is MISSING a case somebody just filed is not tolerable
+ * at any duration, which is why the write paths invalidate rather than waiting
+ * this out.
+ *
+ * TWO write paths, not one. The case store's drop existed from the start; the
+ * assessment store's did not, and without it a reviewer who recorded a ruling
+ * and went back to the queue would have seen the case still unruled, with its
+ * clock still running, for up to a minute. `loadQueue` returns assessments as
+ * well as cases, so anything that writes one has to say so.
  */
 export const TRIAGE_QUEUE_TTL_SECONDS = 60;
