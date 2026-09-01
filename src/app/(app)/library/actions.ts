@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireSession } from "@/lib/auth";
-import { audit } from "@/lib/audit";
+import { recordAudit } from "@/lib/audit-log";
 import { chunkDocument } from "@/lib/ingest/chunk";
 import { assessExtraction, isAcceptedFilename } from "@/lib/ingest/extract";
 import {
@@ -143,7 +143,7 @@ export async function saveDocument(
       clash !== null && !(clash.kind === "same_version" && acknowledged);
 
     if (refuse && clash !== null) {
-      audit({
+      await recordAudit({
         actor: session.reviewerId,
         action: "upload_document",
         target: clash.held.id,
@@ -180,7 +180,7 @@ export async function saveDocument(
       filename: file.name,
     });
   } catch {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "upload_document",
       target: objectKey,
@@ -216,7 +216,7 @@ export async function saveDocument(
     });
     await (await getDocumentLibrary()).save({ document: rejected, chunks: [] });
 
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "upload_document",
       target: documentId,
@@ -282,7 +282,7 @@ export async function saveDocument(
     });
   }
 
-  audit({
+  await recordAudit({
     actor: session.reviewerId,
     action: "upload_document",
     target: documentId,

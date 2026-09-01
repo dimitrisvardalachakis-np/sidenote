@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "node:crypto";
-import { audit } from "@/lib/audit";
+import { recordAudit } from "@/lib/audit-log";
 import { requireSession } from "@/lib/auth";
 import { assessThroughService } from "@/lib/assess/service";
 import { resolveAiBinding, resolveGateway } from "@/lib/assess/ai";
@@ -85,7 +85,7 @@ export async function runAssessment(
   // already tells the reviewer which criterion is missing; silently producing
   // an empty assessment would bury that.
   if (drug === undefined || reaction === undefined) {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "run_assessment",
       target: record.reference,
@@ -203,7 +203,7 @@ export async function runAssessment(
     }),
   );
 
-  audit({
+  await recordAudit({
     actor: session.reviewerId,
     action: "run_assessment",
     target: record.reference,
@@ -310,7 +310,7 @@ export async function claimCase(
     emitted, because a retry that reached the server IS an event worth having;
     what changes is that it says which one it was.
   */
-  audit({
+  await recordAudit({
     actor: session.reviewerId,
     action: "claim_case",
     target: entry.record.reference,
@@ -350,7 +350,7 @@ export async function releaseCase(
   const coordination = await getCaseCoordination();
   const current = (await coordination.state(caseId)).claim;
   if (!canRelease(current, session.reviewerId, nowIso())) {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "release_case",
       target: entry.record.reference,
@@ -368,7 +368,7 @@ export async function releaseCase(
     session.reviewerId,
     idempotencyKeyFrom(formData),
   );
-  audit({
+  await recordAudit({
     actor: session.reviewerId,
     action: "release_case",
     target: entry.record.reference,
@@ -415,7 +415,7 @@ export async function recordRuling(
   const coordination = await getCaseCoordination();
   const claim = (await coordination.state(caseId)).claim;
   if (!canWrite(claim, session.reviewerId, nowIso())) {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "rule_case",
       target: entry.record.reference,
@@ -439,7 +439,7 @@ export async function recordRuling(
     decidedAt: new Date().toISOString(),
   });
   if (!parsed.success) {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "rule_case",
       target: entry.record.reference,
@@ -479,7 +479,7 @@ export async function recordRuling(
     idempotencyKeyFrom(form),
   );
   if (!ruled.ok) {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "rule_case",
       target: entry.record.reference,
@@ -506,7 +506,7 @@ export async function recordRuling(
     decision here, and it was already recorded the first time.
   */
   if (replayed) {
-    audit({
+    await recordAudit({
       actor: session.reviewerId,
       action: "rule_case",
       target: entry.record.reference,
@@ -529,7 +529,7 @@ export async function recordRuling(
     }),
   );
 
-  audit({
+  await recordAudit({
     actor: session.reviewerId,
     action: "rule_case",
     target: entry.record.reference,

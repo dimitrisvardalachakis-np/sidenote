@@ -94,6 +94,21 @@ demo.
    `actor, action, target, timestamp, outcome`, prefixed `[AUDIT]`. An AI
    result also records the model and the gateway request id, so a verdict can
    be traced to the exact inference that informed it.
+
+   **Two sinks, and which line goes where is a rule rather than a habit.** The
+   console line is the record: `observability` is on, so Workers Logs retains
+   it and Logpush ships it, and it survives the Worker crashing in a way a
+   database write does not. D1 `audit_log` is a queryable *mirror*, written by
+   `recordAudit` after the console line and inside a try/catch, so a failed
+   mirror can never fail the thing being audited.
+
+   Every **mutation** is mirrored — claim, release, rule, assess, upload,
+   submit — because "keep a durable log of every change" is the requirement
+   and because a table that exists and is empty looks like coverage. Two
+   deliberate exceptions: `CaseCoordinator`'s own lines, which run inside the
+   Durable Object turn that serialises two reviewers racing one case and must
+   not carry a D1 round trip, and the generation/retrieval lines, which are
+   observations rather than changes and which nothing queries.
 10. **A visible banner on every page**: training demo, synthetic and public
     data, not a validated system.
 11. Read every file the agent writes. Explain every choice in your own words.

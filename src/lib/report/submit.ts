@@ -1,5 +1,5 @@
 import "server-only";
-import { audit } from "@/lib/audit";
+import { recordAudit } from "@/lib/audit-log";
 import { getCaseStore } from "@/lib/store/case-store";
 import {
   MISSING_MESSAGES,
@@ -75,7 +75,7 @@ export async function submitReport(
   // did or did not check, which is the only reason any of it is trustworthy.
   const shape = ReportDraft.safeParse(input);
   if (!shape.success) {
-    audit({
+    await recordAudit({
       actor: "public",
       action: "submit_report",
       target: "report_form",
@@ -104,7 +104,7 @@ export async function submitReport(
   // who you are".
   const missing = missingElements(draft);
   if (missing.length > 0) {
-    audit({
+    await recordAudit({
       actor: "public",
       action: "submit_report",
       target: "report_form",
@@ -146,7 +146,7 @@ export async function submitReport(
     });
     await store.put(record);
 
-    audit({
+    await recordAudit({
       actor: "public",
       action: "submit_report",
       target: reference,
@@ -161,7 +161,7 @@ export async function submitReport(
 
     return { status: "created", reference, caseId: record.id };
   } catch {
-    audit({
+    await recordAudit({
       actor: "public",
       action: "submit_report",
       target: "report_form",

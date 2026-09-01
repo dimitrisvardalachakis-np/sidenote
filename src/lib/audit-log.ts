@@ -21,6 +21,33 @@ import { getDb, schema } from "./db/client";
  *
  * Which is why this is a narrow API rather than a global swap: the lines that
  * get mirrored are the ones something later needs to query.
+ *
+ * WHAT "SOMETHING LATER NEEDS TO QUERY" TURNED OUT TO MEAN.
+ *
+ * For a while that was the sweeps and nothing else, and the consequence showed
+ * up on the deployed app: `audit_log` held exactly two rows, both from the
+ * previous night's crons, after a session that signed in, claimed a case,
+ * uploaded a document and recorded a ruling. Every one of those emitted a
+ * console line — `wrangler tail | grep AUDIT` returns them, which satisfies
+ * non-negotiable #9 to the letter — and the durable table the schema defines
+ * had no record of any human action at all. A table that exists and is empty
+ * is worse than no table, because it looks like coverage.
+ *
+ * So every MUTATION is mirrored now: claim, release, rule, assess, upload,
+ * submit. The rule for what is not:
+ *
+ *   NOT `CaseCoordinator`. Its lines are emitted inside a Durable Object's
+ *   single-threaded turn, and that turn is the serialisation that makes
+ *   claiming correct — two reviewers racing one case are queued behind it.
+ *   Adding a D1 round trip per line lengthens exactly that critical section,
+ *   to duplicate a line the Server Action mirrors one frame later anyway.
+ *
+ *   NOT the generation and retrieval lines. They are observations rather than
+ *   changes, they are the highest-volume lines in the system, and nothing
+ *   queries them — an operator reading them is reading Workers Logs, where
+ *   they already are.
+ *
+ * The console line remains the record. This is the queryable mirror of it.
  */
 
 /** Write the line to both sinks. The console one is never skipped. */
