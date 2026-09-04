@@ -63,3 +63,7 @@ worker-ai/.wrangler
 # friends), and it swallowed the example too — so the file existed on disk,
 # explained every setting, and was invisible to everyone who cloned the repo.
 !.dev.vars.example
+
+# Local D1 dumps taken before a destructive change. Restorable, but they are
+# a point-in-time copy of the database, not source.
+.backups/

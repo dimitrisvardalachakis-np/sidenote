@@ -13,6 +13,7 @@
     "evals": "vitest run src/lib/evals",
     "embed:seed": "SIDENOTE_EMBED_SEED=1 vitest run src/lib/fixtures/embed-seed.test.ts",
     "seed:cases:sql": "SIDENOTE_SEED_CASES_SQL=1 vitest run src/lib/fixtures/seed-cases-sql.test.ts",
+    "check:live": "SIDENOTE_LIVE_CHECK=1 vitest run src/lib/assess/live-check.test.ts",
     "embed:backfill": "SIDENOTE_EMBED_BACKFILL=1 vitest run src/lib/retrieval/backfill.test.ts",
     "build:worker": "npm run lint && npm run test && opennextjs-cloudflare build",
     "preview": "opennextjs-cloudflare preview",
