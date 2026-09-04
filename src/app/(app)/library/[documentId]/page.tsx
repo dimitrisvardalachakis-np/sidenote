@@ -5,8 +5,10 @@ import { loadCorpus } from "@/lib/store/corpus";
 import { loadQueue } from "@/lib/queue/entries";
 import { affectedCaseCount } from "@/lib/library/coverage";
 import { dailyMedUrl } from "@/lib/labels/dailymed";
+import { formatDateTime } from "@/lib/format/datetime";
 import { DOCUMENT_KIND_LABELS } from "@/lib/schemas/document-upload";
 import { REJECTION_MESSAGES, type IsoDate } from "@/lib/schemas";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * One document, opened.
@@ -53,7 +55,7 @@ export default async function DocumentPage({
     .sort((a, b) => a.ordinal - b.ordinal);
   const external = dailyMedUrl(document.id, document.sourceType);
 
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const queue = await loadQueue(today);
   const affected = affectedCaseCount(
     queue.map((entry) => ({ drugs: entry.record.drugs })),
@@ -131,7 +133,7 @@ export default async function DocumentPage({
           {document.chunkCount}
         </Fact>
         <Fact label="Ingested" mono>
-          {document.uploadedAt.slice(0, 16).replace("T", " ")}
+          {formatDateTime(document.uploadedAt)}
         </Fact>
         <Fact label="By">
           {/*

@@ -5,6 +5,7 @@ import { getCaseCoordination } from "@/lib/coordinator";
 import { CACHE_KEY, getCache } from "@/lib/cache/kv";
 import { getDb, schema, type Db } from "@/lib/db/client";
 import { asBatch, caseToRows, rowsToCase } from "@/lib/db/mappers";
+import { todayInAthens } from "@/lib/format/datetime";
 import {
   announceEphemeralWrite,
   dataPath,
@@ -185,7 +186,7 @@ class D1CaseStore implements CaseStore {
     // missing a report somebody was just told had been filed — with a
     // reference number to quote for it.
     const cache = await getCache();
-    await cache.drop(CACHE_KEY.triageQueue(new Date().toISOString().slice(0, 10)));
+    await cache.drop(CACHE_KEY.triageQueue(todayInAthens()));
   }
 
   async get(caseId: string): Promise<Case | null> {

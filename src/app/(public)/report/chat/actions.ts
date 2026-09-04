@@ -32,6 +32,7 @@ import { CarriedSlots, parseIntent } from "./chat-state";
 import { aiEnv } from "@/lib/assess/env";
 import { extractReport } from "@/lib/extract/extract";
 import type { ChatState } from "./chat-state";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * The intake conversation, as one Server Action with three intents.
@@ -378,7 +379,13 @@ async function submitReport(
     const record = intakeToCase({
       slots: intake.slots,
       reference,
-      receivedAt: now.toISOString().slice(0, 10),
+      /*
+        Day 0 of the regulatory clock, in the clinic's timezone rather than
+        UTC. A report arriving at 01:00 in Athens was being stamped with the
+        previous day, so the 15-day deadline it started was a day out from the
+        date every screen shows beside it.
+      */
+      receivedAt: todayInAthens(now),
       now: now.toISOString(),
       ids: {
         caseId: crypto.randomUUID(),

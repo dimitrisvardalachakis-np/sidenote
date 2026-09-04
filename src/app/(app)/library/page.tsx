@@ -11,6 +11,7 @@ import {
   type SafetyDocument,
 } from "@/lib/schemas";
 import { DOCUMENT_KIND_LABELS } from "@/lib/schemas/document-upload";
+import { todayInAthens } from "@/lib/format/datetime";
 
 export const metadata: Metadata = {
   title: "Library — SideNote",
@@ -69,7 +70,7 @@ export default async function LibraryPage({
     fact about the shelf; hiding half the shelf and then reporting a gap would
     invent one.
   */
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const cases = (await loadQueue(today)).map((entry) => entry.record);
   const coverage = coverageBySubstance(documents);
 

@@ -30,6 +30,7 @@
  * and is tested that way.
  */
 import type { DocumentKind, SafetyDocument } from "@/lib/schemas";
+import { formatDate } from "@/lib/format/datetime";
 
 export type DuplicateFinding =
   /** Byte-identical extracted text. Refused outright. */
@@ -103,7 +104,7 @@ export function findDuplicate(
  */
 export function duplicateMessage(finding: DuplicateFinding): string {
   const { held } = finding;
-  const when = held.uploadedAt.slice(0, 10);
+  const when = formatDate(held.uploadedAt);
   const size = `${held.chunkCount} passage${held.chunkCount === 1 ? "" : "s"}`;
   const indexed =
     held.status === "embedded" ? "indexed for semantic search" : "keyword search only";

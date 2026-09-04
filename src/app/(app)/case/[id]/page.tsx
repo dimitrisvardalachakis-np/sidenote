@@ -29,6 +29,7 @@ import { getCaseCoordination } from "@/lib/coordinator";
 import { readAuditTrail } from "@/lib/store/audit-store";
 import { loadCorpus } from "@/lib/store/corpus";
 import { requireSession } from "@/lib/auth";
+import { todayInAthens } from "@/lib/format/datetime";
 import { claimCase, recordRuling, releaseCase, runAssessment } from "./actions";
 import { AssessControl } from "@/components/assess-control";
 import {
@@ -64,7 +65,7 @@ export async function generateMetadata({
   params,
 }: PageProps<"/case/[id]">): Promise<Metadata> {
   const { id } = await params;
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const entry = await findQueueEntry(today, id);
   if (entry === null) return { title: "Case not found — SideNote" };
 
@@ -92,7 +93,7 @@ export async function generateMetadata({
 
 export default async function CasePage({ params }: PageProps<"/case/[id]">) {
   const { id } = await params;
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const session = await requireSession();
 
   const entry = await findQueueEntry(today, id);

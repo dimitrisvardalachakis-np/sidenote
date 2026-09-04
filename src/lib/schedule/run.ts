@@ -1,6 +1,7 @@
 import "server-only";
 import { recordAudit } from "@/lib/audit-log";
 import type { IsoDate } from "@/lib/schemas";
+import { todayInAthens } from "@/lib/format/datetime";
 import { runDeadlineSweep } from "./deadline-sweep";
 import { runLabelDiff } from "./label-diff";
 
@@ -23,12 +24,20 @@ export const CRON = {
   labelDiff: "0 3 * * *",
 } as const;
 
-/** The scheduled day, or today when the platform hands us something absurd. */
+/**
+ * The scheduled day, or today when the platform hands us something absurd.
+ *
+ * Athens civil date, the same one the queue and the case screen count from.
+ * Both crons fire in the small hours UTC, where the two calendars happen to
+ * agree — but "happens to agree" is not a property to leave a deadline sweep
+ * resting on. A sweep reasoning about a different day than the screen showing
+ * the deadline is how a case reads "due today" and is never swept.
+ */
 function isoDateOf(scheduledTime: number): IsoDate {
   const at = new Date(scheduledTime);
   return Number.isFinite(at.getTime())
-    ? (at.toISOString().slice(0, 10) as IsoDate)
-    : (new Date().toISOString().slice(0, 10) as IsoDate);
+    ? todayInAthens(at)
+    : todayInAthens();
 }
 
 export async function runScheduled(

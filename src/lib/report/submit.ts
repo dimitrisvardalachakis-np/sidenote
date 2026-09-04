@@ -11,6 +11,7 @@ import {
 } from "@/lib/schemas/report";
 import { guardPublicSubmission, type Caller } from "@/lib/protection/guard";
 import { reportToCase } from "./to-case";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * The one place a public report becomes a case.
@@ -136,7 +137,13 @@ export async function submitReport(
     const record = reportToCase({
       draft: gated.data,
       reference,
-      receivedAt: now.toISOString().slice(0, 10),
+      /*
+        Day 0 of the regulatory clock, in the clinic's timezone rather than
+        UTC. A report arriving at 01:00 in Athens was being stamped with the
+        previous day, so the 15-day deadline it started was a day out from the
+        date every screen shows beside it.
+      */
+      receivedAt: todayInAthens(now),
       now: now.toISOString(),
       ids: {
         caseId: crypto.randomUUID(),

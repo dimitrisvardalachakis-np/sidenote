@@ -3,6 +3,7 @@ import { requireSession } from "@/lib/auth";
 import { loadQueue } from "@/lib/queue/entries";
 import { lookupCaseReference } from "@/lib/queue/reference";
 import type { IsoDate } from "@/lib/schemas";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * "Look at SN-2026-000104" — the jump box in the reviewer rail posts here.
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
   await requireSession();
 
   const typed = request.nextUrl.searchParams.get("ref") ?? "";
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const entries = await loadQueue(today);
 
   const result = lookupCaseReference(

@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { IdempotentForm } from "@/components/idempotent-form";
+import { formatDateTime } from "@/lib/format/datetime";
 import type { CaseClaim } from "@/lib/case/claim";
 import {
   INITIAL_CLAIM_STATE,
@@ -115,7 +116,9 @@ export function ClaimPanel({
         <div className="rounded-card border border-rule border-l-[3px] border-l-ink bg-surface px-4 py-3 shadow-card">
           <p className="text-base">
             Held by <span className="font-medium">{claim.displayName}</span> since{" "}
-            <span className="font-mono tabular-nums">{timeOf(claim.heldSince)}</span>
+            <span className="font-mono tabular-nums">
+              {formatDateTime(claim.heldSince)}
+            </span>
           </p>
           <p className="mt-1 text-meta text-slate">
             You can read everything on this case, including the evidence and the
@@ -145,7 +148,7 @@ export function ClaimPanel({
           <p className="text-base text-steady">
             You have this case since{" "}
             <span className="font-mono tabular-nums">
-              {timeOf(claim.heldSince)}
+              {formatDateTime(claim.heldSince)}
             </span>
           </p>
           {!arbitrated && (
@@ -199,10 +202,3 @@ export function ClaimPanel({
   );
 }
 
-/** HH:MM from an ISO timestamp, or the date when it was not today. */
-function timeOf(iso: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  return iso.slice(0, 10) === today
-    ? iso.slice(11, 16)
-    : iso.slice(0, 16).replace("T", " ");
-}

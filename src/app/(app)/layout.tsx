@@ -8,6 +8,7 @@ import { buildRows } from "@/lib/queue/view";
 import { countAll } from "@/lib/queue/filter";
 import { getCaseCoordination } from "@/lib/coordinator";
 import type { IsoDate } from "@/lib/schemas";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * The single authentication gate, and the reviewer chrome.
@@ -38,7 +39,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     beside it about how many cases are late is worse than a sidebar with no
     number at all.
   */
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const rows = buildRows({
     entries: await loadQueue(today),
     today,

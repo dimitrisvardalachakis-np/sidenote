@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { IdempotentForm } from "@/components/idempotent-form";
+import { formatDateTime } from "@/lib/format/datetime";
 import {
   EXPEDITED_WINDOW_DAYS,
   type ExpectednessDetermination,
@@ -234,7 +235,7 @@ export function RulingForm({
         <p className="mt-4 border-t border-rule pt-3 font-mono text-micro uppercase tracking-label text-slate">
           Ruled by <span className="text-ink">{existing.decidedBy}</span> ·{" "}
           <span className="normal-case tracking-normal">
-            {existing.decidedAt.slice(0, 16).replace("T", " ")}
+            {formatDateTime(existing.decidedAt)}
           </span>
         </p>
       )}

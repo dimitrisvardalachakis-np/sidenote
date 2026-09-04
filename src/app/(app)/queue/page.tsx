@@ -25,6 +25,7 @@ import {
 import { getCaseCoordination } from "@/lib/coordinator";
 import { readLastVisit, recordVisit } from "@/lib/queue/last-visit";
 import type { IsoDate } from "@/lib/schemas";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * The reviewer queue. A Server Component — the case data never crosses to the
@@ -41,7 +42,7 @@ import type { IsoDate } from "@/lib/schemas";
  * the thing most likely to be late.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
   const entries = await loadQueue(today);
   const rows = buildRows({
     entries,
@@ -64,7 +65,7 @@ export default async function QueuePage({
 }: PageProps<"/queue">) {
   const session = await requireSession();
   const params = await searchParams;
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
 
   const filters = parseFilters(readParam(params["filter"]));
   const sort = parseSort(readParam(params["sort"]));

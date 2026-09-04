@@ -1,4 +1,5 @@
 import type { AuditRecord } from "@/lib/audit";
+import { formatDateTime } from "@/lib/format/datetime";
 
 /**
  * What has happened to this case.
@@ -36,7 +37,7 @@ export function CaseHistory({ records }: { records: readonly AuditRecord[] }) {
               className="grid gap-x-3 border-t border-rule py-2 first:border-t-0 sm:grid-cols-[10rem_minmax(0,1fr)]"
             >
               <span className="font-mono text-meta tabular-nums text-slate-quiet">
-                {record.timestamp.slice(0, 16).replace("T", " ")}
+                {formatDateTime(record.timestamp)}
               </span>
               <div className="flex flex-wrap items-baseline gap-x-3">
                 <span className="text-meta text-ink">

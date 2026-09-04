@@ -15,6 +15,7 @@ import {
   nodePath,
 } from "./backing";
 import { CACHE_KEY, getCache } from "@/lib/cache/kv";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /**
  * Assessments produced by an actual model run, as opposed to the seeded ones.
@@ -194,7 +195,7 @@ class QueueInvalidating implements AssessmentStore {
     await this.#inner.put(record);
     const cache = await getCache();
     await cache.drop(
-      CACHE_KEY.triageQueue(new Date().toISOString().slice(0, 10)),
+      CACHE_KEY.triageQueue(todayInAthens()),
     );
   }
 
