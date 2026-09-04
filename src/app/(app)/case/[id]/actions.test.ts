@@ -177,7 +177,7 @@ function countOf(
 describe("a replayed submission is recorded once", () => {
   it("logs the retry as a replay, not as a second grant", async () => {
     await startSession("reviewer-demo");
-    const caseId = "00000002-0000-4000-8000-000000000107";
+    const caseId = "00000002-0000-4000-8000-000000000101";
     const key = "one-press-of-one-button";
 
     const { lines } = auditLines();

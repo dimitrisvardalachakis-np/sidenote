@@ -1,9 +1,27 @@
 /**
  * The seeded queue is data, but it is data the two screens are designed
- * around, so it gets the same treatment as code. These tests assert the
- * spread the brief asked for actually exists — a fixture set that quietly
- * drifts into "all twelve cases look the same" would make the screens look
- * finished while proving nothing.
+ * around, so it gets the same treatment as code.
+ *
+ * THESE TESTS USED TO ASSERT A SPREAD, and most of them no longer can. The
+ * fixture set was twelve cases chosen to exercise every state the screens can
+ * render — a listed reaction with no clock, an outage on the company side, an
+ * incomplete case, a flag the reporter merely ticked — and it is now three,
+ * because the queue became a demo script. Every assertion that counted twelve,
+ * or demanded all three panel states, or looked for the one incomplete case,
+ * was deleted rather than loosened: a test rewritten from `toBe(12)` to
+ * `toBeGreaterThan(0)` still reads like a guarantee and guarantees nothing.
+ *
+ * The behaviours they covered are tested directly and still are —
+ * `expeditedClock`, `caseValidity` and `spanMatchesNarrative` in
+ * `schemas/schemas.test.ts`, the three panel states in
+ * `components/evidence.test.tsx`. What is genuinely gone is the guarantee that
+ * the SEEDED QUEUE exercises them. If the fixture set grows back, the spread
+ * assertions are worth restoring with it; the git history has them.
+ *
+ * What remains below is everything that is still true of three cases, and it
+ * is not nothing: determinism, the coherence of the timeline, the
+ * company/public citation boundary, and the two clock states the demo turns
+ * on.
  */
 import { describe, expect, it } from "vitest";
 import {
@@ -33,13 +51,26 @@ const clockFor = (index: number) => {
 };
 
 describe("the seeded queue", () => {
-  it("has twelve cases", () => {
-    expect(cases).toHaveLength(12);
+  it("has three cases", () => {
+    expect(cases).toHaveLength(3);
   });
 
   it("gives every case a distinct reference and id", () => {
-    expect(new Set(cases.map((c) => c.record.reference)).size).toBe(12);
-    expect(new Set(cases.map((c) => c.record.id)).size).toBe(12);
+    expect(new Set(cases.map((c) => c.record.reference)).size).toBe(3);
+    expect(new Set(cases.map((c) => c.record.id)).size).toBe(3);
+  });
+
+  /*
+    The three the demo opens on, by name. A fixture silently disappearing is
+    the failure this catches — the queue would simply be shorter, and nothing
+    else in the suite would notice.
+  */
+  it("is the three the demo script names", () => {
+    expect(cases.map((c) => c.record.reference)).toEqual([
+      "SN-2026-000101",
+      "SN-2026-000102",
+      "SN-2026-000105",
+    ]);
   });
 
   it("is deterministic for a given date", () => {
@@ -57,21 +88,16 @@ describe("the seeded queue", () => {
 describe("clock states", () => {
   const states = cases.map((_, i) => clockFor(i).state);
 
-  it("covers all three states", () => {
-    expect(new Set(states)).toEqual(
-      new Set(["overdue", "running", "not_applicable"]),
-    );
+  /*
+    Two states, not three. `not_applicable` left with the nine cases that
+    demonstrated it; `expeditedClock` still has its own tests for all three.
+  */
+  it("covers the overdue case and the running one", () => {
+    expect(new Set(states)).toEqual(new Set(["overdue", "running"]));
   });
 
   it("has at least one overdue case", () => {
     expect(states.filter((s) => s === "overdue").length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("includes a case due today, still running at zero", () => {
-    const dueToday = cases
-      .map((_, i) => clockFor(i))
-      .find((c) => c.state === "running" && c.daysRemaining === 0);
-    expect(dueToday).toBeDefined();
   });
 
   it("never starts a clock on a listed reaction", () => {
@@ -80,16 +106,6 @@ describe("clock states", () => {
         expect(clockFor(index).state).toBe("not_applicable");
       }
     }
-  });
-
-  it("never starts a clock when the company source could not be read", () => {
-    // An outage is not evidence of absence. SN-2026-000107 exists to prove
-    // that a source_unavailable listedness cannot begin a 15-day obligation.
-    const unavailable = cases.findIndex(
-      (c) => c.assessment.listedness.state === "source_unavailable",
-    );
-    expect(unavailable).toBeGreaterThanOrEqual(0);
-    expect(clockFor(unavailable).state).toBe("not_applicable");
   });
 
   it("never starts a clock on a case with no serious flag", () => {
@@ -102,36 +118,37 @@ describe("clock states", () => {
   });
 });
 
-describe("the two disagreements", () => {
+describe("the disagreement", () => {
   const disagreeing = cases.filter((c) => sourcesDisagree(c.assessment));
 
-  it("has exactly two", () => {
-    expect(disagreeing).toHaveLength(2);
-  });
-
-  it("covers both directions", () => {
-    // The determination now lives on the ruling and nowhere else, so this
-    // reads it from the reviewer's decision rather than from the finding.
-    const directions = disagreeing.map(
-      (c) => c.assessment.ruling?.listedness ?? "?",
-    );
-    expect(new Set(directions)).toEqual(new Set(["listed", "unlisted"]));
+  /*
+    One, where there were two. The pair used to run in both directions —
+    Dermacil with the CCDS ahead of the label, Pulmoxa with the label ahead of
+    the CCDS — and only the second survives here. The other direction is still
+    in the corpus (`documents.test.ts` pins it) and is reachable by assessing
+    a Hepalex case for real; it is no longer pre-baked into a fixture.
+  */
+  it("has one, and the label is the source that is ahead", () => {
+    expect(disagreeing).toHaveLength(1);
+    // The determination lives on the ruling and nowhere else, so this reads
+    // the reviewer's decision rather than the finding.
+    expect(disagreeing[0]?.assessment.ruling?.listedness).toBe("unlisted");
+    expect(disagreeing[0]?.assessment.ruling?.expectedness).toBe("expected");
   });
 });
 
 describe("panel states", () => {
-  it("exercises grounded, no_result and source_unavailable on the company side", () => {
-    const states = new Set(cases.map((c) => c.assessment.listedness.state));
-    expect(states).toEqual(
-      new Set(["grounded", "no_result", "source_unavailable"]),
-    );
-  });
-
-  it("exercises all three on the public side too", () => {
-    const states = new Set(cases.map((c) => c.assessment.expectedness.state));
-    expect(states).toEqual(
-      new Set(["grounded", "no_result", "source_unavailable"]),
-    );
+  /*
+    All three cases are grounded on both sides now. `no_result` and
+    `source_unavailable` are no longer represented in the fixture at all —
+    they are reached by assessing for real against a corpus that does not
+    cover a drug, and rendered under test in `components/evidence.test.tsx`.
+  */
+  it("is grounded on both sides of every case", () => {
+    for (const { assessment } of cases) {
+      expect(assessment.listedness.state).toBe("grounded");
+      expect(assessment.expectedness.state).toBe("grounded");
+    }
   });
 
   it("never cites across the company/public boundary", () => {
@@ -164,30 +181,38 @@ describe("seriousness evidence", () => {
         }
       }
     }
-    expect(checked).toBeGreaterThan(5);
+    // Five spans across three cases: three on 101, one on 102, one on 105.
+    expect(checked).toBe(5);
   });
 
-  it("includes a flag the reporter merely declared, with no phrase", () => {
+  /*
+    Every surviving flag was raised from the narrative with a phrase to point
+    at. The `declared` basis — a criterion the reporter simply ticked, with no
+    span — left with SN-2026-000111, and this asserts the absence rather than
+    leaving a reader to assume the coverage is still there. The rendering of a
+    declared flag is exercised by the public intake's own tests.
+  */
+  it("no longer carries a flag the reporter merely declared", () => {
     const declared = cases.find(({ record }) =>
       record.reactions.some((r) =>
         SERIOUSNESS_CRITERIA.some((c) => r.seriousness[c]?.basis === "declared"),
       ),
     );
-    expect(declared).toBeDefined();
-    expect(declared?.record.origin).toBe("public_form");
+    expect(declared).toBeUndefined();
   });
 });
 
 describe("validity", () => {
-  it("includes an incomplete case, so the checklist has something to say", () => {
-    const incomplete = cases.filter((c) => !caseValidity(c.record).isValid);
-    expect(incomplete.length).toBeGreaterThanOrEqual(1);
-    expect(caseValidity(incomplete[0]!.record).missing).toContain("reporter");
-  });
-
-  it("has most cases valid", () => {
-    const valid = cases.filter((c) => caseValidity(c.record).isValid);
-    expect(valid.length).toBeGreaterThanOrEqual(10);
+  /*
+    All three are complete. The incomplete case that gave the validity
+    checklist something to say went with SN-2026-000109; `caseValidity` is
+    tested directly against every missing-element combination in
+    `schemas/schemas.test.ts`.
+  */
+  it("has every case valid on all four elements", () => {
+    for (const { record } of cases) {
+      expect(caseValidity(record).isValid).toBe(true);
+    }
   });
 });
 

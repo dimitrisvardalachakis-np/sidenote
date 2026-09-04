@@ -1,5 +1,5 @@
 /**
- * Twelve synthetic cases, and the AI output that would accompany them.
+ * Three synthetic cases, and the AI output that would accompany them.
  *
  * Everything here is invented. The drugs do not exist, the patients do not
  * exist, and the quoted "CCDS" and "label" passages were written for this
@@ -20,6 +20,21 @@
  * rulings, each with a named reviewer and a stated reason. The readings are
  * `unavailable`, because that is the honest state of a system with no
  * Workers AI binding, and it is the state step 8 has to prove survivable.
+ *
+ * THERE USED TO BE TWELVE, chosen to exercise every state the screens can
+ * render — a listed reaction with no clock, an outage on the company side, an
+ * incomplete case, a flag the reporter merely ticked. They were cut to three
+ * because the queue is now a demo script rather than a coverage matrix: six
+ * cases that each show one thing, three of them real submitted rows. What
+ * survives here is the overdue case, the case with a clock still running, and
+ * the disagreement.
+ *
+ * The states the other nine demonstrated are not untested — `expeditedClock`,
+ * `caseValidity` and `spanMatchesNarrative` are covered directly in
+ * `schemas/schemas.test.ts`, and the panel states in
+ * `components/evidence.test.tsx`. What was lost is the guarantee that the
+ * SEEDED QUEUE exercises them, and `seed.test.ts` no longer claims it does.
+ * If this file grows back, that spread is worth restoring with it.
  *
  * `buildSeedCases(today)` takes the date rather than reading a clock, for the
  * same reason expeditedClock does: the queue must be reproducible in a test
@@ -98,6 +113,14 @@ function fixtureUuid(kind: number, n: number): string {
 // Invented products
 // ---------------------------------------------------------------------------
 
+/*
+  Two, where there were five. Cardiquel, Dermacil and NRV-114 left with the
+  cases that named them. Their DOCUMENTS are still in `fixtures/documents.ts`
+  and deliberately so — the library is meant to hold more than the queue is
+  working on, and an uploaded CCDS for a drug with no open case is the ordinary
+  state of a real shelf.
+*/
+
 interface Product {
   readonly brand: string;
   readonly substance: string;
@@ -111,33 +134,14 @@ const HEPALEX: Product = {
   marketed: true,
   indication: "hypertension",
 };
-const CARDIQUEL: Product = {
-  brand: "Cardiquel",
-  substance: "cardiquelin",
-  marketed: true,
-  indication: "atrial fibrillation",
-};
-const DERMACIL: Product = {
-  brand: "Dermacil",
-  substance: "dermacilin",
-  marketed: true,
-  indication: "plaque psoriasis",
-};
 const PULMOXA: Product = {
   brand: "Pulmoxa",
   substance: "pulmoxetine",
   marketed: true,
   indication: "idiopathic pulmonary fibrosis",
 };
-const NEUROVAST: Product = {
-  brand: "NRV-114",
-  substance: "vastimab",
-  marketed: false,
-  indication: "relapsing multiple sclerosis (trial NRV-114-003)",
-};
 
 const CCDS_DOC = DocumentId.parse(fixtureUuid(UUID_KIND.document, 1));
-const IB_DOC = DocumentId.parse(fixtureUuid(UUID_KIND.document, 2));
 const LABEL_DOC = DocumentId.parse(fixtureUuid(UUID_KIND.document, 3));
 
 function companyCitation(
@@ -148,16 +152,6 @@ function companyCitation(
   return {
     chunkId: ChunkId.parse(chunk),
     documentId: CCDS_DOC,
-    sourceType: "company",
-    section,
-    quote,
-  };
-}
-
-function ibCitation(section: string, quote: string, chunk: string): Citation {
-  return {
-    chunkId: ChunkId.parse(chunk),
-    documentId: IB_DOC,
     sourceType: "company",
     section,
     quote,
@@ -208,7 +202,7 @@ const NO_READING: ModelReading = {
 };
 
 // ---------------------------------------------------------------------------
-// The twelve
+// The three
 // ---------------------------------------------------------------------------
 
 interface CaseSpec {
@@ -384,128 +378,7 @@ const SPECS: readonly CaseSpec[] = [
     },
   },
 
-  // 3 ─ Serious but listed. No clock: the reaction is already known.
-  {
-    n: 103,
-    reference: "SN-2026-000103",
-    product: CARDIQUEL,
-    origin: "email",
-    receivedDaysAgo: 6,
-    status: "assessed",
-    assignedTo: "reviewer-demo",
-    narrative:
-      "Widespread itchy rash appeared on the third day of treatment. The patient attended A&E and was admitted for observation overnight. The rash settled with antihistamines after the drug was withdrawn.",
-    verbatimTerm: "widespread itchy rash",
-    meddraPreferredTerm: "Rash generalised",
-    outcome: "recovered",
-    narrativeFlags: { hospitalisation: "admitted for observation overnight" },
-    hospitalisationKind: "initial",
-    patient: { initials: "K.O.", ageYears: 44, sex: "female" },
-    reporter: {
-      name: "P. Nowak",
-      email: "p.nowak@example.org",
-      qualification: "pharmacist",
-    },
-    ruling: {
-      listedness: "listed",
-      expectedness: "expected",
-      by: "reviewer-demo",
-      rationale:
-        "The reaction is described in CCDS 4.8 and in the FDA label at comparable frequency; no new information.",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "ccds",
-      citations: [
-        companyCitation(
-          "4.8 Undesirable effects › Skin and subcutaneous tissue disorders",
-          "Rash, including generalised rash requiring hospitalisation, occurred in 1.2% of patients.",
-          "ccds-cardiquel#33",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "grounded",
-      citations: [
-        labelCitation(
-          "6.1 Clinical Trials Experience",
-          "Rash occurred in 1.2% of patients receiving CARDIQUEL.",
-          "lbl-cardiquel#9",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      labelSetId: "3c81-cardiquel-2024",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 4 ─ DISAGREEMENT. Company document ahead of the label.
-  {
-    n: 104,
-    reference: "SN-2026-000104",
-    product: DERMACIL,
-    origin: "literature",
-    receivedDaysAgo: 9,
-    status: "assessed",
-    assignedTo: "reviewer-demo",
-    narrative:
-      "Case report describes a 33-year-old woman who developed painful mucosal ulceration and skin detachment over 30% of body surface area after four weeks of Dermacil. A diagnosis of Stevens-Johnson syndrome was made and she required intensive care.",
-    verbatimTerm: "Stevens-Johnson syndrome",
-    meddraPreferredTerm: "Stevens-Johnson syndrome",
-    outcome: "recovered_with_sequelae",
-    narrativeFlags: {
-      life_threatening: "skin detachment over 30% of body surface area",
-      hospitalisation: "required intensive care",
-    },
-    hospitalisationKind: "initial",
-    patient: { initials: "L.F.", ageYears: 33, sex: "female" },
-    reporter: {
-      name: "J. Okafor",
-      email: "j.okafor@example.org",
-      qualification: "physician",
-    },
-    ruling: {
-      listedness: "listed",
-      expectedness: "unexpected",
-      by: "reviewer-demo",
-      rationale:
-        "The CCDS was updated to include this reaction; the FDA label has not yet caught up. Company document takes precedence for listedness.",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "ccds",
-      citations: [
-        companyCitation(
-          "4.8 Undesirable effects › Skin and subcutaneous tissue disorders",
-          "Severe cutaneous adverse reactions, including Stevens-Johnson syndrome and toxic epidermal necrolysis, have been reported very rarely. Added in CCDS version 9.0, March 2026.",
-          "ccds-dermacil#57",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "grounded",
-      citations: [
-        labelCitation(
-          "6 ADVERSE REACTIONS",
-          "The most common adverse reactions were injection site erythema, upper respiratory tract infection and headache.",
-          "lbl-dermacil#12",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      labelSetId: "77bd-dermacil-2024",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 5 ─ DISAGREEMENT the other way, and the clock is running.
+  // 3 ─ DISAGREEMENT: the public label describes it, the CCDS does not.
   {
     n: 105,
     reference: "SN-2026-000105",
@@ -560,339 +433,6 @@ const SPECS: readonly CaseSpec[] = [
       reading: NO_READING,
       narrative: null,
       labelSetId: "51ae-pulmoxa-2026",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 6 ─ Not serious. No flags at all.
-  {
-    n: 106,
-    reference: "SN-2026-000106",
-    product: CARDIQUEL,
-    origin: "public_form",
-    receivedDaysAgo: 3,
-    status: "received",
-    assignedTo: null,
-    narrative:
-      "Felt queasy for about an hour after each dose during the first week. It settled by itself and I am still taking the tablets.",
-    verbatimTerm: "queasy",
-    meddraPreferredTerm: "Nausea",
-    outcome: "recovered",
-    patient: { initials: "B.A.", ageYears: 52, sex: "female" },
-    reporter: {
-      name: "B. Andersson",
-      email: "b.andersson@example.org",
-      qualification: "consumer_or_carer",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "ccds",
-      citations: [
-        companyCitation(
-          "4.8 Undesirable effects",
-          "The most frequently reported adverse reactions are nausea (12.4%), headache (9.1%) and fatigue (7.8%).",
-          "ccds-cardiquel#21",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "grounded",
-      citations: [
-        labelCitation(
-          "6.1 Clinical Trials Experience",
-          "Nausea was reported by 12% of patients.",
-          "lbl-cardiquel#8",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      labelSetId: "3c81-cardiquel-2024",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 7 ─ SOURCE UNAVAILABLE on the company side. No determination is possible,
-  //     so no clock can start — the absence of an answer is not "unlisted".
-  {
-    n: 107,
-    reference: "SN-2026-000107",
-    product: NEUROVAST,
-    origin: "clinical_trial",
-    receivedDaysAgo: 4,
-    status: "in_review",
-    assignedTo: "reviewer-demo",
-    narrative:
-      "Trial subject developed a fever of 39.1C with a neutrophil count of 0.4 x10^9/L on day 21. Study drug was held and the subject was admitted for intravenous antibiotics. Counts recovered over five days.",
-    verbatimTerm: "febrile neutropenia",
-    meddraPreferredTerm: "Febrile neutropenia",
-    outcome: "recovered",
-    narrativeFlags: {
-      hospitalisation: "admitted for intravenous antibiotics",
-      life_threatening: "neutrophil count of 0.4 x10^9/L",
-    },
-    hospitalisationKind: "initial",
-    patient: { initials: "S.V.", ageYears: 29, sex: "female" },
-    reporter: {
-      name: "Site 004 Investigator",
-      email: "site004@example.org",
-      qualification: "physician",
-    },
-    listedness: {
-      state: "source_unavailable",
-      documentKind: "investigators_brochure",
-      reason: "Vectorize query timed out after 5s (company namespace)",
-      attemptedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "no_result",
-      query: "febrile neutropenia vastimab",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 8 ─ NO RESULT on the public side, which is correct: an investigational
-  //     product has no FDA label to be expected against.
-  {
-    n: 108,
-    reference: "SN-2026-000108",
-    product: NEUROVAST,
-    origin: "clinical_trial",
-    receivedDaysAgo: 6,
-    status: "assessed",
-    assignedTo: "reviewer-demo",
-    narrative:
-      "During the second infusion the subject developed flushing, throat tightness and hypotension. The infusion was stopped immediately and adrenaline was given. Symptoms resolved within the hour and the subject was observed overnight.",
-    verbatimTerm: "infusion reaction with throat tightness",
-    meddraPreferredTerm: "Anaphylactic reaction",
-    outcome: "recovered",
-    narrativeFlags: {
-      life_threatening: "throat tightness and hypotension",
-      hospitalisation: "observed overnight",
-    },
-    hospitalisationKind: "prolonged",
-    patient: { initials: "D.K.", ageYears: 37, sex: "male" },
-    reporter: {
-      name: "Site 011 Investigator",
-      email: "site011@example.org",
-      qualification: "physician",
-    },
-    ruling: {
-      listedness: "unlisted",
-      expectedness: "indeterminate",
-      by: "reviewer-demo",
-      rationale:
-        "Not described in the CCDS. No label passage could be retrieved, so expectedness cannot be stated either way.",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "investigators_brochure",
-      citations: [
-        ibCitation(
-          "6.3 Reference Safety Information",
-          "Infusion-related reactions were mild to moderate and comprised flushing and headache. No anaphylactic reactions have been observed to date.",
-          "ib-nrv114-v4#63",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "no_result",
-      query: "anaphylaxis vastimab NRV-114",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 9 ─ Incomplete. The reporter cannot be identified, so it is not yet a
-  //     valid case and has not been assessed.
-  {
-    n: 109,
-    reference: "SN-2026-000109",
-    product: HEPALEX,
-    origin: "email",
-    receivedDaysAgo: 2,
-    status: "received",
-    assignedTo: null,
-    narrative:
-      "Forwarded message mentions dizziness on standing after starting a blood pressure tablet. No contact details were included and the sender address bounced.",
-    verbatimTerm: "dizziness on standing",
-    meddraPreferredTerm: null,
-    outcome: "unknown",
-    patient: { initials: null, ageYears: 67, sex: null },
-    reporter: null,
-    listedness: {
-      state: "no_result",
-      documentKind: "ccds",
-      query: "dizziness postural hypotension hepalexin",
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "no_result",
-      query: "dizziness postural hypotension hepalexin",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 10 ─ Due today. Zero days left is still "running", not overdue.
-  {
-    n: 110,
-    reference: "SN-2026-000110",
-    product: DERMACIL,
-    origin: "email",
-    receivedDaysAgo: 15,
-    status: "assessed",
-    assignedTo: "reviewer-demo",
-    narrative:
-      "Sudden swelling of the lips and tongue occurred within an hour of the second injection. The patient had difficulty breathing and called an ambulance. Treated with adrenaline and steroids in the emergency department.",
-    verbatimTerm: "swelling of lips and tongue",
-    meddraPreferredTerm: "Angioedema",
-    outcome: "recovered",
-    narrativeFlags: { life_threatening: "difficulty breathing" },
-    patient: { initials: "N.P.", ageYears: 48, sex: "female" },
-    reporter: {
-      name: "E. Rossi",
-      email: "e.rossi@example.org",
-      qualification: "other_health_professional",
-    },
-    ruling: {
-      listedness: "unlisted",
-      expectedness: "unexpected",
-      by: "reviewer-demo",
-      rationale:
-        "Absent from both the CCDS and the FDA label. Life-threatening airway swelling, so the expedited clock applies.",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "ccds",
-      citations: [
-        companyCitation(
-          "4.8 Undesirable effects › Immune system disorders",
-          "Hypersensitivity reactions have been reported. Angioedema has not been observed in clinical studies.",
-          "ccds-dermacil#44",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "grounded",
-      citations: [
-        labelCitation(
-          "6 ADVERSE REACTIONS",
-          "Hypersensitivity reactions including urticaria were reported in less than 1% of patients.",
-          "lbl-dermacil#13",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      labelSetId: "77bd-dermacil-2024",
-      retrievedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 11 ─ Came in through the public form, so the seriousness flag is one the
-  //      reporter TICKED. There is no phrase to highlight, and the case screen
-  //      has to say so rather than invent one.
-  {
-    n: 111,
-    reference: "SN-2026-000111",
-    product: PULMOXA,
-    origin: "public_form",
-    receivedDaysAgo: 4,
-    status: "received",
-    assignedTo: null,
-    narrative:
-      "My husband started this medicine in June. He got very short of breath and they kept him in for four nights. He is home now but still not right.",
-    verbatimTerm: "very short of breath",
-    meddraPreferredTerm: null,
-    outcome: "not_recovered",
-    declaredFlags: ["hospitalisation"],
-    hospitalisationKind: "initial",
-    patient: { initials: "G.W.", ageYears: 74, sex: "male" },
-    reporter: {
-      name: "M. Wallace",
-      email: "m.wallace@example.org",
-      qualification: "consumer_or_carer",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "ccds",
-      citations: [
-        companyCitation(
-          "4.8 Undesirable effects › Respiratory, thoracic and mediastinal disorders",
-          "Cough and dyspnoea were reported commonly. No cases of interstitial lung disease were identified in the pooled safety population.",
-          "ccds-pulmoxa#28",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "source_unavailable",
-      reason: "openFDA returned 503 (upstream unavailable)",
-      attemptedAt: RETRIEVED_AT,
-    },
-  },
-
-  // 12 ─ Finished. Not serious, listed, closed.
-  {
-    n: 112,
-    reference: "SN-2026-000112",
-    product: HEPALEX,
-    origin: "public_form",
-    receivedDaysAgo: 28,
-    status: "closed",
-    assignedTo: "reviewer-demo",
-    narrative:
-      "Mild headache for the first three days of treatment, then nothing. I carried on taking it and have had no further trouble.",
-    verbatimTerm: "mild headache",
-    meddraPreferredTerm: "Headache",
-    outcome: "recovered",
-    patient: { initials: "T.C.", ageYears: 39, sex: "male" },
-    reporter: {
-      name: "T. Cole",
-      email: "t.cole@example.org",
-      qualification: "consumer_or_carer",
-    },
-    ruling: {
-      listedness: "listed",
-      expectedness: "expected",
-      by: "reviewer-demo",
-      rationale:
-        "Described in both the CCDS and the FDA label. Closed with no expedited action required.",
-    },
-    listedness: {
-      state: "grounded",
-      documentKind: "ccds",
-      citations: [
-        companyCitation(
-          "4.8 Undesirable effects",
-          "The most frequently reported adverse reactions are nausea, headache and fatigue.",
-          "ccds-7.2#21",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      retrievedAt: RETRIEVED_AT,
-    },
-    expectedness: {
-      state: "grounded",
-      citations: [
-        labelCitation(
-          "6 ADVERSE REACTIONS",
-          "Headache was reported by 9% of patients.",
-          "lbl-hepalex#17",
-        ),
-      ],
-      reading: NO_READING,
-      narrative: null,
-      labelSetId: "9f2a-hepalex-2025",
       retrievedAt: RETRIEVED_AT,
     },
   },

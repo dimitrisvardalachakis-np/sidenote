@@ -34,6 +34,12 @@ import type { IsoDateTime } from "@/lib/schemas";
   fixed `expires_at`, which is exactly the thing that goes stale; computing it
   per read is the whole point.
 */
+/*
+  ONE, where there were two. The second seeded holder was on SN-2026-000108,
+  which left with the fixture cut — a claim on a case that no longer exists is
+  invisible rather than wrong, which is why it needed removing by hand. The
+  survivor is the contested write the demo walks through.
+*/
 const SEEDED: readonly (readonly [string, Omit<CaseClaim, "expiresAt">])[] = [
   [
     "00000002-0000-4000-8000-000000000105",
@@ -41,14 +47,6 @@ const SEEDED: readonly (readonly [string, Omit<CaseClaim, "expiresAt">])[] = [
       reviewerId: "reviewer-ao",
       displayName: "A. Okonkwo",
       heldSince: "2026-08-29T09:12:00Z" as IsoDateTime,
-    },
-  ],
-  [
-    "00000002-0000-4000-8000-000000000108",
-    {
-      reviewerId: "reviewer-mb",
-      displayName: "M. Bergström",
-      heldSince: "2026-08-29T11:47:00Z" as IsoDateTime,
     },
   ],
 ];
