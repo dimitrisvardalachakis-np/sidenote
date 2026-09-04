@@ -9,6 +9,18 @@
  *
  * Uploaded documents are merged with these at read time. Nothing here is
  * written to disk.
+ *
+ * EVERY PRODUCT IN THE SEEDED QUEUE HAS A DOCUMENT HERE, and that is a
+ * requirement rather than a tidiness. For a long while only Covaxil and
+ * Hepalex did, while the queue carried cases for four other drugs whose
+ * assessments were written out by hand in `seed.ts`. Those cases rendered a
+ * confident "Sources disagree" badge — derived from the reviewer ruling, so it
+ * survives anything — above two panels that collapsed to "Source unavailable"
+ * the moment anybody pressed Re-assess. The badge and its evidence disagreed,
+ * and the evidence was the honest half.
+ *
+ * So the passages `seed.ts` quotes are the passages these documents contain,
+ * word for word. A fixture citation is now a citation of something.
  */
 import { chunkDocument } from "@/lib/ingest/chunk";
 import {
@@ -141,6 +153,209 @@ Gastrointestinal disorders
 
 The most frequently reported adverse reactions are nausea, headache and fatigue.`,
   },
+  {
+    n: 5,
+    title: "Cardiquel — Prescribing Information",
+    kind: "fda_label",
+    activeSubstance: "cardiquelin",
+    version: "2024.2",
+    effectiveDate: "2024-07-09",
+    text: `CARDIQUEL (cardiquelin) tablets, for oral use
+
+1 INDICATIONS AND USAGE
+
+CARDIQUEL is indicated for the maintenance of sinus rhythm in adults with paroxysmal atrial fibrillation.
+
+5 WARNINGS AND PRECAUTIONS
+
+5.1 Hypersensitivity Reactions
+
+Hypersensitivity reactions, including generalised rash, have been reported. Discontinue CARDIQUEL if a severe reaction occurs.
+
+6 ADVERSE REACTIONS
+
+6.1 Clinical Trials Experience
+
+Nausea was reported by 12% of patients. Headache was reported by 9% and fatigue by 8%.
+
+Rash occurred in 1.2% of patients receiving CARDIQUEL. Cases requiring admission for observation were reported infrequently and resolved on withdrawal of the drug.
+
+6.2 Postmarketing Experience
+
+The following adverse reactions have been identified during postmarketing use: bradycardia, dizziness, and first-degree atrioventricular block.`,
+  },
+  {
+    n: 6,
+    title: "Cardiquel Company Core Data Sheet v4.0",
+    kind: "ccds",
+    activeSubstance: "cardiquelin",
+    version: "4.0",
+    effectiveDate: "2025-09-30",
+    text: `CARDIQUEL COMPANY CORE DATA SHEET
+
+Version 4.0. Confidential. For internal pharmacovigilance use only.
+
+4.8 UNDESIRABLE EFFECTS
+
+The most frequently reported adverse reactions are nausea (12.4%), headache (9.1%) and fatigue (7.8%).
+
+Skin and subcutaneous tissue disorders
+
+Rash, including generalised rash requiring hospitalisation, occurred in 1.2% of patients. Pruritus and urticaria have been reported uncommonly, and resolved on withdrawal.
+
+Cardiac disorders
+
+Common: bradycardia. Uncommon: first-degree atrioventricular block.
+
+4.9 OVERDOSE
+
+Overdose has been associated with prolonged bradycardia. Management is supportive.`,
+  },
+  {
+    n: 7,
+    title: "Dermacil — Prescribing Information",
+    kind: "fda_label",
+    activeSubstance: "dermacilin",
+    version: "2024.3",
+    effectiveDate: "2024-10-17",
+    text: `DERMACIL (dermacilin) injection, for subcutaneous use
+
+1 INDICATIONS AND USAGE
+
+DERMACIL is indicated for the treatment of moderate to severe plaque psoriasis in adults who are candidates for systemic therapy.
+
+5 WARNINGS AND PRECAUTIONS
+
+5.1 Infections
+
+DERMACIL may increase the risk of infection. Do not initiate treatment in patients with a clinically important active infection.
+
+6 ADVERSE REACTIONS
+
+The most common adverse reactions were injection site erythema, upper respiratory tract infection and headache.
+
+Hypersensitivity reactions including urticaria were reported in less than 1% of patients.
+
+8 USE IN SPECIFIC POPULATIONS
+
+8.1 Pregnancy
+
+Available data on DERMACIL use in pregnant women are insufficient to establish a drug-associated risk.`,
+  },
+  {
+    n: 8,
+    title: "Dermacil Company Core Data Sheet v9.0",
+    kind: "ccds",
+    activeSubstance: "dermacilin",
+    version: "9.0",
+    effectiveDate: "2026-03-02",
+    text: `DERMACIL COMPANY CORE DATA SHEET
+
+Version 9.0. Confidential.
+
+4.8 UNDESIRABLE EFFECTS
+
+Skin and subcutaneous tissue disorders
+
+Very common: injection site erythema. Common: pruritus, rash.
+
+Severe cutaneous adverse reactions, including Stevens-Johnson syndrome and toxic epidermal necrolysis, have been reported very rarely. Added in CCDS version 9.0, March 2026.
+
+Immune system disorders
+
+Hypersensitivity reactions have been reported. Angioedema has not been observed in clinical studies.
+
+Infections and infestations
+
+Common: upper respiratory tract infection, nasopharyngitis.`,
+  },
+  {
+    n: 9,
+    title: "Pulmoxa — Prescribing Information",
+    kind: "fda_label",
+    activeSubstance: "pulmoxetine",
+    version: "2026.1",
+    effectiveDate: "2026-01-22",
+    text: `PULMOXA (pulmoxetine) capsules, for oral use
+
+1 INDICATIONS AND USAGE
+
+PULMOXA is indicated to slow the decline in lung function in adults with idiopathic pulmonary fibrosis.
+
+5 WARNINGS AND PRECAUTIONS
+
+5.1 Elevated Liver Enzymes
+
+Elevations in ALT and AST have been observed. Monitor liver tests before starting PULMOXA and periodically during treatment.
+
+5.2 Interstitial Lung Disease
+
+Interstitial lung disease has been reported in patients receiving PULMOXA. Monitor for new or worsening respiratory symptoms. Discontinue PULMOXA in patients with confirmed drug-induced interstitial lung disease.
+
+6 ADVERSE REACTIONS
+
+The most frequently reported adverse reactions were nausea, diarrhoea and cough.`,
+  },
+  {
+    n: 10,
+    title: "Pulmoxa Company Core Data Sheet v2.3",
+    kind: "ccds",
+    activeSubstance: "pulmoxetine",
+    version: "2.3",
+    effectiveDate: "2025-06-11",
+    text: `PULMOXA COMPANY CORE DATA SHEET
+
+Version 2.3. Confidential. For internal pharmacovigilance use only.
+
+4.8 UNDESIRABLE EFFECTS
+
+Respiratory, thoracic and mediastinal disorders
+
+Cough and dyspnoea were reported commonly. No cases of interstitial lung disease were identified in the pooled safety population.
+
+Gastrointestinal disorders
+
+Very common: nausea. Common: diarrhoea, abdominal discomfort.
+
+Hepatobiliary disorders
+
+Common: transaminase elevation. Uncommon: hyperbilirubinaemia.`,
+  },
+  {
+    /*
+      No public label accompanies this one, and that is the point.
+      NRV-114 is investigational, so no FDA label exists to be expected
+      against — the honest answer on the public side is that no document is
+      held, not that a document was read and said nothing. Adding a
+      plausible-looking label here would manufacture the one thing an
+      investigational product cannot have.
+    */
+    n: 11,
+    title: "NRV-114 Investigator's Brochure v4.0",
+    kind: "investigators_brochure",
+    activeSubstance: "vastimab",
+    version: "4.0",
+    effectiveDate: "2026-04-08",
+    text: `NRV-114 (vastimab) INVESTIGATOR'S BROCHURE
+
+Edition 4.0. Confidential. For use by investigators and ethics committees only.
+
+6.3 REFERENCE SAFETY INFORMATION
+
+Infusion-related reactions were mild to moderate and comprised flushing and headache. No anaphylactic reactions have been observed to date.
+
+Blood and lymphatic system disorders
+
+Neutropenia was reported in 6.2% of subjects and was generally transient. Febrile neutropenia was reported in two subjects in the pooled trial population, both of whom recovered following interruption of study drug.
+
+Nervous system disorders
+
+Headache and paraesthesia were reported commonly. Uncommon: dizziness.
+
+6.4 EXPECTEDNESS
+
+Events listed in section 6.3 are considered expected for the purpose of expedited reporting from trial NRV-114-003.`,
+  },
 ];
 
 function build(spec: DocSpec): {
@@ -186,4 +401,12 @@ export const SEED_PRODUCTS: readonly string[] = [
   "covaxilin",
   "Hepalex",
   "hepalexin",
+  "Cardiquel",
+  "cardiquelin",
+  "Dermacil",
+  "dermacilin",
+  "Pulmoxa",
+  "pulmoxetine",
+  "NRV-114",
+  "vastimab",
 ];
