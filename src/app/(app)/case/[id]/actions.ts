@@ -19,6 +19,7 @@ import { canRelease, canWrite } from "@/lib/case/claim";
 import { getCaseCoordination } from "@/lib/coordinator";
 import { IDEMPOTENCY_FIELD, type AssessActionState } from "./ruling-state";
 import type { IsoDateTime } from "@/lib/schemas";
+import { todayInAthens } from "@/lib/format/datetime";
 
 /** The instant a claim check is made against. Named so it reads at the call site. */
 const nowIso = (): IsoDateTime => new Date().toISOString() as IsoDateTime;
@@ -70,7 +71,7 @@ export async function runAssessment(
   _formData: FormData,
 ): Promise<AssessActionState> {
   const session = await requireSession();
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
 
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) {
@@ -240,12 +241,39 @@ export async function runAssessment(
         ? "does not appear to mention it"
         : "could not be read";
 
+  /*
+    And what a re-run did NOT change.
+
+    This sentence used to be the literal "Nothing has been ruled.", appended
+    unconditionally — so re-assessing a case that carried a ruling announced
+    that no ruling existed, in an aria-live region, directly above the ruling
+    itself. The verdict was intact; the sentence was simply false, and it was
+    false about the one field in this application only a human may write.
+
+    `standing` is the same value written to the store thirty lines above, so
+    the sentence and the record cannot disagree. It names the reviewer rather
+    than saying "your ruling", because the person re-running an assessment is
+    frequently not the person who ruled — this is a shared queue, and telling
+    one reviewer that another's determination is theirs is how a determination
+    quietly changes hands.
+
+    It reports the determination and stops there: whether it still fits the
+    evidence this run retrieved is the reviewer's to judge, and a summary that
+    reached for that would be the model marking a human's work.
+  */
+  const standing = existing?.ruling ?? entry.assessment?.ruling ?? null;
+  const verdict =
+    standing === null
+      ? "Nothing has been ruled."
+      : `The ruling recorded by ${standing.decidedBy} — ` +
+        `${standing.listedness}, ${standing.expectedness} — still stands.`;
+
   return {
     status: "assessed",
     message:
       `Assessment complete. The company documents ` +
       `${says(documentStance(findings.listedness))}; the public label ` +
-      `${says(documentStance(findings.expectedness))}. Nothing has been ruled.`,
+      `${says(documentStance(findings.expectedness))}. ${verdict}`,
   };
 }
 
@@ -272,7 +300,7 @@ export async function claimCase(
   formData?: FormData,
 ): Promise<ClaimActionState> {
   const session = await requireSession();
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
 
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) return INITIAL_CLAIM_STATE;
@@ -342,7 +370,7 @@ export async function releaseCase(
   formData?: FormData,
 ): Promise<ClaimActionState> {
   const session = await requireSession();
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
 
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) return INITIAL_CLAIM_STATE;
@@ -405,7 +433,7 @@ export async function recordRuling(
   form: FormData,
 ): Promise<RulingState> {
   const session = await requireSession();
-  const today: IsoDate = new Date().toISOString().slice(0, 10);
+  const today: IsoDate = todayInAthens();
 
   const entry = await findQueueEntry(today, caseId);
   if (entry === null) {
