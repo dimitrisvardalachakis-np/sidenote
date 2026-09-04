@@ -1,11 +1,13 @@
 import type {
   Citation,
   ExpectednessFinding,
+  GroundedNarrative,
   ListednessFinding,
   ModelReading,
 } from "@/lib/schemas";
 import { documentStance } from "@/lib/schemas";
 import { GeneratedNarrative } from "./narrative";
+import { formatDateTime } from "@/lib/format/datetime";
 
 /**
  * The two evidence panels, side by side in ONE card.
@@ -173,10 +175,19 @@ function Reading({
   reading,
   citations,
   seeSource,
+  rationalePromoted = false,
 }: {
   reading: ModelReading;
   citations: readonly Citation[];
   seeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+  /**
+   * True when `NarrativeSlot` above has already printed this reading's
+   * rationale as the panel summary. MOVED, never copied: one sentence in two
+   * places in one column reads as two findings that happen to agree, and a
+   * reviewer counting corroboration would be counting the same inference
+   * twice.
+   */
+  rationalePromoted?: boolean;
 }) {
   if (reading.status === "unavailable") {
     return (
@@ -215,7 +226,7 @@ function Reading({
         quote={source?.quote ?? reading.quotedSpan}
         span={reading.quotedSpan}
       />
-      {reading.rationale !== null && (
+      {reading.rationale !== null && !rationalePromoted && (
         <p className="mt-2 text-meta text-slate">{reading.rationale}</p>
       )}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -299,7 +310,7 @@ function NoResult({ query, at }: { query: string; at: string }) {
       </p>
       <p className="mt-2 font-mono text-meta text-slate">{query}</p>
       <p className="mt-1 font-mono text-micro uppercase tracking-label text-slate-quiet">
-        searched {at.slice(0, 16).replace("T", " ")}
+        searched {formatDateTime(at)}
       </p>
     </div>
   );
@@ -316,9 +327,132 @@ function SourceUnavailable({ reason, at }: { reason: string; at: string }) {
       </p>
       <p className="mt-2 text-meta text-ink">{reason}</p>
       <p className="mt-1 font-mono text-micro uppercase tracking-label text-slate-quiet">
-        attempted {at.slice(0, 16).replace("T", " ")}
+        attempted {formatDateTime(at)}
       </p>
     </div>
+  );
+}
+
+/**
+ * Whether this panel's reading can stand in for a narrative that failed.
+ *
+ * Three conditions, all of them load-bearing. The narrative must have been
+ * ATTEMPTED AND FAILED — `null` means none was ever tried, and there is
+ * nothing to stand in for. The reading must be `read`: a panel whose reading
+ * is `unavailable` or `nothing_found` has no sentence to promote and must go
+ * on saying exactly what it says now. And the rationale must exist, because
+ * `ModelReading` permits a `read` whose sentence was discarded while its
+ * citation stood.
+ */
+function promotedRationale(
+  narrative: GroundedNarrative | null,
+  reading: ModelReading,
+): { sentence: string; model: string; reason: string } | null {
+  if (narrative === null || narrative.status !== "unavailable") return null;
+  if (reading.status !== "read" || reading.rationale === null) return null;
+  return {
+    sentence: reading.rationale,
+    model: reading.model,
+    reason: narrative.reason,
+  };
+}
+
+/**
+ * The top of a grounded panel: the model's account of the passages.
+ *
+ * A reviewer must always find a sentence here when one exists. The panel used
+ * to lead with "No written answer could be produced from these passages"
+ * whenever the multi-point narrative failed — and the narrative is the call
+ * that fails, because it does twice the work of a reading against a budget
+ * that had to be raised for it. So the panel announced a failure while the
+ * successful reading's own sentence sat three inches below it, unread. The
+ * reading is the smaller claim and it had already survived the verbatim check;
+ * leading with the failure buried the thing that worked.
+ *
+ * What is promoted is the rationale VERBATIM. Nothing is synthesised from the
+ * passage text here — that would be this component inventing a reading, which
+ * is the one thing no renderer may do — and the quotation, its chunk id and
+ * its citation stay exactly where they were, below.
+ *
+ * The failure notice is demoted, not deleted. It drops to the provenance
+ * register at the foot of the block, where it stays auditable: a reviewer
+ * asking why this panel has one sentence rather than two can still find out.
+ */
+function NarrativeSlot({
+  narrative,
+  reading,
+  footnote,
+  about,
+  onSeeSource,
+}: {
+  narrative: GroundedNarrative | null;
+  reading: ModelReading;
+  footnote: React.ReactNode;
+  about?: string | undefined;
+  onSeeSource?: ((chunkId: string) => React.ReactNode) | undefined;
+}) {
+  const promoted = promotedRationale(narrative, reading);
+
+  if (promoted === null) {
+    return (
+      <GeneratedNarrative
+        narrative={narrative}
+        onSeeSource={onSeeSource}
+        about={about}
+        footnote={footnote}
+      />
+    );
+  }
+
+  return (
+    /*
+      The same frame `GeneratedNarrative` uses, and for its reasons: a reader
+      must never mistake what a MODEL WROTE for what a DOCUMENT SAYS. So this
+      block is contained, it is named "Written by AI" in as many words, and it
+      is set in the body face — while the quotation below stays monospace
+      behind a --steady rule. One header short of the narrative's four signals
+      would be one signal short.
+    */
+    <section
+      aria-label="AI-written answer"
+      className="border border-rule rounded-soft"
+    >
+      <header className="flex flex-wrap items-baseline justify-between gap-x-3 border-b border-rule px-3 py-1.5">
+        <p className="text-micro uppercase tracking-label text-ink">
+          Written by AI
+        </p>
+        <p className="text-micro text-slate">
+          <span className="font-mono">{promoted.model}</span> · from the passage
+          quoted below
+        </p>
+      </header>
+
+      <div className="px-3 py-2">
+        {about !== undefined && (
+          <p className="text-micro uppercase tracking-label text-slate">
+            About {about}
+          </p>
+        )}
+        <p className={about === undefined ? "text-prose" : "mt-1 text-prose"}>
+          {promoted.sentence}
+        </p>
+      </div>
+
+      <div className="border-t border-rule px-3 py-2">
+        <p className="text-meta text-slate">{footnote}</p>
+        {/*
+          Quieter than the footnote above it, which is the register the "read
+          by", "searched" and SPL lines occupy. Still a full sentence and still
+          on the screen — this is why the panel shows one sentence instead of
+          several, and a reviewer is entitled to know that.
+        */}
+        <p className="mt-1.5 text-micro text-slate-quiet">
+          No multi-point written answer could be produced from these passages;
+          the reading above and the passages below are unaffected.{" "}
+          {promoted.reason}
+        </p>
+      </div>
+    </section>
   );
 }
 
@@ -352,8 +486,9 @@ export function CompanyEvidence({
             carries --steady, the summary carries only a label.
           */}
           <div className="mb-4">
-            <GeneratedNarrative
+            <NarrativeSlot
               narrative={finding.narrative}
+              reading={finding.reading}
               onSeeSource={seeSource}
               about={about}
               footnote="Each sentence above was written by a model; each quotation beneath it was copied from the company document word for word and checked against it. Not a determination — listedness is yours to record."
@@ -363,6 +498,9 @@ export function CompanyEvidence({
             reading={finding.reading}
             citations={finding.citations}
             seeSource={seeSource}
+            rationalePromoted={
+              promotedRationale(finding.narrative, finding.reading) !== null
+            }
           />
           <OtherPassages
             citations={finding.citations}
@@ -402,8 +540,9 @@ export function PublicEvidence({
       {finding.state === "grounded" && (
         <>
           <div className="mb-4">
-            <GeneratedNarrative
+            <NarrativeSlot
               narrative={finding.narrative}
+              reading={finding.reading}
               onSeeSource={seeSource}
               about={about}
               footnote="Each sentence above was written by a model; each quotation beneath it was copied from the FDA label word for word and checked against it. Not a determination — expectedness is yours to record."
@@ -413,6 +552,9 @@ export function PublicEvidence({
             reading={finding.reading}
             citations={finding.citations}
             seeSource={seeSource}
+            rationalePromoted={
+              promotedRationale(finding.narrative, finding.reading) !== null
+            }
           />
           <OtherPassages
             citations={finding.citations}
